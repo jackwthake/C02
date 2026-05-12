@@ -5,6 +5,7 @@ use std::process;
 use std::fs;
 
 mod tokenizer;
+mod parser;
 
 fn main() {
   let args: Vec<String> = env::args().collect();
@@ -26,6 +27,7 @@ fn main() {
   match fd {
     Ok(contents) => {
       let tokens = tokenizer::tokenize(&contents, path);
+      let ast = parser::parse(&tokens);
       println!("{:#?}", tokens);
     } Err(e) => {
       eprintln!("Error: failed to read file at path {}: {}", path, e);
