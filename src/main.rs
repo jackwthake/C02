@@ -7,7 +7,7 @@ use std::fs;
 
 #[derive(Debug)]
 enum Token {
-  // kEYWORDS
+  // KEYWORDS
   Kw_fn,
   Kw_reg,
   Kw_return,
@@ -55,13 +55,22 @@ enum Token {
   l_identifier(String),
 }
 
+// Reads in raw source code, and outputs a list of tokens on succes
+// program quits on failure after printing all errors.
 fn tokenize(src: &str) -> Vec<Token> {
   let mut tokens = Vec::new();
   let mut chars = src.chars().peekable();
+  let mut line = 1;
+  let mut has_errored = false;
   
   while let Some(c) = chars.next() {
     match c {
-      ' ' | '\t' | '\n' | '\r' => continue, // skip whitespace
+      '\n' => {
+        line += 1;
+        continue;
+      },
+
+      ' ' | '\t' | '\r' => continue, // skip whitespace
       '/' => { // comments or divide
         if chars.peek() == Some(&'/') {
           // consume the rest of the line
@@ -205,10 +214,14 @@ fn tokenize(src: &str) -> Vec<Token> {
       
       // etc
       _ => {
-        eprintln!("unexpected character: {}", c);
-        process::exit(1);
+        eprintln!("unexpected character: {} at line {}", c, line);
+        has_errored = true;
       }
     }
+  }
+
+  if has_errored {
+    process::exit(1);
   }
   
   tokens
@@ -225,6 +238,12 @@ fn main() {
   
   let path = &args[1];
   let fd = fs::read_to_string(path);
+
+  if !path.ends_with(".c02") {
+    eprintln!("Error: not a C02 source file, valid extensions are .c02 but was passed:\n\t{}", path);
+    process::exit(1);
+  }
+
   match fd {
     Ok(contents) => {
       let tokens = tokenize(&contents);
