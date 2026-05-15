@@ -1,6 +1,7 @@
 #![allow(unused)] // <-- yuck!
 
 use crate::tokenizer::Token;
+use std::iter::Peekable;
 
 #[derive(Debug)]
 pub enum Type {
@@ -23,13 +24,17 @@ pub enum Op {
   Lte,
   Gte,
   EqualsEquals,
-  NotEquals,
+  BangEquals,
+  Bang,
+  Negate
 }
 
+#[derive(Debug)]
 pub enum Expr {
   Number(i64),
   Identifier(String),
   BinOp(Box<Expr>, Op, Box<Expr>),
+  Unary(Op, Box<Expr>),
   Call(String, Vec<Expr>),
   Deref(Box<Expr>),
   Cast(Type, Box<Expr>),
@@ -45,19 +50,176 @@ pub enum Stmt {
   ExprStmt(Expr),
 }
 
-#[derive(Default)]
 pub enum TopLevel {
-  #[default]
-  Empty, // temporary
   Function(String, Vec<(Type, String)>, Type, Vec<Stmt>),
   RegDecl(Type, String, u16),
   GlobalVar(Type, String, Option<Expr>),
 }
 
-pub fn parse(tokens: &Vec<Token>) -> Vec<TopLevel> {
-  let mut toplevels = Vec::new();
+fn primary(iter: &mut Peekable<impl Iterator<Item=Token>>) -> Expr {
+  match iter.next() {
+    Some(Token::l_num(n)) => Expr::Number(n),
+    
+    Some(Token::l_identifier(name)) => {
+      // could be a plain identifier OR a function call
+      // peek ahead to see if there's a (
+      if iter.peek() == Some(&Token::s_lparen) {
+        iter.next(); // consume (
+        // parse arguments...
+        Expr::Call(name, vec![]) // empty args for now
+      } else {
+        Expr::Identifier(name)
+      }
+    }
+    
+    Some(Token::s_lparen) => {
+      // grouped expression like (a + b)
+      let expr = equality(iter);
+      iter.next(); // consume )
+      expr
+    }
+    
+    _ => panic!("unexpected token in primary"), // error handling later
+  }
+}
 
-  toplevels.push(TopLevel::default());
+fn unary(iter: &mut Peekable<impl Iterator<Item=Token>>) -> Expr {
+  match iter.peek() {
+    Some(Token::s_bang) => {
+      iter.next();
+      let operand = unary(iter); // recursive, handles !!x
+      Expr::Unary(Op::Bang, Box::new(operand))
+    }
+    
+    Some(Token::s_minus) => {
+      iter.next();
+      let operand = unary(iter);
+      Expr::Unary(Op::Negate, Box::new(operand))
+    }
+    
+    Some(Token::s_star) | Some(Token::s_mem_lookup) => {
+      iter.next();
+      let operand = unary(iter);
+      Expr::Deref(Box::new(operand))
+    }
+    _ => primary(iter), // no unary operator, fall through
+  }
+}
 
-  toplevels
+fn factor(iter: &mut Peekable<impl Iterator<Item=Token>>) -> Expr {
+  let mut left = unary(iter);
+  
+  loop {
+    match iter.peek() {
+      Some(Token::s_star) => {
+        iter.next();
+        let right = unary(iter);
+        left = Expr::BinOp(Box::new(left), Op::Multiply, Box::new(right));
+      }
+      Some(Token::s_divide) => {
+        iter.next();
+        let right = unary(iter);
+        left = Expr::BinOp(Box::new(left), Op::Divide, Box::new(right));
+      }
+      _ => break,
+    }
+  }
+  
+  left
+}
+
+fn term(iter: &mut Peekable<impl Iterator<Item=Token>>) -> Expr {
+  let mut left = factor(iter);
+  
+  loop {
+    match iter.peek() {
+      Some(Token::s_plus) => {
+        iter.next();
+        let right = factor(iter);
+        left = Expr::BinOp(Box::new(left), Op::Plus, Box::new(right));
+      }
+      Some(Token::s_minus) => {
+        iter.next();
+        let right = factor(iter);
+        left = Expr::BinOp(Box::new(left), Op::Minus, Box::new(right));
+      }
+      _ => break,
+    }
+  }
+  
+  left
+}
+
+fn comparison(iter: &mut Peekable<impl Iterator<Item=Token>>) -> Expr {
+  let mut left = term(iter);
+  
+  loop {
+    match iter.peek() {
+      Some(Token::s_lt) => {
+        iter.next();
+        let right = term(iter);
+        left = Expr::BinOp(Box::new(left), Op::Lt, Box::new(right));
+      }
+      
+      Some(Token::s_gt) => {
+        iter.next();
+        let right = term(iter);
+        left = Expr::BinOp(Box::new(left), Op::Gt, Box::new(right));
+      }
+      
+      Some(Token::s_lte) => {
+        iter.next();
+        let right = term(iter);
+        left = Expr::BinOp(Box::new(left), Op::Lte, Box::new(right));
+      }
+      
+      Some(Token::s_gte) => {
+        iter.next();
+        let right = term(iter);
+        left = Expr::BinOp(Box::new(left), Op::Gte, Box::new(right));
+      }
+      _ => break,
+    }
+  }
+  
+  left
+}
+
+// root of recursive descent
+// equality    looks for == !=      calls comparison
+// comparison  looks for < > <= >=  calls term
+// term        looks for + -        calls factor
+// factor      looks for * /        calls unary
+// unary       looks for * ! -      calls primary
+// primary     looks for literals, identifiers, (expr)   consumes tokens
+fn equality(iter: &mut Peekable<impl Iterator<Item=Token>>) -> Expr {
+  let mut left = comparison(iter);
+  
+  loop {
+    match iter.peek() {
+      Some(Token::s_equalsequals) => {
+        iter.next(); // consume ==
+        let right = comparison(iter);
+        left = Expr::BinOp(Box::new(left), Op::EqualsEquals, Box::new(right));
+      }
+      Some(Token::s_bang_equals) => {
+        iter.next();
+        let right = comparison(iter);
+        left = Expr::BinOp(Box::new(left), Op::BangEquals, Box::new(right));
+      }
+      _ => break,
+    }
+  }
+  
+  left
+}
+
+pub fn parse(tokens: Vec<Token>) -> Vec<TopLevel> {
+  let mut iter = tokens.into_iter().peekable();
+  
+  // temporary test - just parse one expression and print it
+  let expr = equality(&mut iter);
+  println!("{:#?}", expr);
+  
+  vec![] // return empty for now
 }

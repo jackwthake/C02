@@ -2,7 +2,7 @@
 
 use std::process;
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub enum Token {
   // KEYWORDS
   Kw_fn,
