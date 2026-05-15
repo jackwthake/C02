@@ -1,5 +1,3 @@
-#![allow(unused)] // <-- yuck!
-
 use std::process;
 
 #[derive(PartialEq, Debug)]
