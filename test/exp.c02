@@ -1,7 +1,9 @@
 
 if (test_condition == 1) {
-  u16 x = 16 * 2;
-  i16 y = 16 * 2;
+  u16 *x = 16 * 2;
+  i16 y = x * x;
   u8 z = 16 * 2;
   i8 w = 16 * 2;
+} else {
+  x = 10;
 }

@@ -51,6 +51,7 @@ pub enum Stmt {
   ExprStmt(Expr),
 }
 
+#[derive(Debug)]
 pub enum TopLevel {
   Function(String, Vec<(Type, String)>, Type, Vec<Stmt>),
   RegDecl(Type, String, u16),
@@ -273,7 +274,7 @@ fn parse_stmt(iter: &mut Peekable<impl Iterator<Item=Token>>) -> Stmt {
     
     Some(Token::t_u8) | Some(Token::t_u16) | 
     Some(Token::t_i8) | Some(Token::t_i16) | Some(Token::Kw_void) => {
-      let t = match iter.next() {
+      let mut t = match iter.next() {
         Some(Token::t_u8) => Type::U8,
         Some(Token::t_i8) => Type::I8,
         Some(Token::t_u16) => Type::U16,
@@ -281,32 +282,180 @@ fn parse_stmt(iter: &mut Peekable<impl Iterator<Item=Token>>) -> Stmt {
         Some(Token::Kw_void) => Type::Void,
         _ => panic!("expected type"),
       };
+      
       // check for pointer
       if iter.peek() == Some(&Token::s_star) {
         iter.next();
-        // handle pointer type
+        t = Type::Ptr(Box::new(t));
       }
+      
       let identifier = match iter.next() {
         Some(Token::l_identifier(name)) => name,
         _ => panic!("expected identifier"),
       };
+      
       iter.next(); // consume =
       let expr = equality(iter);
       iter.next(); // consume ;
       Stmt::VarDecl(t, identifier, Some(expr))
     }
+    
+    Some(Token::l_identifier(_)) => {
+      let token = iter.next().unwrap(); 
+      
+      let id = match token {
+        Token::l_identifier(name) => name,
+        _ => unreachable!(), // We already peeked, so we know it's an identifier
+      };
+      
+      let next_tok = iter.next();
+      if next_tok != Some(Token::s_equals) {
+        panic!("Expected '=' after identifier in assignment statement");
+      }
+      
+      let expr = equality(iter);
+      
+      let semi_tok = iter.next();
+      if semi_tok != Some(Token::s_semicolon) {
+        panic!("Expected ';' at the end of assignment statement");
+      }
+      
+      Stmt::Assign(id, expr)
+    }
+    
     _ => {
       todo!();
     }
   }
 }
 
+fn parse_args(iter: &mut Peekable<impl Iterator<Item=Token>>) -> Vec<(Type, String)> {
+  let mut args = Vec::new();
+  iter.next(); // consume (
+  
+  loop {
+    match iter.peek() {
+      Some(Token::s_rparen) => {
+        iter.next(); // consume )
+        break;
+      }
+      Some(Token::s_comma) => {
+        iter.next(); // consume ,
+      }
+      _ => {
+        let t = match iter.next() {
+          Some(Token::t_u8) => Type::U8,
+          Some(Token::t_i8) => Type::I8,
+          Some(Token::t_u16) => Type::U16,
+          Some(Token::t_i16) => Type::I16,
+          _ => panic!("expected type in argument list"),
+        };
+        let name = match iter.next() {
+          Some(Token::l_identifier(n)) => n,
+          _ => panic!("expected identifier in argument list"),
+        };
+        args.push((t, name));
+      }
+    }
+  }
+  args
+}
+
+fn parse_toplevel(iter: &mut Peekable<impl Iterator<Item=Token>>) -> TopLevel {
+  match iter.peek() {
+    Some(Token::Kw_fn) => {
+      iter.next(); // consume fn
+      let name = match iter.next() {
+        Some(Token::l_identifier(n)) => n,
+        _ => panic!("expected function name"),
+      };
+      let args = parse_args(iter);
+      // consume ->
+      iter.next();
+      // parse return type
+      let ret = match iter.next() {
+        Some(Token::t_u8) => Type::U8,
+        Some(Token::t_u16) => Type::U16,
+        Some(Token::t_i8) => Type::I8,
+        Some(Token::t_i16) => Type::I16,
+        Some(Token::Kw_void) => Type::Void,
+        _ => panic!("expected return type"),
+      };
+      let body = parse_block(iter);
+      return TopLevel::Function(name, args, ret, body)
+    }
+
+    Some(Token::Kw_reg) => {
+      iter.next(); // consume reg
+      let t = match iter.next() {
+        Some(Token::t_u8) => Type::U8,
+        Some(Token::t_i8) => Type::I8,
+        Some(Token::t_u16) => Type::U16,
+        Some(Token::t_i16) => Type::I16,
+        _ => panic!("expected type after reg"),
+      };
+      let id = match iter.next() {
+        Some(Token::l_identifier(name)) => name,
+        _ => panic!("expected identifier after type in reg declaration"),
+      };
+      match iter.next() {
+        Some(Token::s_mem_lookup) => {},
+        _ => panic!("expected '@' in reg declaration"),
+      }
+      let addr = match iter.next() {
+        Some(Token::l_num(n)) => n as u16,
+        _ => panic!("expected address in reg declaration"),
+      };
+      iter.next(); // consume ;
+      return TopLevel::RegDecl(t, id, addr)
+    }
+    
+    Some(Token::t_u8) | Some(Token::t_u16) | 
+    Some(Token::t_i8) | Some(Token::t_i16) => {
+      let mut t = match iter.next() {
+        Some(Token::t_u8) => Type::U8,
+        Some(Token::t_i8) => Type::I8,
+        Some(Token::t_u16) => Type::U16,
+        Some(Token::t_i16) => Type::I16,
+        _ => panic!("expected type"),
+      };
+      
+      // check for pointer
+      if iter.peek() == Some(&Token::s_star) {
+        iter.next();
+        t = Type::Ptr(Box::new(t));
+      }
+      
+      let identifier = match iter.next() {
+        Some(Token::l_identifier(name)) => name,
+        _ => panic!("expected identifier"),
+      };
+      
+      let initialiser = match iter.peek() {
+        Some(Token::s_equals) => {
+          iter.next(); // consume =
+          let expr = equality(iter);
+          Some(expr)
+        }
+        Some(Token::s_semicolon) => None,
+        _ => panic!("expected = or ; after global variable name"),
+      };
+      
+      iter.next(); // consume ;
+      return TopLevel::GlobalVar(t, identifier, initialiser)
+    }
+    _ => panic!("unexpected token at top level"),
+  }
+}
+
 pub fn parse(tokens: Vec<Token>) -> Vec<TopLevel> {
   let mut iter = tokens.into_iter().peekable();
+  let mut toplevels = Vec::new();
   
-  // temporary test - just parse one expression and print it
-  let expr = parse_stmt(&mut iter);
-  println!("{:#?}", expr);
+  while iter.peek().is_some() {
+    toplevels.push(parse_toplevel(&mut iter));
+  }
   
-  vec![] // return empty for now
+  println!("{:#?}", toplevels);
+  toplevels
 }

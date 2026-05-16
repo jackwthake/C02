@@ -2,21 +2,25 @@ reg u8 PORTA @ 0x6001;
 reg u8 PORTB @ 0x6000;
 
 u16 monitor_addr = 0x8000;
-u8[16] buffer;
 
 fn scroll_up() -> void {
-  monitor_addr += 8;
+  monitor_addr = 8;
 }
 
 fn read_byte(u16 addr) -> u8 {
-  u8* ptr = (u8*)addr;
+  u8* ptr = addr;
   return *ptr;
 }
 
 fn main() -> void {
   u8 x = 0;
-  while x < 16 {
-    buffer[x] = read_byte(monitor_addr);
-    x += 1;
+
+  if (test_condition == 1) {
+    u16 *x = 16 * 2;
+    i16 y = x * x;
+    u8 z = 16 * 2;
+    i8 w = 16 * 2;
+  } else {
+    x = 10;
   }
 }
