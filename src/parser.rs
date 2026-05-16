@@ -41,6 +41,7 @@ pub enum Expr {
   Index(Box<Expr>, Box<Expr>),
 }
 
+#[derive(Debug)]
 pub enum Stmt {
   VarDecl(Type, String, Option<Expr>),
   Assign(String, Expr),
@@ -56,6 +57,11 @@ pub enum TopLevel {
   GlobalVar(Type, String, Option<Expr>),
 }
 
+////////////////////////////////////////////////////////////////////
+/// Recursive descent
+////////////////////////////////////////////////////////////////////
+
+// bottom of recursive descent hierarchy, consumes tokens
 fn primary(iter: &mut Peekable<impl Iterator<Item=Token>>) -> Expr {
   match iter.next() {
     Some(Token::l_num(n)) => Expr::Number(n),
@@ -190,7 +196,7 @@ fn comparison(iter: &mut Peekable<impl Iterator<Item=Token>>) -> Expr {
 // comparison  looks for < > <= >=  calls term
 // term        looks for + -        calls factor
 // factor      looks for * /        calls unary
-// unary       looks for * ! -      calls primary
+// unary       looks for * @ ! -    calls primary
 // primary     looks for literals, identifiers, (expr)   consumes tokens
 fn equality(iter: &mut Peekable<impl Iterator<Item=Token>>) -> Expr {
   let mut left = comparison(iter);
@@ -214,11 +220,92 @@ fn equality(iter: &mut Peekable<impl Iterator<Item=Token>>) -> Expr {
   left
 }
 
+
+/////////////////////////////////////////////////////////////////////////////
+/// Main Parsing
+/////////////////////////////////////////////////////////////////////////////
+
+fn parse_block(iter: &mut Peekable<impl Iterator<Item=Token>>) -> Vec<Stmt> {
+  iter.next(); // consume {
+  let mut stmts = Vec::new();
+  loop {
+    match iter.peek() {
+      Some(Token::s_rbrace) => {
+        iter.next(); // consume }
+        break;
+      }
+      None => panic!("unexpected end of file, expected }}"),
+      _ => stmts.push(parse_stmt(iter)),
+    }
+  }
+  stmts
+}
+
+fn parse_stmt(iter: &mut Peekable<impl Iterator<Item=Token>>) -> Stmt {
+  match iter.peek() {
+    Some(Token::Kw_return) => {
+      iter.next(); // consume return
+      let expr = equality(iter);
+      iter.next(); // consume ;
+      Stmt::Return(Some(expr))
+    }
+    
+    Some(Token::Kw_while) => {
+      iter.next(); // consume while
+      let condition = equality(iter);
+      let body = parse_block(iter);
+      Stmt::While(condition, body)
+    }
+    
+    Some(Token::Kw_if) => {
+      iter.next(); // consume if
+      let condition = equality(iter);
+      let body = parse_block(iter);
+      // check for else
+      let else_body = if iter.peek() == Some(&Token::Kw_else) {
+        iter.next(); // consume else
+        Some(parse_block(iter))
+      } else {
+        None
+      };
+      Stmt::If(condition, body, else_body)
+    }
+    
+    Some(Token::t_u8) | Some(Token::t_u16) | 
+    Some(Token::t_i8) | Some(Token::t_i16) | Some(Token::Kw_void) => {
+      let t = match iter.next() {
+        Some(Token::t_u8) => Type::U8,
+        Some(Token::t_i8) => Type::I8,
+        Some(Token::t_u16) => Type::U16,
+        Some(Token::t_i16) => Type::I16,
+        Some(Token::Kw_void) => Type::Void,
+        _ => panic!("expected type"),
+      };
+      // check for pointer
+      if iter.peek() == Some(&Token::s_star) {
+        iter.next();
+        // handle pointer type
+      }
+      let identifier = match iter.next() {
+        Some(Token::l_identifier(name)) => name,
+        _ => panic!("expected identifier"),
+      };
+      iter.next(); // consume =
+      let expr = equality(iter);
+      iter.next(); // consume ;
+      Stmt::VarDecl(t, identifier, Some(expr))
+    }
+    _ => {
+      todo!();
+    }
+  }
+}
+
 pub fn parse(tokens: Vec<Token>) -> Vec<TopLevel> {
   let mut iter = tokens.into_iter().peekable();
   
   // temporary test - just parse one expression and print it
-  let expr = equality(&mut iter);
+  let expr = parse_stmt(&mut iter);
   println!("{:#?}", expr);
   
   vec![] // return empty for now
