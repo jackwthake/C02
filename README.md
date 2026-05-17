@@ -15,13 +15,36 @@ C02 is a simple, C-like language with basic types, functions, registers, and con
 
 ## Usage
 
-Run the compiler with a `.c02` source file:
+### Compiling the toolchain
 
 ```bash
-cargo run -- <path/to/file.c02>
+git submodule update --init --recursive
+cd ext/vasm
+make CPU=6502 SYNTAX=oldstyle
+cd ../../
+cargo build
+```
+
+### Run the compiler with a `.c02` source file
+
+```bash
+c02 <path/to/file.c02>
 ```
 
 If parsing fails, the compiler reports the error and the source location in a format compatible with terminal editors.
+
+## Example
+
+A basic C02 function looks like this:
+
+```c
+reg u8 PORTB @ 0x6000;
+
+fn main() -> void {
+  PORTB = 0x69; // set address 0x6000 to 0x69
+  return;
+}
+```
 
 ## Local VS Code setup
 
@@ -38,18 +61,5 @@ If you want quick generic highlighting without installing the extension, add thi
   "files.associations": {
     "*.c02": "c"
   }
-}
-```
-
-## Example
-
-A basic C02 function looks like this:
-
-```c
-reg u8 PORTB @ 0x6000;
-
-fn main() -> void {
-  PORTB = 0x69; // set address 0x6000 to 0x69
-  return;
 }
 ```

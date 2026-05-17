@@ -1,0 +1,3 @@
+[submodule "ext/vasm"]
+	path = ext/vasm
+	url = https://github.com/dbuchwald/vasm.git
