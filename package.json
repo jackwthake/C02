@@ -1,0 +1,36 @@
+{
+  "name": "c02-language",
+  "displayName": "C02 Language Support",
+  "description": "Syntax highlighting and language support for C02",
+  "version": "0.1.0",
+  "engines": {
+    "vscode": "^1.70.0"
+  },
+  "publisher": "c02",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/C02"
+  },
+  "contributes": {
+    "languages": [
+      {
+        "id": "c02",
+        "aliases": [
+          "C02",
+          "c02"
+        ],
+        "extensions": [
+          ".c02"
+        ],
+        "configuration": "./.vscode/language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "c02",
+        "scopeName": "source.c02",
+        "path": "./.vscode/c02.tmLanguage.json"
+      }
+    ]
+  }
+}

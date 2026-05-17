@@ -23,6 +23,24 @@ cargo run -- <path/to/file.c02>
 
 If parsing fails, the compiler reports the error and the source location in a format compatible with terminal editors.
 
+## Local VS Code setup
+
+To test the C02 syntax support locally:
+
+1. Open the `C02` folder in VS Code.
+2. Press `F5` to launch an Extension Development Host.
+3. Open a `.c02` file in the new host window.
+
+If you want quick generic highlighting without installing the extension, add this to workspace settings:
+
+```json
+{
+  "files.associations": {
+    "*.c02": "c"
+  }
+}
+```
+
 ## Example
 
 A basic C02 function looks like this:

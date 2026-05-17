@@ -1,0 +1,114 @@
+{
+  "name": "C02",
+  "scopeName": "source.c02",
+  "fileTypes": ["c02"],
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#types"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "include": "#identifiers"
+    },
+    {
+      "include": "#operators"
+    },
+    {
+      "include": "#symbols"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.c02",
+          "match": "//.*?$"
+        },
+        {
+          "name": "comment.block.c02",
+          "begin": "/\\*",
+          "end": "\\*/"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.c02",
+          "match": "\\b(if|else|while|for|return)\\b"
+        },
+        {
+          "name": "keyword.declaration.c02",
+          "match": "\\b(fn|reg|void)\\b"
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "storage.type.c02",
+          "match": "\\b(u8|i8|u16|i16)\\b"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.c02",
+          "begin": "\"",
+          "end": "\"",
+          "escapes": {
+            "match": "\\\\."
+          }
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.hex.c02",
+          "match": "0x[0-9a-fA-F]+"
+        },
+        {
+          "name": "constant.numeric.decimal.c02",
+          "match": "\\b\\d+\\b"
+        }
+      ]
+    },
+    "identifiers": {
+      "patterns": [
+        {
+          "name": "variable.other.c02",
+          "match": "\\b[A-Za-z_][A-Za-z0-9_]*\\b"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.c02",
+          "match": "(==|!=|<=|>=|\\+=|-=|->|\\*|/|\\+|-|=|<|>|!|&|@)"
+        }
+      ]
+    },
+    "symbols": {
+      "patterns": [
+        {
+          "name": "punctuation.c02",
+          "match": "[{}\\[\\](),.;]"
+        }
+      ]
+    }
+  }
+}
