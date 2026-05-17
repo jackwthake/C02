@@ -1,2 +1,4 @@
 /target
 *.vsix
+*.out
+test/*.s

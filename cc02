@@ -1,0 +1,49 @@
+#!/usr/bin/env sh
+set -eu
+
+if [ "$#" -ne 1 ]; then
+  cat <<'EOF' >&2
+Usage: $0 <source-file.c02>
+
+Builds the C02 compiler, compiles the source file to .s, then feeds the .s file
+into ./ext/vasm/vasm6502_oldstyle -c02 -Fbin -dotdir.
+EOF
+  exit 1
+fi
+
+SRC="$1"
+
+if [ ! -f "$SRC" ]; then
+  echo "Error: source file not found: $SRC" >&2
+  exit 1
+fi
+
+case "$SRC" in
+  *.c02) ;;
+  *)
+    echo "Error: source file must have .c02 extension: $SRC" >&2
+    exit 1
+    ;;
+esac
+
+C02_BIN="./target/debug/C02"
+if [ ! -x "$C02_BIN" ]; then
+  echo "Error: compiler executable not found or not executable: $C02_BIN" >&2
+  exit 1
+fi
+
+"$C02_BIN" "$SRC"
+
+ASM="${SRC%.c02}.s"
+if [ ! -f "$ASM" ]; then
+  echo "Error: expected assembly output not found: $ASM" >&2
+  exit 1
+fi
+
+VASM="./ext/vasm/vasm6502_oldstyle"
+if [ ! -x "$VASM" ]; then
+  echo "Error: vasm not found or not executable: $VASM" >&2
+  exit 1
+fi
+
+exec "$VASM" -c02 -Fbin -dotdir "$ASM"

@@ -28,7 +28,7 @@ cargo build
 ### Run the compiler with a `.c02` source file
 
 ```bash
-c02 <path/to/file.c02>
+cc02 <path/to/file.c02>
 ```
 
 If parsing fails, the compiler reports the error and the source location in a format compatible with terminal editors.
