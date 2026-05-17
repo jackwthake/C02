@@ -1,5 +1,3 @@
-#![allow(unused)] // <-- yuck!
-
 use crate::tokenizer::{Token, TokenLocation};
 use std::fmt;
 use std::iter::Peekable;
@@ -241,7 +239,6 @@ pub enum Expr {
   Call(String, Vec<Expr>),
   Deref(Box<Expr>),
   Cast(Type, Box<Expr>),
-  Index(Box<Expr>, Box<Expr>),
 }
 
 #[derive(Debug)]
@@ -251,7 +248,6 @@ pub enum Stmt {
   Return(Option<Expr>),
   If(Expr, Vec<Stmt>, Option<Vec<Stmt>>),
   While(Expr, Vec<Stmt>),
-  ExprStmt(Expr),
 }
 
 #[derive(Debug)]
