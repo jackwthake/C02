@@ -263,7 +263,9 @@ fn parse_stmt(iter: &mut Peekable<impl Iterator<Item=Token>>) -> Stmt {
     
     Some(Token::Kw_while) => {
       iter.next(); // consume while
+      iter.next(); // consume (
       let condition = equality(iter);
+      iter.next(); // consume )
       let body = parse_block(iter);
       Stmt::While(condition, body)
     }
@@ -478,6 +480,6 @@ pub fn parse(tokens: Vec<Token>) -> Vec<TopLevel> {
     toplevels.push(parse_toplevel(&mut iter));
   }
   
-  println!("{:#?}", toplevels);
+  println!("\n\nAST:\n\n{:#?}", toplevels);
   toplevels
 }

@@ -229,5 +229,6 @@ pub fn tokenize(src: &str, file_path: &str) -> Vec<Token> {
     process::exit(1);
   }
   
+  println!("TOKENS:\n\n{:#?}", tokens.iter().clone());
   tokens
 }
