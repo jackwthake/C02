@@ -68,17 +68,27 @@ fn primary(iter: &mut Peekable<impl Iterator<Item=Token>>) -> Expr {
     Some(Token::l_num(n)) => Expr::Number(n),
     
     Some(Token::l_identifier(name)) => {
-      // could be a plain identifier OR a function call
-      // peek ahead to see if there's a (
       if iter.peek() == Some(&Token::s_lparen) {
         iter.next(); // consume (
-        // parse arguments...
-        Expr::Call(name, vec![]) // empty args for now
+        let mut args = Vec::new();
+        loop {
+          match iter.peek() {
+            Some(Token::s_rparen) => {
+              iter.next(); // consume )
+              break;
+            }
+            Some(Token::s_comma) => {
+              iter.next(); // consume ,
+            }
+            _ => args.push(equality(iter)),
+          }
+        }
+        Expr::Call(name, args)
       } else {
         Expr::Identifier(name)
       }
     }
-    
+
     Some(Token::s_lparen) => {
       // grouped expression like (a + b)
       let expr = equality(iter);
@@ -301,28 +311,40 @@ fn parse_stmt(iter: &mut Peekable<impl Iterator<Item=Token>>) -> Stmt {
     }
     
     Some(Token::l_identifier(_)) => {
-      let token = iter.next().unwrap(); 
-      
-      let id = match token {
+      let id = match iter.next().unwrap() {
         Token::l_identifier(name) => name,
-        _ => unreachable!(), // We already peeked, so we know it's an identifier
+        _ => unreachable!(),
       };
       
-      let next_tok = iter.next();
-      if next_tok != Some(Token::s_equals) {
-        panic!("Expected '=' after identifier in assignment statement");
+      match iter.next() {
+        Some(Token::s_equals) => {
+          let expr = equality(iter);
+          iter.next(); // consume ;
+          Stmt::Assign(id.clone(), expr)
+        }
+        Some(Token::s_plus_equals) => {
+          let expr = equality(iter);
+          iter.next(); // consume ;
+          Stmt::Assign(id.clone(), 
+          Expr::BinOp(
+            Box::new(Expr::Identifier(id)),
+            Op::Plus,
+            Box::new(expr)
+          ))
+        }
+        Some(Token::s_minus_equals) => {
+          let expr = equality(iter);
+          iter.next(); // consume ;
+          Stmt::Assign(id.clone(),
+          Expr::BinOp(
+            Box::new(Expr::Identifier(id)),
+            Op::Minus,
+            Box::new(expr)
+          ))
+        }
+        _ => panic!("expected = += or -= after identifier"),
       }
-      
-      let expr = equality(iter);
-      
-      let semi_tok = iter.next();
-      if semi_tok != Some(Token::s_semicolon) {
-        panic!("Expected ';' at the end of assignment statement");
-      }
-      
-      Stmt::Assign(id, expr)
-    }
-    
+    }    
     _ => {
       todo!();
     }
@@ -384,7 +406,7 @@ fn parse_toplevel(iter: &mut Peekable<impl Iterator<Item=Token>>) -> TopLevel {
       let body = parse_block(iter);
       return TopLevel::Function(name, args, ret, body)
     }
-
+    
     Some(Token::Kw_reg) => {
       iter.next(); // consume reg
       let t = match iter.next() {

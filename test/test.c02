@@ -4,7 +4,11 @@ reg u8 PORTB @ 0x6000;
 u16 monitor_addr = 0x8000;
 
 fn scroll_up() -> void {
-  monitor_addr = 8;
+  monitor_addr += 8;
+}
+
+fn scroll_down() -> void {
+  monitor_addr -= 8;
 }
 
 fn read_byte(u16 addr) -> u8 {
@@ -15,8 +19,11 @@ fn read_byte(u16 addr) -> u8 {
 fn main() -> void {
   u8 x = 0;
 
+  while(monitor_addr) {
+    x = read_byte(monitor_addr);
+  }
+
   if (test_condition == 1) {
-    u16 *x = 16 * 2;
     i16 y = x * x;
     u8 z = 16 * 2;
     i8 w = 16 * 2;
