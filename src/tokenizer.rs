@@ -1,54 +1,57 @@
-use std::process;
+#[derive(PartialEq, Debug, Clone)]
+pub enum TokenLocation {
+  File { path: String, line: usize },
+}
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum Token {
   // KEYWORDS
-  Kw_fn,
-  Kw_reg,
-  Kw_return,
-  Kw_void,
-  Kw_if,
-  Kw_else,
-  Kw_while,
-  Kw_for,
-  
+  Kw_fn(TokenLocation),
+  Kw_reg(TokenLocation),
+  Kw_return(TokenLocation),
+  Kw_void(TokenLocation),
+  Kw_if(TokenLocation),
+  Kw_else(TokenLocation),
+  Kw_while(TokenLocation),
+  Kw_for(TokenLocation),
+
   // TYPES
-  t_u8,     // only integer based types, chars can be u8, 6502 has no FPU
-  t_i8,
-  t_u16,
-  t_i16,
-  
+  t_u8(TokenLocation),     // only integer based types, chars can be u8, 6502 has no FPU
+  t_i8(TokenLocation),
+  t_u16(TokenLocation),
+  t_i16(TokenLocation),
+
   // SYMBOLS
-  s_mem_lookup,     // @
-  s_star,           // *, pointer and multiply
-  s_lbracket,       // [
-  s_rbracket,       // ]
-  s_arrow,          // ->
-  s_plus,           // +
-  s_minus,          // -
-  s_divide,         // /
-  s_lparen,         // (
-  s_rparen,         // )
-  s_lbrace,         // {
-  s_rbrace,         // }
-  s_semicolon,      // ;
-  s_equals,         // =
-  s_equalsequals,   // ==
-  s_plus_equals,    // +=
-  s_minus_equals,   // -=
-  s_bang,           // !
-  s_bang_equals,     // !=
-  s_lt,             // <
-  s_gt,             // >
-  s_lte,            // <=
-  s_gte,            // >=
-  s_ampersand,      // & (for address-of later)
-  s_comma,          // , (for function args)
+  s_mem_lookup(TokenLocation),     // @
+  s_star(TokenLocation),           // *, pointer and multiply
+  s_lbracket(TokenLocation),       // [
+  s_rbracket(TokenLocation),       // ]
+  s_arrow(TokenLocation),          // ->
+  s_plus(TokenLocation),           // +
+  s_minus(TokenLocation),          // -
+  s_divide(TokenLocation),         // /
+  s_lparen(TokenLocation),         // (
+  s_rparen(TokenLocation),         // )
+  s_lbrace(TokenLocation),         // {
+  s_rbrace(TokenLocation),         // }
+  s_semicolon(TokenLocation),      // ;
+  s_equals(TokenLocation),         // =
+  s_equalsequals(TokenLocation),   // ==
+  s_plus_equals(TokenLocation),    // +=
+  s_minus_equals(TokenLocation),   // -=
+  s_bang(TokenLocation),           // !
+  s_bang_equals(TokenLocation),     // !=
+  s_lt(TokenLocation),             // <
+  s_gt(TokenLocation),             // >
+  s_lte(TokenLocation),            // <=
+  s_gte(TokenLocation),            // >=
+  s_ampersand(TokenLocation),      // & (for address-of later)
+  s_comma(TokenLocation),          // , (for function args)
   
   // LITERALS
-  l_num(i64),
-  l_string(String),
-  l_identifier(String),
+  l_num(i64, TokenLocation),
+  l_string(String, TokenLocation),
+  l_identifier(String, TokenLocation),
 }
 
 
@@ -58,14 +61,16 @@ pub fn tokenize(src: &str, file_path: &str) -> Vec<Token> {
   let mut tokens = Vec::new();
   let mut chars = src.chars().peekable();
   let mut line = 1;
-  let mut has_errored = false;
   
   while let Some(c) = chars.next() {
+    if c == '\n' {
+      line += 1;
+      continue;
+    }
+
+    let location = TokenLocation::File { path: file_path.to_string(), line };
+
     match c {
-      '\n' => {
-        line += 1;
-        continue;
-      },
       
       ' ' | '\t' | '\r' => continue, // skip whitespace
       '/' => { // comments or divide
@@ -78,76 +83,76 @@ pub fn tokenize(src: &str, file_path: &str) -> Vec<Token> {
             chars.next();
           }
         } else {
-          tokens.push(Token::s_divide);
+          tokens.push(Token::s_divide(location));
         }
       },
       
-      ';' => tokens.push(Token::s_semicolon),
-      '(' => tokens.push(Token::s_lparen),
-      ')' => tokens.push(Token::s_rparen),
-      '{' => tokens.push(Token::s_lbrace),
-      '}' => tokens.push(Token::s_rbrace),
-      '@' => tokens.push(Token::s_mem_lookup),
-      '[' => tokens.push(Token::s_lbracket),
-      ']' => tokens.push(Token::s_rbracket),
-      '&' => tokens.push(Token::s_ampersand),
-      ',' => tokens.push(Token::s_comma),
-      '*' => tokens.push(Token::s_star),
-      
+      ';' => tokens.push(Token::s_semicolon(location)),
+      '(' => tokens.push(Token::s_lparen(location)),
+      ')' => tokens.push(Token::s_rparen(location)),
+      '{' => tokens.push(Token::s_lbrace(location)),
+      '}' => tokens.push(Token::s_rbrace(location)),
+      '@' => tokens.push(Token::s_mem_lookup(location)),
+      '[' => tokens.push(Token::s_lbracket(location)),
+      ']' => tokens.push(Token::s_rbracket(location)),
+      '&' => tokens.push(Token::s_ampersand(location)),
+      ',' => tokens.push(Token::s_comma(location)),
+      '*' => tokens.push(Token::s_star(location)),
+
       '+' => {
         if chars.peek() == Some(&'=') {
           chars.next(); // consume the '='
-          tokens.push(Token::s_plus_equals);          
+          tokens.push(Token::s_plus_equals(location));          
         } else {
-          tokens.push(Token::s_plus)
+          tokens.push(Token::s_plus(location))
         }
       },
       
       '!' => {
         if chars.peek() == Some(&'=') {
-          tokens.push(Token::s_bang_equals);
+          tokens.push(Token::s_bang_equals(location));
           chars.next();
         } else {
-          tokens.push(Token::s_bang)
+          tokens.push(Token::s_bang(location))
         }
       },
       
       '-' => {
         if chars.peek() == Some(&'>') {
           chars.next(); // consume the '>'
-          tokens.push(Token::s_arrow);
+          tokens.push(Token::s_arrow(location));
         } else if chars.peek() == Some(&'=') {
           chars.next(); // consume the '='
-          tokens.push(Token::s_minus_equals);          
+          tokens.push(Token::s_minus_equals(location));          
         } else {
-          tokens.push(Token::s_minus);
+          tokens.push(Token::s_minus(location));
         }
       }
       
       '=' => {
         if chars.peek() == Some(&'=') {
-          tokens.push(Token::s_equalsequals); 
+          tokens.push(Token::s_equalsequals(location)); 
           chars.next();
         } else {
-          tokens.push(Token::s_equals) 
+          tokens.push(Token::s_equals(location)) 
         }
       },
       
       '<' => {
         if chars.peek() == Some(&'=') {
-          tokens.push(Token::s_lte);
+          tokens.push(Token::s_lte(location));
           chars.next();
         } else {
-          tokens.push(Token::s_lt)
+          tokens.push(Token::s_lt(location))
         }
       },
       
       '>' => {
         if chars.peek() == Some(&'=') {
-          tokens.push(Token::s_gte);
+          tokens.push(Token::s_gte(location));
           chars.next();
         } else {
-          tokens.push(Token::s_gt)
+          tokens.push(Token::s_gt(location))
         }
       },
       
@@ -162,19 +167,19 @@ pub fn tokenize(src: &str, file_path: &str) -> Vec<Token> {
           }
         }
         match ident.as_str() {
-          "fn"     => tokens.push(Token::Kw_fn),
-          "reg"    => tokens.push(Token::Kw_reg),
-          "return" => tokens.push(Token::Kw_return),
-          "void" => tokens.push(Token::Kw_void),
-          "if"     => tokens.push(Token::Kw_if),
-          "else"   => tokens.push(Token::Kw_else),
-          "while"  => tokens.push(Token::Kw_while),
-          "for"    => tokens.push(Token::Kw_for),
-          "u8"     => tokens.push(Token::t_u8),
-          "i8"     => tokens.push(Token::t_i8),
-          "u16"    => tokens.push(Token::t_u16),
-          "i16"    => tokens.push(Token::t_i16),
-          _        => tokens.push(Token::l_identifier(ident)),
+          "fn"     => tokens.push(Token::Kw_fn(location)),
+          "reg"    => tokens.push(Token::Kw_reg(location)),
+          "return" => tokens.push(Token::Kw_return(location)),
+          "void" => tokens.push(Token::Kw_void(location)),
+          "if"     => tokens.push(Token::Kw_if(location)),
+          "else"   => tokens.push(Token::Kw_else(location)),
+          "while"  => tokens.push(Token::Kw_while(location)),
+          "for"    => tokens.push(Token::Kw_for(location)),
+          "u8"     => tokens.push(Token::t_u8(location)),
+          "i8"     => tokens.push(Token::t_i8(location)),
+          "u16"    => tokens.push(Token::t_u16(location)),
+          "i16"    => tokens.push(Token::t_i16(location)),
+          _        => tokens.push(Token::l_identifier(ident, location)),
         }
       },
       
@@ -194,7 +199,7 @@ pub fn tokenize(src: &str, file_path: &str) -> Vec<Token> {
           }
           // parse as hex
           let val = i64::from_str_radix(&num[2..], 16).unwrap();
-          tokens.push(Token::l_num(val));
+          tokens.push(Token::l_num(val, location));
         } else {
           while let Some(&next) = chars.peek() {
             if next.is_numeric() {
@@ -204,7 +209,7 @@ pub fn tokenize(src: &str, file_path: &str) -> Vec<Token> {
               break;
             }
           }
-          tokens.push(Token::l_num(num.parse::<i64>().unwrap()));
+          tokens.push(Token::l_num(num.parse::<i64>().unwrap(), location));
         }
       },
       
@@ -214,21 +219,15 @@ pub fn tokenize(src: &str, file_path: &str) -> Vec<Token> {
           if c == '"' { break; }
           s.push(c);
         }
-        tokens.push(Token::l_string(s));
+        tokens.push(Token::l_string(s, location));
       },
       
       // etc
       _ => {
-        eprintln!("unexpected character: {} at {}:{}", c, file_path, line);
-        has_errored = true;
+        eprintln!("Tokenizer error:unexpected character: {} at {}:{}", c, file_path, line);
       }
     }
   }
   
-  if has_errored {
-    process::exit(1);
-  }
-  
-  println!("TOKENS:\n\n{:#?}", tokens.iter().clone());
   tokens
 }

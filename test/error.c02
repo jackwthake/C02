@@ -2,7 +2,6 @@ reg u8 PORTA @ 0x6001;
 reg u8 PORTB @ 0x6000;
 
 u16 monitor_addr = 0x8000;
-u8[16] buffer;
 
 fn scroll_up() -> void {
   monitor_addr += 8;
@@ -16,7 +15,7 @@ fn read_byte(u16 addr) -> u8 {
 fn main() -> void {
   u8 x = 0;
   while x < 16 {
-    buffer[x] = read_byte(monitor_addr);
+    x = read_byte(monitor_addr);
     x += 1;
   }
 }$

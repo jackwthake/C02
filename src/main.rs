@@ -27,7 +27,13 @@ fn main() {
   match fd {
     Ok(contents) => {
       let tokens = tokenizer::tokenize(&contents, path);
-      let _ast = parser::parse(tokens);
+      match parser::parse(tokens) {
+        Ok(ast) => println!("\n\nAST:\n\n{:#?}", ast),
+        Err(err) => {
+          eprintln!("Parse error: {}", err);
+          process::exit(1);
+        }
+      }
     } Err(e) => {
       eprintln!("Error: failed to read file at path {}: {}", path, e);
       process::exit(1);
