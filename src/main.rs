@@ -33,8 +33,8 @@ fn main() {
         Ok(ast) => {
           // Run semantic analysis
           match analyzer::analyze(&ast) {
-            Ok(()) => {
-              let output = generator::generate(ast);
+            Ok(symbol_table) => {
+              let output = generator::generate(ast, symbol_table);
 
               // write output to file with same name but .s extension
               let output_path = path.strip_suffix(".c02").unwrap_or(path).to_owned() + ".s";

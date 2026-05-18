@@ -5,14 +5,14 @@ use crate::parser::{Type, Expr, Stmt, TopLevel, Op};
 #[derive(Clone, Debug)]
 pub enum Symbol {
   Variable { data_type: Type },
-  Register { data_type: Type },
+  Register { data_type: Type, address: u16 },
   Function { params: Vec<(Type, String)>, return_type: Type },
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SymbolTable {
   // Current block's variables
-  local_symbols: HashMap<String, Symbol>,
+  pub local_symbols: HashMap<String, Symbol>,
   // Optional link to the outer enclosing scope
   parent: Option<Box<SymbolTable>>,
 }
@@ -67,7 +67,7 @@ impl SymbolTable {
   pub fn get_type(&self, name: &str) -> Option<Type> {
     match self.lookup(name) {
       Some(Symbol::Variable { data_type }) => Some(data_type.clone()),
-      Some(Symbol::Register { data_type }) => Some(data_type.clone()),
+      Some(Symbol::Register { data_type, .. }) => Some(data_type.clone()),
       Some(Symbol::Function { .. }) | None => None,
     }
   }
@@ -205,7 +205,7 @@ fn infer_expr_type(expr: &Expr, table: &SymbolTable) -> Result<Type, String> {
 }
 
 /// Entry point for semantic analysis
-pub fn analyze(ast: &[TopLevel]) -> Result<(), String> {
+pub fn analyze(ast: &[TopLevel]) -> Result<SymbolTable, String> {
   let mut global_table = SymbolTable::new();
   
   // First pass: register all global declarations (functions and global variables)
@@ -217,8 +217,8 @@ pub fn analyze(ast: &[TopLevel]) -> Result<(), String> {
   for item in ast {
     analyze_toplevel_body(item, &mut global_table)?;
   }
-  
-  Ok(())
+
+  Ok(global_table)
 }
 
 /// First pass: register declarations at global scope
@@ -232,9 +232,10 @@ fn analyze_toplevel_decl(toplevel: &TopLevel, table: &mut SymbolTable) -> Result
       table.insert(name.clone(), symbol)?;
       Ok(())
     }
-    TopLevel::RegDecl(data_type, name, _address) => {
+    TopLevel::RegDecl(data_type, name, address) => {
       let symbol = Symbol::Register {
         data_type: data_type.clone(),
+        address: *address,
       };
       table.insert(name.clone(), symbol)?;
       Ok(())
