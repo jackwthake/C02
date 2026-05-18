@@ -1,5 +1,7 @@
 # C02 Compiler
 
+[![CI](https://github.com/jackwthake/C02/actions/workflows/ci.yml/badge.svg)](https://github.com/jackwthake/C02/actions/workflows/ci.yml)
+
 A systems language compiler for the C02 language, implemented in Rust. It reads `.c02` source files, tokenizes and parses them into an Abstract Syntax Tree (AST), runs an advanced semantic analysis pass, and generates native, high-performance assembly targeted for the *VASM 65C02 Oldstyle Assembler*.
 
 ## What it is

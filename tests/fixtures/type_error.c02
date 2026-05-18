@@ -1,5 +1,5 @@
 fn add_bytes(u16 a, u8 b) -> u8 {
-  return a + b;
+  return (u8)a + b;
 }
 
 fn main() -> void {

@@ -1,0 +1,11 @@
+fn add_bytes(u16 a, u8 b) -> u8 {
+  return (u8)a + b;
+}
+
+fn main() -> void {
+  u8 x = 10;
+  u16 y = 20;
+  u8 z = 5;
+  
+  u8 result = add_bytes(y, x, z);
+}
