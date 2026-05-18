@@ -6,6 +6,7 @@ use std::fs;
 
 mod tokenizer;
 mod parser;
+mod analyzer;
 mod generator;
 
 fn main() {
@@ -30,14 +31,23 @@ fn main() {
       let tokens = tokenizer::tokenize(&contents, path);
       match parser::parse(tokens) {
         Ok(ast) => {
-          let output = generator::generate(ast);
+          // Run semantic analysis
+          match analyzer::analyze(&ast) {
+            Ok(()) => {
+              let output = generator::generate(ast);
 
-          // write output to file with same name but .s extension
-          let output_path = path.strip_suffix(".c02").unwrap_or(path).to_owned() + ".s";
-          fs::write(&output_path, &output).unwrap_or_else(|e| {
-            eprintln!("Error: failed to write output file at path {}: {}", output_path, e);
-            process::exit(1);
-          });
+              // write output to file with same name but .s extension
+              let output_path = path.strip_suffix(".c02").unwrap_or(path).to_owned() + ".s";
+              fs::write(&output_path, &output).unwrap_or_else(|e| {
+                eprintln!("Error: failed to write output file at path {}: {}", output_path, e);
+                process::exit(1);
+              });
+            }
+            Err(err) => {
+              eprintln!("Semantic error: {}", err);
+              process::exit(1);
+            }
+          }
         }
 
         Err(err) => {

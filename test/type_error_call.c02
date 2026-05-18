@@ -1,0 +1,11 @@
+fn add_bytes(u8 a, u8 b) -> u8 {
+  return a + b;
+}
+
+fn main() -> void {
+  u8 x = 10;
+  u16 y = 20;
+  
+  // Type error: passing u16 to function expecting u8
+  u8 result = add_bytes(y, x);
+}

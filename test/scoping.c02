@@ -1,0 +1,24 @@
+reg u8 PORTA @ 0x6001;
+
+fn helper(u8 a, u8 b) -> u8 {
+  return a + b;
+}
+
+fn test_scoping() -> void {
+  u8 x = 5;
+  if (x == 5) {
+    u8 y = 10;
+    y = y + x;  // Both x and y are accessible
+  }
+  // y is out of scope here, so accessing it would be an error
+  y = 10;  // Error: undeclared identifier 'y'
+}
+
+fn main() -> void {
+  u8 result = helper(1, 2);
+  
+  while (result < 10) {
+    u8 temp = result * 2;
+    result = temp;
+  }
+}

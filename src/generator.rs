@@ -1,6 +1,6 @@
 use crate::parser::TopLevel;
 
-pub fn generate(ast: Vec<TopLevel>) -> String {
+pub fn generate(_ast: Vec<TopLevel>) -> String {
   let mut output = String::new();
 
   // load c02rt0.s runtime prelude

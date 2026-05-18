@@ -1,0 +1,14 @@
+fn add_bytes(u16 a, u8 b) -> u8 {
+  return a + b;
+}
+
+fn main() -> void {
+  u8 x = 10;
+  u16 y = 20;
+  
+  // correct
+  u8 result = add_bytes(y, x);
+  
+  // Type error: assigning u8 to u16 variable (should be caught with strict checking)
+  y = x;
+}

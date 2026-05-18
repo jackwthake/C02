@@ -1,0 +1,26 @@
+reg u8 PORTA @ 0x6001;
+reg u8 PORTB @ 0x6000;
+
+u16 monitor_addr = 0x8000;
+
+fn read_byte(u16 addr) -> u8 {
+  u8* ptr = (u8*)addr;
+  return *ptr;
+}
+
+fn main() -> void {
+  u8 x = 0;
+  u8 result = read_byte(monitor_addr);
+  
+  while (x < 16) {
+    x = result;
+    x = x + 1;
+  }
+
+  if (x == 16) {
+    u8 y = 10;
+    y = y * 2;
+  } else {
+    x = 0;
+  }
+}

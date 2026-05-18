@@ -1,0 +1,13 @@
+reg u8 PORTA @ 0x6001;
+
+fn test() -> void {
+  u8 x = 0;
+  u8 x = 5;  // Error: redeclaration in same scope
+}
+
+fn main() -> void {
+  u8 dummy = 0;
+  dummy = 10;  // valid
+}
+
+

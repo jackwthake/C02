@@ -1,0 +1,6 @@
+reg u8 PORTA @ 0x6001;
+
+fn main() -> void {
+  u8 x = 0;
+  x = undeclared_var;
+}

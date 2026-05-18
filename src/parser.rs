@@ -204,7 +204,7 @@ fn expect_symbol(
   }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Type {
   U8,
   I8,
