@@ -1,65 +1,93 @@
 # C02 Compiler
 
-A small compiler for the C02 language, implemented in Rust. It reads `.c02` source files, tokenizes them, parses the resulting token stream, and generates assembly for the *65C02 Microprocessor*.
+A systems language compiler for the C02 language, implemented in Rust. It reads `.c02` source files, tokenizes and parses them into an Abstract Syntax Tree (AST), runs an advanced semantic analysis pass, and generates native, high-performance assembly targeted for the *VASM 65C02 Oldstyle Assembler*.
 
 ## What it is
 
-C02 is a simple, C-like language with basic types, functions, registers, and control flow. The compiler is designed as a minimal learning project rather than a full production tool.
+C02 is a strongly typed, C-like systems programming language designed specifically for resource-constrained 8-bit microprocessors (65C02). It eschews heavy runtimes or interpreted VMs, compiling directly down to tight bare-metal machine instructions.
 
-## Features
+## Key Features & Architecture
 
-- token-level source location tracking
-- parser error reporting with file and line information
-- support for functions, variable declarations, assignments, and control flow
-- Memory Mapped I/O as a first class citizen
+The compiler is built as a complete, modern multi-stage pipeline:
 
-## Usage
+1. **Source Tracking Tokenizer:** Maps characters to discrete tokens while maintaining source locations (file, line, column) for robust compilation errors.
+2. **Recursive Descent Parser:** Transforms the token stream into a structured AST, treating hardware registers and standard controls as first-class grammatical constructs.
+3. **Lexically Scoped Semantic Analyzer:** Implements a type synthesizer and validation engine. It enforces a hierarchical symbol table structure to handle block scoping (`if/else`, `while`), tracking variable lifetimes, validating function signatures, and trapping type mismatches *before* code generation.
+4. **Optimized Code Generator:** Generates valid `vasm6502_oldstyle` assembly. It avoids slow virtual-machine stack execution by mapping parameters and expression scratchpads directly onto a high-performance zero-page register design.
 
-### Compiling the toolchain
+### Zero-Page Hardware-Register Layout
 
-```bash
+To maximize compilation density and execution speed, the code generator reserves and maps lower RAM (`$0000–$00FF`, **The Zero Page**) to form a virtual register file:
+
+| Address Range | Identifier | Purpose |
+| :--- | :--- | :--- |
+| **`$00` – `$03`** | `SP`, `FP` | **Software Stack & Frame Pointers:** Tracks multi-byte local variable frames in main RAM. |
+| **`$04` – `$1F`** | `r0` – `r13` | **Virtual Registers:** General 16-bit high-speed scratchpads for nested expression evaluation. |
+| **`$20` – `$2F`** | `args0` – `args7` | **Function ABI Zone:** Rapid parameter passing into function bounds without stack overhead. |
+| **`$30` – `$33`** | `src`, `dest` | **Blitting Pointers:** Dedicated 16-bit windows for hardware-accelerated memory block copies. |
+| **`$34` – `$3F`** | `sys_flags` | **System Status Flags:** Global bitmasks for fast 65C02 bit-testing routines. |
+| **`$40` – `$FF`** | `usr_space` | **User Space:** Globals and variable caching up to the programmers discretion. |
+
+---
+
+## Language Specifications
+
+### Basic Types
+
+- `u8` / `i8`: 8-bit integers (unsigned / signed)
+- `u16` / `i16`: 16-bit integers (unsigned / signed)
+- `void`: Function return types with no payload.
+- Pointer Types: Explicit address variables (e.g., `u16 *addr`).
+
+### Memory Mapped I/O (`reg`)
+
+Hardware interface registers are pinned directly to absolute memory bounds. Interacting with them compiles straight to ultra-fast absolute addressing instructions (`STA`, `LDA`), bypassing memory allocation entirely.
+
+```c
+reg u8 PORTA @ 0x6001;
+reg u8 PORTB @ 0x6000;
+```
+
+## Compilation Example
+
+Given a valid .c02 source snippet:
+
+```c
+u16 monitor_addr = 0x8000;
+
+fn read_byte(u16 addr) -> u8 {
+  u8* ptr = (u8*)addr;
+  return *ptr;
+}
+
+fn main() -> void {
+  u8 x = 0;
+  x = read_byte(monitor_addr);
+}
+```
+
+The compiler evaluates scope boundaries, types, and emits optimized structural loops and operations targeting the vasm compiler output.
+
+## Toolchain Usage
+
+### Compiling the Compiler & Submodules
+
+```shell
 git submodule update --init --recursive
 cd ext/vasm
 make CPU=6502 SYNTAX=oldstyle
 cd ../../
+
+# Compile the C02 compiler binary
 cargo build
 ```
 
-### Run the compiler with a `.c02` source file
+### Running the Compilation Driver Script
 
-```bash
-cc02 <path/to/file.c02>
+The included cc02 wrapper script compiles your source code through the compiler pipeline, outputs an assembly file (.s), and automatically processes it via vasm into a bare-metal binary container (.bin).
+
+```Bash
+./cc02 test/valid.c02
 ```
 
-If parsing fails, the compiler reports the error and the source location in a format compatible with terminal editors.
-
-## Example
-
-A basic C02 function looks like this:
-
-```c
-reg u8 PORTB @ 0x6000;
-
-fn main() -> void {
-  PORTB = 0x69; // set address 0x6000 to 0x69
-  return;
-}
-```
-
-## Local VS Code setup
-
-To test the C02 syntax support locally:
-
-1. Open the `C02` folder in VS Code.
-2. Press `F5` to launch an Extension Development Host.
-3. Open a `.c02` file in the new host window.
-
-If you want quick generic highlighting without installing the extension, add this to workspace settings:
-
-```json
-{
-  "files.associations": {
-    "*.c02": "c"
-  }
-}
-```
+If compilation, syntax checking, or type scoping fail at any point, detailed error locations are written back to stderr using editor-compatible tracking standards.
