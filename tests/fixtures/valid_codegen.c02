@@ -3,7 +3,7 @@ reg u8 DDRB @ 0x6002;
 reg u8 TESTRAM @ 0x7FFD;
 
 fn main() -> void {
-    DDRB = 0xFF;
-    TESTRAM = 0xAA;
-    PORTB = TESTRAM + 0x55;
+  DDRB = 0xFF;
+  TESTRAM = 0xAA;
+  PORTB = TESTRAM + 0x55;
 }
