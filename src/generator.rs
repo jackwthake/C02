@@ -1,7 +1,15 @@
+
 use crate::parser::{TopLevel, Expr, Stmt, Op, Type};
 use crate::analyzer::{SymbolTable, Symbol};
 
 use std::collections::HashMap;
+use serde::Deserialize;
+
+#[derive(Debug, Deserialize)]
+pub struct Memory_Map {
+  soft_stack_start: u16, // start of software stack in main RAM
+  rom_start: u16, // start of ROM where code is emitted
+}
 
 struct Generator {
   output: String,
@@ -343,12 +351,38 @@ impl Generator {
   }
 }
 
-pub fn generate(ast: Vec<TopLevel>, symbol_table: SymbolTable) -> String {
+pub fn generate(ast: Vec<TopLevel>, symbol_table: SymbolTable, mem_map: Memory_Map) -> String {
   let mut generator = Generator::new(symbol_table);
   
   generator.emit(include_str!("../c02rt/reg.s"));
   generator.emit(include_str!("../c02rt/c02_vectors.s"));
+
+  generator.emit(&format!(
+    "; =============================================================================
+; RUNTIME STARTUP CODE
+; =============================================================================
+
+  .org ${:04X}",
+    mem_map.rom_start
+  ));
+
   generator.emit(include_str!("../c02rt/c02rt0.s"));
+
+  let soft_stack = mem_map.soft_stack_start;
+  let low_byte = soft_stack & 0xFF;          
+  let high_byte = (soft_stack >> 8) & 0xFF;  
+
+  generator.emit(&format!(
+  "    ; --- Initialize Software Stack Pointer (SP) ---
+    ; software stack grows down from ${:04X} in main RAM
+    LDA #${:02X}
+    STA SP          ; Low byte of ${:04X}
+    LDA #${:02X}
+    STA SP+1        ; High byte of ${:04X}",
+      soft_stack, low_byte, soft_stack, high_byte, soft_stack
+  ));
+
+  generator.emit(include_str!("../c02rt/c02rt0_end.s"));
   
   for item in &ast {
     generator.gen_toplevel(item);

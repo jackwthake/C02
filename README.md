@@ -84,6 +84,17 @@ cd ../../
 cargo build
 ```
 
+### Memory Map Config File, `c02_config.ron`
+
+The compiler will look for a `.ron` (Rusty Object Notation) file containing the memory map for the target in whatever base directory `cc02` gets invoked in. This file defines how the compiler will format the outputted assembly. This is a sample config that fits the specs of the Ben Eater Kit Computer:
+
+```ron
+Memory_Map(
+  soft_stack_start: 0x0FFF, // can be any address that resolves to ram
+  rom_start: 0x8000
+)
+```
+
 ### Running the Compilation Driver Script
 
 The included cc02 wrapper script compiles your source code through the compiler pipeline, outputs an assembly file (.s), and automatically processes it via vasm into a bare-metal binary container (.bin).
