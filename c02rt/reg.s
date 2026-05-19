@@ -4,14 +4,13 @@
 
 ; Stack and Frame Trackers
 SP        = $00
-FP        = $02
 
-; Virtual Compiler Registers ($1E-$1F)
-r0        = $04
-r1        = $06
-r2        = $08
-r3        = $0A
-r4        = $0C
+; Virtual Compiler Registers ($02-$1E)
+r0        = $02
+r1        = $04
+r2        = $06
+r3        = $08
+r4        = $0A
 r5        = $0E
 r6        = $10
 r7        = $12
@@ -22,7 +21,7 @@ r11       = $1A
 r12       = $1C
 r13       = $1E
 
-; Function Argument ABI ($2E-$2F)
+; Function Argument ABI ($20-$2E)
 args0     = $20
 args1     = $22
 args2     = $24

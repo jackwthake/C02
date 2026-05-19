@@ -8,8 +8,8 @@ struct Generator {
   reg_depth: usize,
   label_count: usize,
   symbol_table: SymbolTable,
-  local_offsets: HashMap<String, (u8, Type)>,  // name -> FP offset
-  current_frame_size: u8,              // grows as we encounter VarDecls
+  local_offsets: HashMap<String, (u8, Type)>,  // name -> FP offset, type
+  current_frame_size: u8,                      // grows as we encounter VarDecls
 }
 
 impl Generator {
@@ -31,25 +31,23 @@ impl Generator {
   
   fn emit_local_store(&mut self, name: &str, data_type: &Type) {
     let (offset, _t) = self.local_offsets.get(name)
-    .map(|(offset, t)| (*offset, t.clone())) // Copy the integer, clone the Type
+    .map(|(offset, t)| (*offset, t.clone()))
     .expect("local_store called for undeclared local");
-    
+    let reg = format!("r{}", self.reg_depth);
     
     match data_type {
       Type::U8 | Type::I8 => {
         self.emit(&format!("  LDY #${:02X}", offset));
-        self.emit("  LDA r0");
-        self.emit("  STA (FP),Y");
+        self.emit(&format!("  LDA {}", reg)); 
+        self.emit("  STA (SP),Y");
       }
       Type::U16 | Type::I16 => {
-        // low byte
         self.emit(&format!("  LDY #${:02X}", offset));
-        self.emit("  LDA r0");
-        self.emit("  STA (FP),Y");
-        // high byte
-        self.emit(&format!("  LDY #${:02X}", offset + 1));
-        self.emit("  LDA r0+1");
-        self.emit("  STA (FP),Y");
+        self.emit(&format!("  LDA {}", reg));
+        self.emit("  STA (SP),Y");
+        self.emit(&format!("  LDY #${:02X}", offset.wrapping_add(1)));
+        self.emit(&format!("  LDA {}+1", reg));
+        self.emit("  STA (SP),Y");
       }
       _ => unreachable!()
     }
@@ -57,24 +55,22 @@ impl Generator {
   
   fn emit_local_load(&mut self, name: &str, data_type: &Type) {
     let (offset, _t) = self.local_offsets.get(name)
-    .map(|(offset, t)| (*offset, t.clone())) // Copy the integer, clone the Type
+    .map(|(offset, t)| (*offset, t.clone()))
     .expect("local_load called for undeclared local");
     let reg = format!("r{}", self.reg_depth);
     
     match data_type {
       Type::U8 | Type::I8 => {
         self.emit(&format!("  LDY #${:02X}", offset));
-        self.emit("  LDA (FP),Y");
+        self.emit("  LDA (SP),Y");
         self.emit(&format!("  STA {}", reg));
-        self.emit(&format!("  LDA #$00"));
-        self.emit(&format!("  STA {}+1", reg));
       }
       Type::U16 | Type::I16 => {
         self.emit(&format!("  LDY #${:02X}", offset));
-        self.emit("  LDA (FP),Y");
+        self.emit("  LDA (SP),Y");
         self.emit(&format!("  STA {}", reg));
-        self.emit(&format!("  LDY #${:02X}", offset + 1));
-        self.emit("  LDA (FP),Y");
+        self.emit(&format!("  LDY #${:02X}", offset.wrapping_add(1)));
+        self.emit("  LDA (SP),Y");
         self.emit(&format!("  STA {}+1", reg));
       }
       _ => unreachable!()
@@ -103,38 +99,57 @@ impl Generator {
   
   fn gen_function(&mut self, name: &str, params: &[(Type, String)], ret: &Type, body: &[Stmt]) {
     self.emit(&format!("_{}:", name));
+    self.local_offsets.clear();
+    self.current_frame_size = 0;
     
-    // pre-scan to calculate frame size
-    let frame_size = self.calc_frame_size(body);
-    
-    if frame_size > 0 {
-      // adjust FP down so locals don't overflow into ROM
-      self.emit(&format!("  LDA FP"));
-      self.emit(&format!("  SEC"));
-      self.emit(&format!("  SBC #${:02X}", frame_size));
-      self.emit(&format!("  STA FP"));
-      self.emit(&format!("  LDA FP+1"));
-      self.emit(&format!("  SBC #$00"));
-      self.emit(&format!("  STA FP+1"));
-    }
-    
+    // build variable offsets upwards starting exactly at 0
+    let mut total_frame_size = 0u8;
     for stmt in body {
-      self.gen_stmt(stmt);
-    }
-  }
-  
-  fn calc_frame_size(&self, body: &[Stmt]) -> u8 {
-    let mut size = 0u8;
-    for stmt in body {
-      if let Stmt::VarDecl(data_type, _, _) = stmt {
+      if let Stmt::VarDecl(data_type, var_name, _) = stmt {
+        self.local_offsets.insert(var_name.clone(), (total_frame_size, data_type.clone()));
         match data_type {
-          Type::U8 | Type::I8 => size += 1,
-          Type::U16 | Type::I16 => size += 2,
+          Type::U8 | Type::I8 => total_frame_size += 1,
+          Type::U16 | Type::I16 => total_frame_size += 2,
           _ => {}
         }
       }
     }
-    size
+    
+    assert!(total_frame_size < 250, "Stack frame exceeded 250 bytes!");
+    
+    // generate function prologue for stack pointer if local variables are found
+    if total_frame_size > 0 {
+      self.emit("  ; --- Function Prologue ---");
+      self.emit("  LDA SP");
+      self.emit("  SEC");
+      self.emit(&format!("  SBC #${:02X}", total_frame_size));
+      self.emit("  STA SP");
+      self.emit("  LDA SP+1");
+      self.emit("  SBC #$00");
+      self.emit("  STA SP+1");
+      self.emit("  ; -------------------------\n");
+    }
+    
+    // generate function body
+    for stmt in body {
+      self.gen_stmt(stmt);
+    }
+    
+    // Stack Frame Clean-up
+    // main never needs to clean up the stack because if main returns, execution stops
+    if total_frame_size > 0 && !matches!(name, "main") {
+      self.emit("\n  ; --- Function Epilogue ---");
+      self.emit("  LDA SP");
+      self.emit("  CLC");
+      self.emit(&format!("  ADC #${:02X}", total_frame_size));
+      self.emit("  STA SP");
+      self.emit("  LDA SP+1");
+      self.emit("  ADC #$00");
+      self.emit("  STA SP+1");
+      self.emit("  ; -------------------------");
+    }
+    
+    self.emit("  RTS");
   }
   
   fn gen_stmt(&mut self, stmt: &Stmt) {
@@ -170,18 +185,8 @@ impl Generator {
         self.emit("  RTS");
       }
       Stmt::VarDecl(data_type, name, initializer) => {
-        // allocate space on software stack
-        let offset = self.current_frame_size;
-        self.local_offsets.insert(name.clone(), (offset, data_type.clone()));
-        
-        // grow frame by type width
-        match data_type {
-          Type::U8 | Type::I8 => self.current_frame_size += 1,
-          Type::U16 | Type::I16 => self.current_frame_size += 2,
-          _ => unreachable!()
-        }
-        
-        // if there's an initializer evaluate and store it
+        // Offsets are already calculated in pre-scan pass!
+        // Just evaluate the optional initializer expression and write to memory
         if let Some(expr) = initializer {
           self.reg_depth = 0;
           self.gen_expr(expr);

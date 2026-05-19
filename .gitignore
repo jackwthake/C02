@@ -3,3 +3,4 @@
 *.out
 tests/fixtures/*.s
 tests/cli
+.vscode/settings.json
