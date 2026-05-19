@@ -3,5 +3,7 @@ reg u8 DDRB @ 0x6002;
 
 fn main() -> void {
   DDRB = 0xFF;
-  PORTB = 0xFF;
+  PORTB = DDRB;
+
+  u8 val = PORTB;
 }
