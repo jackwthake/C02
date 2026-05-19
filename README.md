@@ -23,8 +23,8 @@ To maximize compilation density and execution speed, the code generator reserves
 
 | Address Range | Identifier | Purpose |
 | :--- | :--- | :--- |
-| **`$00` – `$03`** | `SP`, `FP` | **Software Stack & Frame Pointers:** Tracks multi-byte local variable frames in main RAM. |
-| **`$04` – `$1F`** | `r0` – `r13` | **Virtual Registers:** General 16-bit high-speed scratchpads for nested expression evaluation. |
+| **`$00`** | `SP` | **Software Stack Pointer:** Tracks multi-byte local variable frames in main RAM. |
+| **`$02` – `$1F`** | `r0` – `r14` | **Virtual Registers:** General 16-bit high-speed scratchpads for nested expression evaluation. |
 | **`$20` – `$2F`** | `args0` – `args7` | **Function ABI Zone:** Rapid parameter passing into function bounds without stack overhead. |
 | **`$30` – `$33`** | `src`, `dest` | **Blitting Pointers:** Dedicated 16-bit windows for hardware-accelerated memory block copies. |
 | **`$34` – `$3F`** | `sys_flags` | **System Status Flags:** Global bitmasks for fast 65C02 bit-testing routines. |
