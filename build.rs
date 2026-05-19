@@ -50,7 +50,7 @@ fn main() {
             .display()
             .to_string()
             .replace('\\', "/");
-        let expected = if file_stem == "valid" {
+        let expected = if file_stem.starts_with("valid") {
             "ExpectedOutcome::Success"
         } else {
             "ExpectedOutcome::Failure"

@@ -1,4 +1,5 @@
 /target
 *.vsix
 *.out
-test/*.s
+tests/fixtures/*.s
+tests/cli
