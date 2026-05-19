@@ -62,7 +62,7 @@ impl SymbolTable {
       None // Variable does not exist anywhere
     }
   }
-
+  
   // Helper: Get the type of a symbol by name
   pub fn get_type(&self, name: &str) -> Option<Type> {
     match self.lookup(name) {
@@ -92,14 +92,19 @@ fn types_compatible(expected: &Type, actual: &Type) -> bool {
 fn expr_assignable_to(expected: &Type, expr: &Expr, table: &SymbolTable) -> Result<bool, String> {
   match expr {
     Expr::Number(_) => {
-      // Numeric literals can be assigned to any integer type
+      match expected {
+        Type::U8 | Type::I8 | Type::U16 | Type::I16 => Ok(true),
+        _ => Ok(false),
+      }
+    }
+    // ADD THIS MATCH: If the expression is a binary operation on two numbers, allow it to assign to a u8
+    Expr::BinOp(left, _, right) if matches!(left.as_ref(), Expr::Number(_)) && matches!(right.as_ref(), Expr::Number(_)) => {
       match expected {
         Type::U8 | Type::I8 | Type::U16 | Type::I16 => Ok(true),
         _ => Ok(false),
       }
     }
     _ => {
-      // For other expressions, require exact type compatibility
       let expr_type = infer_expr_type(expr, table)?;
       Ok(types_compatible(expected, &expr_type))
     }
@@ -217,7 +222,7 @@ pub fn analyze(ast: &[TopLevel]) -> Result<SymbolTable, String> {
   for item in ast {
     analyze_toplevel_body(item, &mut global_table)?;
   }
-
+  
   Ok(global_table)
 }
 
