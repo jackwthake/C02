@@ -1,0 +1,14 @@
+reg u8 PORTB @ 0x6000;
+reg u8 DDRB @ 0x6002;
+
+fn main() -> void {
+  DDRB = 0xFF;
+  u8 x = 0;
+  
+  PORTB = 0;
+  
+  while (1) {
+    x = x + 1;
+    PORTB = x;
+  }
+}

@@ -183,15 +183,18 @@ impl Generator {
           }
         }
       }
+
       Stmt::Return(None) => {
         self.emit("  RTS");
       }
+
       Stmt::Return(Some(expr)) => {
         self.reg_depth = 0;
         self.gen_expr(expr);
         // return value convention — leave in r0
         self.emit("  RTS");
       }
+
       Stmt::VarDecl(data_type, name, initializer) => {
         // Offsets are already calculated in pre-scan pass!
         // Just evaluate the optional initializer expression and write to memory
@@ -201,7 +204,43 @@ impl Generator {
           self.emit_local_store(name, data_type);
         }
       }
-      _ => todo!("stmt")
+
+      Stmt::If(cond_expr, then_stmts, else_stmts) => {
+        todo!("if statement codegen")
+      }
+
+      Stmt::While(cond_expr, body_stmts) => {
+        let start_label = self.fresh_label();
+        let body_label = self.fresh_label();
+        let end_label = self.fresh_label();
+
+        self.emit("\n  ; --- While Loop (Long Branch Protected) ---");
+        
+        // loop start point
+        self.emit(&format!("{}:", start_label));
+
+        // evaluate condition (leaves 0x01 or 0x00 in r0)
+        self.reg_depth = 0;
+        self.gen_expr(cond_expr);
+
+        // If r0 is NOT zero (true), jump straight into the body
+        self.emit("  LDA r0");
+        self.emit(&format!("  BNE {}", body_label));
+        // Otherwise, execute a full 16-bit jump to escape the loop
+        self.emit(&format!("  JMP {}", end_label));
+
+        // loop Body
+        self.emit(&format!("{}:", body_label));
+        for stmt in body_stmts {
+          self.gen_stmt(stmt);
+        }
+
+        // unconditional jump back to start
+        self.emit(&format!("  JMP {}", start_label));
+
+        // loop exit point
+        self.emit(&format!("{}:", end_label));
+      }
     }
   }
   
@@ -385,6 +424,7 @@ pub fn generate(ast: Vec<TopLevel>, symbol_table: SymbolTable, mem_map: Memory_M
   generator.emit(include_str!("../c02rt/c02rt0_end.s"));
   
   for item in &ast {
+    generator.reg_depth = 0; // reset register depth for each top-level item
     generator.gen_toplevel(item);
   }
   
