@@ -97,7 +97,7 @@ fn expr_assignable_to(expected: &Type, expr: &Expr, table: &SymbolTable) -> Resu
         _ => Ok(false),
       }
     }
-    // ADD THIS MATCH: If the expression is a binary operation on two numbers, allow it to assign to a u8
+    // If the expression is a binary operation on two numbers, allow it to assign to a u8
     Expr::BinOp(left, _, right) if matches!(left.as_ref(), Expr::Number(_)) && matches!(right.as_ref(), Expr::Number(_)) => {
       match expected {
         Type::U8 | Type::I8 | Type::U16 | Type::I16 => Ok(true),

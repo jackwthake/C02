@@ -8,7 +8,8 @@ fn main() -> void {
   PORTB = 0;
   
   while (1) {
-    x = x + 1;
+    u8 y = 0;
+    x = x + 1 + y;
     PORTB = x;
   }
 }

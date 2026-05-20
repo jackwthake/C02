@@ -43,6 +43,8 @@ impl Generator {
     .expect("local_store called for undeclared local");
     let reg = format!("r{}", self.reg_depth);
     
+    self.emit(&format!("; --- Store Local '{}' at offset ${:02X} ---", name, offset));
+    
     match data_type {
       Type::U8 | Type::I8 => {
         self.emit(&format!("  LDY #${:02X}", offset));
@@ -66,6 +68,8 @@ impl Generator {
     .map(|(offset, t)| (*offset, t.clone()))
     .expect("local_load called for undeclared local");
     let reg = format!("r{}", self.reg_depth);
+
+    self.emit(&format!("; --- Load Local '{}' from offset ${:02X} ---", name, offset));
     
     match data_type {
       Type::U8 | Type::I8 => {
@@ -104,6 +108,34 @@ impl Generator {
       }
     }
   }
+
+  fn calc_frame_size(&mut self, stmts: &[Stmt], curr_size: u8) -> u8 {
+    let mut size = curr_size;
+    for stmt in stmts {
+      match stmt {
+        Stmt::Assign(_, _) | Stmt::Return(_) => {} // no size impact
+        Stmt::While(_, body) => {
+          size = self.calc_frame_size(body, size)
+        }
+
+        Stmt::If(_, body, else_body) => {
+          size = self.calc_frame_size(body, size);
+          if let Some(else_stmts) = else_body {
+            size = self.calc_frame_size(else_stmts, size);
+          }
+        }
+        Stmt::VarDecl(data_type, var_name, _) => {
+          self.local_offsets.insert(var_name.clone(), (size, data_type.clone()));
+          size += match data_type {
+            Type::U8 | Type::I8 => 1,
+            Type::U16 | Type::I16 => 2,
+            _ => 0,
+          }
+        }
+      }
+    }
+    size
+  }
   
   fn gen_function(&mut self, name: &str, params: &[(Type, String)], ret: &Type, body: &[Stmt]) {
     self.emit(&format!("_{}:", name));
@@ -111,23 +143,12 @@ impl Generator {
     self.current_frame_size = 0;
     
     // build variable offsets upwards starting exactly at 0
-    let mut total_frame_size = 0u8;
-    for stmt in body {
-      if let Stmt::VarDecl(data_type, var_name, _) = stmt {
-        self.local_offsets.insert(var_name.clone(), (total_frame_size, data_type.clone()));
-        match data_type {
-          Type::U8 | Type::I8 => total_frame_size += 1,
-          Type::U16 | Type::I16 => total_frame_size += 2,
-          _ => {}
-        }
-      }
-    }
-    
+    let total_frame_size = self.calc_frame_size(body, 0);
     assert!(total_frame_size < 250, "Stack frame exceeded 250 bytes!");
     
     // generate function prologue for stack pointer if local variables are found
     if total_frame_size > 0 {
-      self.emit("  ; --- Function Prologue ---");
+      self.emit("; --- Function Prologue ---");
       self.emit("  LDA SP");
       self.emit("  SEC");
       self.emit(&format!("  SBC #${:02X}", total_frame_size));
@@ -135,7 +156,7 @@ impl Generator {
       self.emit("  LDA SP+1");
       self.emit("  SBC #$00");
       self.emit("  STA SP+1");
-      self.emit("  ; -------------------------\n");
+      self.emit("; -------------------------\n");
     }
     
     // generate function body
@@ -146,7 +167,7 @@ impl Generator {
     // Stack Frame Clean-up
     // main never needs to clean up the stack because if main returns, execution stops
     if total_frame_size > 0 && !matches!(name, "main") {
-      self.emit("\n  ; --- Function Epilogue ---");
+      self.emit("\n; --- Function Epilogue ---");
       self.emit("  LDA SP");
       self.emit("  CLC");
       self.emit(&format!("  ADC #${:02X}", total_frame_size));
@@ -154,7 +175,7 @@ impl Generator {
       self.emit("  LDA SP+1");
       self.emit("  ADC #$00");
       self.emit("  STA SP+1");
-      self.emit("  ; -------------------------");
+      self.emit("; -------------------------");
     }
     
     self.emit("  RTS");
@@ -173,6 +194,7 @@ impl Generator {
           let symbol = self.symbol_table.local_symbols.get(name).cloned();
           match symbol {
             Some(Symbol::Register { address, .. }) => {
+              self.emit(&format!("; --- register write at addr: {:04X}", address));
               self.emit("  LDA r0");
               self.emit(&format!("  STA ${:04X}", address));
             }
@@ -214,7 +236,7 @@ impl Generator {
         let body_label = self.fresh_label();
         let end_label = self.fresh_label();
 
-        self.emit("\n  ; --- While Loop (Long Branch Protected) ---");
+        self.emit("\n  ; --- While Loop");
         
         // loop start point
         self.emit(&format!("{}:", start_label));
@@ -304,6 +326,7 @@ impl Generator {
         
         match op {
           Op::Plus => {
+            self.emit(&format!("; --- {} + {}", reg, right_reg));
             self.emit("  CLC");
             self.emit(&format!("  LDA {}", reg));
             self.emit(&format!("  ADC {}", right_reg));
@@ -313,6 +336,7 @@ impl Generator {
             self.emit(&format!("  STA {}+1", reg));
           }
           Op::Minus => {
+            self.emit(&format!("; --- {} - {}", reg, right_reg));
             self.emit("  SEC");
             self.emit(&format!("  LDA {}", reg));
             self.emit(&format!("  SBC {}", right_reg));
@@ -325,6 +349,7 @@ impl Generator {
             // 65C02 has no MUL instruction — software multiply routine
             // load args into ABI registers and JSR to a runtime helper
             // leave result in reg
+            self.emit(&format!("; --- {} * {}", reg, right_reg));
             self.emit(&format!("  LDA {}", reg));
             self.emit(&format!("  STA args0"));
             self.emit(&format!("  LDA {}+1", reg));
@@ -341,6 +366,7 @@ impl Generator {
             self.emit(&format!("  STA {}+1", reg));
           }
           Op::Divide => {
+            self.emit(&format!("; --- {} / {}", reg, right_reg));
             // same pattern as multiply but JSR __div16
             self.emit(&format!("  LDA {}", reg));
             self.emit(&format!("  STA args0"));
@@ -358,6 +384,7 @@ impl Generator {
           }
           // comparison ops — return 0 or 1 in reg
           Op::EqualsEquals => {
+            self.emit(&format!("; --- {} == {}", reg, right_reg));
             let false_label = self.fresh_label();
             let end_label = self.fresh_label();
             // compare low bytes
