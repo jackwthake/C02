@@ -1,0 +1,18 @@
+reg u8 PORTB @ 0x6000;
+reg u8 DDRB @ 0x6002;
+
+fn main() -> void {
+  u8 x = 0xFF;
+  DDRB = x;
+
+  if (DDRB == x) {
+    PORTB = x;
+
+    if (PORTB == 1) {
+      x = 0xAA;
+      PORTB = x;
+    } else { // TODO: why doesnt this else trigger?
+      PORTB = 15;
+    }
+  }
+}

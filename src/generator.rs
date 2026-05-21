@@ -68,7 +68,7 @@ impl Generator {
     .map(|(offset, t)| (*offset, t.clone()))
     .expect("local_load called for undeclared local");
     let reg = format!("r{}", self.reg_depth);
-
+    
     self.emit(&format!("; --- Load Local '{}' from offset ${:02X} ---", name, offset));
     
     match data_type {
@@ -76,6 +76,8 @@ impl Generator {
         self.emit(&format!("  LDY #${:02X}", offset));
         self.emit("  LDA (SP),Y");
         self.emit(&format!("  STA {}", reg));
+        self.emit("  LDA #$00");
+        self.emit(&format!("  STA {}+1", reg));
       }
       Type::U16 | Type::I16 => {
         self.emit(&format!("  LDY #${:02X}", offset));
@@ -108,7 +110,7 @@ impl Generator {
       }
     }
   }
-
+  
   fn calc_frame_size(&mut self, stmts: &[Stmt], curr_size: u8) -> u8 {
     let mut size = curr_size;
     for stmt in stmts {
@@ -117,7 +119,7 @@ impl Generator {
         Stmt::While(_, body) => {
           size = self.calc_frame_size(body, size)
         }
-
+        
         Stmt::If(_, body, else_body) => {
           size = self.calc_frame_size(body, size);
           if let Some(else_stmts) = else_body {
@@ -205,18 +207,18 @@ impl Generator {
           }
         }
       }
-
+      
       Stmt::Return(None) => {
         self.emit("  RTS");
       }
-
+      
       Stmt::Return(Some(expr)) => {
         self.reg_depth = 0;
         self.gen_expr(expr);
         // return value convention — leave in r0
         self.emit("  RTS");
       }
-
+      
       Stmt::VarDecl(data_type, name, initializer) => {
         // Offsets are already calculated in pre-scan pass!
         // Just evaluate the optional initializer expression and write to memory
@@ -226,40 +228,67 @@ impl Generator {
           self.emit_local_store(name, data_type);
         }
       }
-
+      
       Stmt::If(cond_expr, then_stmts, else_stmts) => {
-        todo!("if statement codegen")
-      }
+        let then_block = self.fresh_label();
+        let end_if = self.fresh_label();
+        self.emit("\n  ; --- If");
+        self.gen_expr(cond_expr);
+        
+        self.emit(&format!("  LDA r{}", self.reg_depth));
+        self.emit(&format!("  BNE {}", then_block));
+        
+        match else_stmts {
+          Some(else_body) => {
+            self.emit("\n  ; --- else block");
+            for stmt in else_body {
+              self.gen_stmt(stmt);
+            }
 
+            self.emit(&format!("  JMP {}", end_if));
+          }
+          _ => {
+            self.emit(&format!("  JMP {}", end_if));
+          }
+        }
+        
+        self.emit(&format!("{}:   ; then block", then_block));
+        
+        for stmt in then_stmts {
+          self.gen_stmt(stmt);
+        }
+        
+        self.emit(&format!("{}:", end_if));
+      }
+      
       Stmt::While(cond_expr, body_stmts) => {
         let start_label = self.fresh_label();
         let body_label = self.fresh_label();
         let end_label = self.fresh_label();
-
+        
         self.emit("\n  ; --- While Loop");
         
         // loop start point
         self.emit(&format!("{}:", start_label));
-
+        
         // evaluate condition (leaves 0x01 or 0x00 in r0)
-        self.reg_depth = 0;
+        // self.reg_depth = 0;
         self.gen_expr(cond_expr);
-
-        // If r0 is NOT zero (true), jump straight into the body
-        self.emit("  LDA r0");
+        
+        self.emit(&format!("  LDA r{}", self.reg_depth));
         self.emit(&format!("  BNE {}", body_label));
         // Otherwise, execute a full 16-bit jump to escape the loop
         self.emit(&format!("  JMP {}", end_label));
-
+        
         // loop Body
         self.emit(&format!("{}:", body_label));
         for stmt in body_stmts {
           self.gen_stmt(stmt);
         }
-
+        
         // unconditional jump back to start
         self.emit(&format!("  JMP {}", start_label));
-
+        
         // loop exit point
         self.emit(&format!("{}:", end_label));
       }
@@ -408,6 +437,31 @@ impl Generator {
             self.emit(&format!("  STA {}+1", reg));
             self.emit(&format!("{}:", end_label));
           }
+          Op::BangEquals => {
+            self.emit(&format!("; --- {} != {}", reg, right_reg));
+            let true_label = self.fresh_label();
+            let end_label = self.fresh_label();
+            // compare low bytes
+            self.emit(&format!("  LDA {}", reg));
+            self.emit(&format!("  CMP {}", right_reg));
+            self.emit(&format!("  BNE {}", true_label));
+            // compare high bytes
+            self.emit(&format!("  LDA {}+1", reg));
+            self.emit(&format!("  CMP {}+1", right_reg));
+            self.emit(&format!("  BNE {}", true_label));
+            // false case
+            self.emit(&format!("  LDA #$00"));
+            self.emit(&format!("  STA {}", reg));
+            self.emit(&format!("  STA {}+1", reg));
+            self.emit(&format!("  JMP {}", end_label));
+            // true case
+            self.emit(&format!("{}:", true_label));
+            self.emit(&format!("  LDA #$01"));
+            self.emit(&format!("  STA {}", reg));
+            self.emit(&format!("  LDA #$00"));
+            self.emit(&format!("  STA {}+1", reg));
+            self.emit(&format!("{}:", end_label));
+          }
           _ => todo!("op")
         }
       }
@@ -422,32 +476,32 @@ pub fn generate(ast: Vec<TopLevel>, symbol_table: SymbolTable, mem_map: Memory_M
   
   generator.emit(include_str!("../c02rt/reg.s"));
   generator.emit(include_str!("../c02rt/c02_vectors.s"));
-
+  
   generator.emit(&format!(
     "; =============================================================================
 ; RUNTIME STARTUP CODE
 ; =============================================================================
-
+    
   .org ${:04X}",
     mem_map.rom_start
   ));
-
+  
   generator.emit(include_str!("../c02rt/c02rt0.s"));
-
+  
   let soft_stack = mem_map.soft_stack_start;
   let low_byte = soft_stack & 0xFF;          
   let high_byte = (soft_stack >> 8) & 0xFF;  
-
+  
   generator.emit(&format!(
-  "    ; --- Initialize Software Stack Pointer (SP) ---
+    "    ; --- Initialize Software Stack Pointer (SP) ---
     ; software stack grows down from ${:04X} in main RAM
     LDA #${:02X}
     STA SP          ; Low byte of ${:04X}
     LDA #${:02X}
     STA SP+1        ; High byte of ${:04X}",
-      soft_stack, low_byte, soft_stack, high_byte, soft_stack
+    soft_stack, low_byte, soft_stack, high_byte, soft_stack
   ));
-
+  
   generator.emit(include_str!("../c02rt/c02rt0_end.s"));
   
   for item in &ast {

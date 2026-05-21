@@ -1,4 +1,4 @@
 Memory_Map(
-  soft_stack_start: 0x0FFF,
+  soft_stack_start: 4095,
   rom_start: 0x8000
 )

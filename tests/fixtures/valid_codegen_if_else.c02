@@ -1,0 +1,16 @@
+reg u8 PORTB @ 0x6000;
+reg u8 DDRB @ 0x6002;
+
+fn main() -> void {
+  u8 x = 0xFF;
+  DDRB = x;
+
+  PORTB = x;
+
+  if (0 == 1) {
+    x = 0xAA;
+    PORTB = x;
+  } else {
+    PORTB = 15;
+  }
+}
