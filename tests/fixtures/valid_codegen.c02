@@ -4,16 +4,9 @@ reg u8 DDRB @ 0x6002;
 fn main() -> void {
   DDRB = 0xFF;
   u8 delay = 0;
-  u8 x = 0;
+  u8 x = 2;
 
-  while (1) {
-    delay = 0;
-    while (delay != 255) {
-      delay = delay + 1;
-    }
-
-    x = x + 1;
-    PORTB = x;
-  }
-  PORTB = 0xAA;
+  x = x * 2;
+  x = x / 2;
+  PORTB = x; // this write happens
 }

@@ -22,7 +22,15 @@ struct Generator {
   param_offsets: HashMap<String, (u16, Type)>, // function parameters passed on stack at fixed offsets from 0x20
   global_top: u8,                              // top of globals in zero page, grows upwards as we allocate
   current_frame_size: u8,                      // grows as we encounter VarDecls
+  included_helpers: HashMap<String, bool>,      // track which runtime helpers have been included to avoid duplicates
 }
+
+pub static HELPER_FUNCTIONS: &[(&str, &str)] = &[
+  ("__mul16", include_str!("../libc02/__mul16.s")),
+  ("__div16", include_str!("../libc02/__div16.s")),
+  ("memcpy", include_str!("../libc02/memcpy.s")),
+  ("strcpy", include_str!("../libc02/strcpy.s")),
+];
 
 impl Generator {
   fn new(symbol_table: SymbolTable) -> Self {
@@ -37,6 +45,7 @@ impl Generator {
       init_stmts: Vec::new(),
       param_offsets: HashMap::new(),
       current_frame_size: 0,
+      included_helpers: HashMap::new(),
     }
   }
   
@@ -360,7 +369,7 @@ impl Generator {
           self.emit("  ADC #$00");
           self.emit("  STA SP+1");
         }
-        self.emit("  RTS\n");
+        self.emit("  RTS");
       }
       
       Stmt::VarDecl(data_type, name, initializer) => {
@@ -372,7 +381,7 @@ impl Generator {
           self.emit_local_store(name, data_type);
         }
       }
-
+      
       Stmt::If(cond_expr, then_stmts, else_stmts) => {
         let saved_depth = self.reg_depth;
         self.reg_depth = 0;
@@ -501,6 +510,8 @@ impl Generator {
       }
       
       Expr::Call(func_name, args) => {
+
+
         for (i, arg_expr) in args.iter().enumerate() {
           self.reg_depth = 0;
           self.gen_expr(arg_expr);
@@ -551,6 +562,7 @@ impl Generator {
             // 65C02 has no MUL instruction — software multiply routine
             // load args into ABI registers and JSR to a runtime helper
             // leave result in reg
+            self.included_helpers.insert("__mul16".to_string(), true); // mark helper as needed so it gets included in final output
             self.emit(&format!("; --- {} * {}", reg, right_reg));
             self.emit(&format!("  LDA {}", reg));
             self.emit(&format!("  STA args0"));
@@ -568,6 +580,7 @@ impl Generator {
             self.emit(&format!("  STA {}+1", reg));
           }
           Op::Divide => {
+            self.included_helpers.insert("__div16".to_string(), true); // mark helper as needed so it gets included in final output
             self.emit(&format!("; --- {} / {}", reg, right_reg));
             // same pattern as multiply but JSR __div16
             self.emit(&format!("  LDA {}", reg));
@@ -682,5 +695,24 @@ pub fn generate(ast: Vec<TopLevel>, symbol_table: SymbolTable, mem_map: Memory_M
     generator.gen_toplevel(item);
   }
   
+  // loop through included_helpers and append any that were marked as needed during codegen
+  // This consumes the reference to generator.included_helpers, 
+  // then the borrow ends immediately.
+  let helpers_to_include: Vec<String> = generator
+  .included_helpers
+  .iter()
+  .filter(|(_, needed)| **needed) // Dereference needed twice
+  .map(|(helper, _)| helper.clone())
+  .collect();
+  
+  for helper in helpers_to_include {
+    generator.emit(&format!("\n; --- Include helper: {} ---", helper));
+    
+    if let Some((_, code)) = HELPER_FUNCTIONS.iter().find(|(name, _)| *name == helper) {
+      generator.emit(code);
+    } else {
+      panic!("Helper function '{}' not found in HELPER_FUNCTIONS", helper);
+    }
+  }  
   generator.output
 }

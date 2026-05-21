@@ -12,7 +12,9 @@ fn main() -> void {
     delay = 1;
     while (delay != 200) {
       delay += 1;
-      PORTB = delay;
+      PORTB = delay; // this write happens
     }
+
+    PORTB = x; // this write never happens
   }
 }
