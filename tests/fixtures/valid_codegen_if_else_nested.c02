@@ -11,7 +11,7 @@ fn main() -> void {
     if (PORTB == 1) {
       x = 0xAA;
       PORTB = x;
-    } else { // TODO: why doesnt this else trigger?
+    } else {
       PORTB = 15;
     }
   }

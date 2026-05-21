@@ -3,10 +3,17 @@ reg u8 DDRB @ 0x6002;
 
 fn main() -> void {
   DDRB = 0xFF;
+  u8 delay = 0;
+  u8 x = 0;
 
-  // Use an explicit local variable instead of reading directly from DDRB
-  u8 state = 0xFF - 0x55; 
-  u8 x = 0x55;
-  
-  PORTB = state + x; // Evaluates flawlessly to 0xFF in compiler registers!
+  while (1) {
+    delay = 0;
+    while (delay != 255) {
+      delay = delay + 1;
+    }
+
+    x = x + 1;
+    PORTB = x;
+  }
+  PORTB = 0xAA;
 }

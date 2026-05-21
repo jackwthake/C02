@@ -348,7 +348,7 @@ impl Generator {
           self.reg_depth = 0;
           self.gen_expr(expr);  // result in r0
         }
-
+        
         // epilogue
         if self.current_frame_size > 0 {
           self.emit("; --- Function Epilogue ---");
@@ -372,70 +372,83 @@ impl Generator {
           self.emit_local_store(name, data_type);
         }
       }
-      
+
       Stmt::If(cond_expr, then_stmts, else_stmts) => {
-        let then_block = self.fresh_label();
-        let end_if = self.fresh_label();
+        let saved_depth = self.reg_depth;
+        self.reg_depth = 0;
+        
         self.emit("\n  ; --- If");
         self.gen_expr(cond_expr);
         
-        self.emit(&format!("  LDA r{}", self.reg_depth));
-        self.emit(&format!("  BNE {}", then_block));
-        
         match else_stmts {
           Some(else_body) => {
-            self.emit("\n  ; --- else block");
+            let else_block = self.fresh_label();
+            let end_if = self.fresh_label();
+            
+            self.emit(&format!("  LDA r0"));
+            self.emit(&format!("  BEQ {}", else_block));
+            
+            // then block (fall-through when condition true)
+            self.emit("  ; then block");
+            for stmt in then_stmts {
+              self.gen_stmt(stmt);
+            }
+            self.emit(&format!("  JMP {}", end_if));
+            
+            // else block
+            self.emit(&format!("\n{}:   ; else block", else_block));
             for stmt in else_body {
               self.gen_stmt(stmt);
             }
             
-            self.emit(&format!("  JMP {}", end_if));
+            self.emit(&format!("{}:", end_if));
           }
-          _ => {
-            self.emit(&format!("  JMP {}", end_if));
+          None => {
+            let end_if = self.fresh_label();
+            
+            self.emit(&format!("  LDA r0"));
+            self.emit(&format!("  BEQ {}", end_if));
+            
+            for stmt in then_stmts {
+              self.gen_stmt(stmt);
+            }
+            
+            self.emit(&format!("{}:", end_if));
           }
         }
         
-        self.emit(&format!("{}:   ; then block", then_block));
-        
-        for stmt in then_stmts {
-          self.gen_stmt(stmt);
-        }
-        
-        self.emit(&format!("{}:", end_if));
+        self.reg_depth = saved_depth;
       }
       
+      // TODO: this doesnt work with nested loops
       Stmt::While(cond_expr, body_stmts) => {
+        let saved_depth = self.reg_depth;
+        self.reg_depth = 0;
+        
         let start_label = self.fresh_label();
         let body_label = self.fresh_label();
         let end_label = self.fresh_label();
         
-        self.emit("\n  ; --- While Loop");
+        self.emit("; --- While Loop");
         
-        // loop start point
         self.emit(&format!("{}:", start_label));
-        
-        // evaluate condition (leaves 0x01 or 0x00 in r0)
-        // self.reg_depth = 0;
         self.gen_expr(cond_expr);
         
-        self.emit(&format!("  LDA r{}", self.reg_depth));
+        self.emit(&format!("  LDA r0"));
         self.emit(&format!("  BNE {}", body_label));
-        // Otherwise, execute a full 16-bit jump to escape the loop
         self.emit(&format!("  JMP {}", end_label));
         
-        // loop Body
         self.emit(&format!("{}:", body_label));
         for stmt in body_stmts {
           self.gen_stmt(stmt);
         }
         
-        // unconditional jump back to start
         self.emit(&format!("  JMP {}", start_label));
-        
-        // loop exit point
         self.emit(&format!("{}:", end_label));
+        
+        self.reg_depth = saved_depth;
       }
+      
     }
   }
   
