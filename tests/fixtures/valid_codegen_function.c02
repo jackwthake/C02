@@ -1,0 +1,18 @@
+reg u8 PORTB @ 0x6000;
+reg u8 DDRB @ 0x6002;
+
+fn add_bytes(u8 a, u8 b) -> u8 {
+  u8 result = a + b;
+  return result;
+}
+
+fn main() -> void {
+  DDRB = 0xFF;
+
+  u8 x = 100;
+  u8 y = 70;
+
+  u8 result = add_bytes(x, y); // should return 170 or 0xAA
+
+  PORTB = x; // should set PORTB to 100 if the stack is preserved correctly
+}

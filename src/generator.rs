@@ -17,9 +17,10 @@ struct Generator {
   label_count: usize,
   symbol_table: SymbolTable,
   local_offsets: HashMap<String, (u8, Type)>,  // name -> FP offset, type
-  global_offsets: HashMap<String, (u8, Type)>,  // name -> FP offset, type
-  init_stmts: Vec<(String, Type, Expr)>, // global variable initializers to run at start of main
-  global_top: u8,
+  global_offsets: HashMap<String, (u8, Type)>, // name -> FP offset, type
+  init_stmts: Vec<(String, Type, Expr)>,       // global variable initializers to run at start of main
+  param_offsets: HashMap<String, (u16, Type)>, // function parameters passed on stack at fixed offsets from 0x20
+  global_top: u8,                              // top of globals in zero page, grows upwards as we allocate
   current_frame_size: u8,                      // grows as we encounter VarDecls
 }
 
@@ -34,6 +35,7 @@ impl Generator {
       global_offsets: HashMap::new(),
       global_top: 0x40,
       init_stmts: Vec::new(),
+      param_offsets: HashMap::new(),
       current_frame_size: 0,
     }
   }
@@ -142,6 +144,52 @@ impl Generator {
     }
   }
   
+  fn emit_param_store(&mut self, name: &str, data_type: &Type) {
+    let (offset, _t) = self.param_offsets.get(name)
+    .map(|(offset, t)| (*offset, t.clone()))
+    .expect("param_store called for undeclared parameter");
+    
+    self.emit(&format!("; --- Store Parameter '{}' at offset ${:04X} ---", name, offset));
+    
+    match data_type {
+      Type::U8 | Type::I8 => {
+        self.emit(&format!("  LDA r{}", self.reg_depth));
+        self.emit(&format!("  STA ${:04X}", offset));
+      }
+      Type::U16 | Type::I16 => {
+        self.emit(&format!("  LDA r{}", self.reg_depth));
+        self.emit(&format!("  STA ${:04X}", offset));
+        self.emit(&format!("  LDA r{}+1", self.reg_depth));
+        self.emit(&format!("  STA ${:04X}", offset + 1));
+      }
+      _ => unreachable!()
+    }
+  }
+  
+  fn emit_param_load(&mut self, name: &str, data_type: &Type) {
+    let (offset, _t) = self.param_offsets.get(name)
+    .map(|(offset, t)| (*offset, t.clone()))
+    .expect("param_load called for undeclared parameter");
+    
+    self.emit(&format!("; --- Load Parameter '{}' from offset ${:04X} ---", name, offset));
+    
+    match data_type {
+      Type::U8 | Type::I8 => {
+        self.emit(&format!("  LDA ${:04X}", offset));
+        self.emit(&format!("  STA r{}", self.reg_depth));
+        self.emit("  LDA #$00");
+        self.emit(&format!("  STA r{}+1", self.reg_depth));
+      }
+      Type::U16 | Type::I16 => {
+        self.emit(&format!("  LDA ${:04X}", offset));
+        self.emit(&format!("  STA r{}", self.reg_depth));
+        self.emit(&format!("  LDA ${:04X}", offset + 1));
+        self.emit(&format!("  STA r{}+1", self.reg_depth));
+      }
+      _ => unreachable!()
+    }
+  }
+  
   fn fresh_label(&mut self) -> String {
     let l = format!(".L{}", self.label_count);
     self.label_count += 1;
@@ -201,38 +249,45 @@ impl Generator {
   }
   
   fn gen_function(&mut self, name: &str, params: &[(Type, String)], ret: &Type, body: &[Stmt]) {
+    for (i, (param_type, param_name)) in params.iter().enumerate() {
+      let addr = 0x20 + (i * 2) as u16;
+      self.param_offsets.insert(param_name.clone(), (addr, param_type.clone()));
+    }
+    
+    assert!(self.param_offsets.len() <= 8, "Cannot have more than 8 parameters due to stack offset limits");
+    
     self.emit(&format!("_{}:", name));
     
     self.local_offsets.clear();
     self.current_frame_size = 0;
     
     // build variable offsets upwards starting exactly at 0
-    let total_frame_size = self.calc_frame_size(body, 0);
-    assert!(total_frame_size < 250, "Stack frame exceeded 250 bytes!");
+    self.current_frame_size = self.calc_frame_size(body, 0);
+    assert!(self.current_frame_size < 250, "Stack frame exceeded 250 bytes!");
     
     // generate function prologue for stack pointer if local variables are found
-    if total_frame_size > 0 {
+    if self.current_frame_size > 0 {
       self.emit("; --- Function Prologue ---");
       self.emit("  LDA SP");
       self.emit("  SEC");
-      self.emit(&format!("  SBC #${:02X}", total_frame_size));
+      self.emit(&format!("  SBC #${:02X}", self.current_frame_size));
       self.emit("  STA SP");
       self.emit("  LDA SP+1");
       self.emit("  SBC #$00");
       self.emit("  STA SP+1");
-      self.emit("; -------------------------\n");
+      self.emit("; -------------------------");
     }
-
+    
     // are there globals to initialize?
     if name == "main" && !self.init_stmts.is_empty() {
-      self.emit("\n; --- Global Variable Initialization ---");
+      self.emit("; --- Global Variable Initialization ---");
       let inits = std::mem::take(&mut self.init_stmts);
       for (var_name, data_type, expr) in &inits {
         self.reg_depth = 0;
         self.gen_expr(expr);
         self.emit_global_store(var_name, data_type);
       }
-      self.emit("; --------------------------------------\n");
+      self.emit("; --------------------------------------");
     }
     
     // generate function body
@@ -240,21 +295,25 @@ impl Generator {
       self.gen_stmt(stmt);
     }
     
-    // Stack Frame Clean-up
-    // main never needs to clean up the stack because if main returns, execution stops
-    if total_frame_size > 0 && !matches!(name, "main") {
-      self.emit("\n; --- Function Epilogue ---");
-      self.emit("  LDA SP");
-      self.emit("  CLC");
-      self.emit(&format!("  ADC #${:02X}", total_frame_size));
-      self.emit("  STA SP");
-      self.emit("  LDA SP+1");
-      self.emit("  ADC #$00");
-      self.emit("  STA SP+1");
-      self.emit("; -------------------------");
+    if ret == &Type::Void {
+      // Stack Frame Clean-up
+      // main never needs to clean up the stack because if main returns, execution stops
+      if self.current_frame_size > 0 && !matches!(name, "main") {
+        self.emit("; --- Function Epilogue ---");
+        self.emit("  LDA SP");
+        self.emit("  CLC");
+        self.emit(&format!("  ADC #${:02X}", self.current_frame_size));
+        self.emit("  STA SP");
+        self.emit("  LDA SP+1");
+        self.emit("  ADC #$00");
+        self.emit("  STA SP+1");
+        self.emit("; -------------------------");
+      }
+      
+      self.emit("  RTS\n");
     }
     
-    self.emit("  RTS");
+    self.param_offsets.clear();
   }
   
   fn gen_stmt(&mut self, stmt: &Stmt) {
@@ -263,9 +322,13 @@ impl Generator {
         self.reg_depth = 0;
         self.gen_expr(expr);
         
-        // check locals first — they aren't in the symbol table
-        if let Some((_, data_type)) = self.local_offsets.get(name).cloned() {
+        // check args then locals then globals
+        if let Some((_, data_type)) = self.param_offsets.get(name).cloned() {
+          self.emit_param_store(name, &data_type);
+        } else if let Some((_, data_type)) = self.local_offsets.get(name).cloned() {
           self.emit_local_store(name, &data_type);
+        } else if let Some((_, data_type)) = self.global_offsets.get(name).cloned() {
+          self.emit_global_store(name, &data_type);
         } else {
           let symbol = self.symbol_table.local_symbols.get(name).cloned();
           match symbol {
@@ -282,15 +345,24 @@ impl Generator {
         }
       }
       
-      Stmt::Return(None) => {
-        self.emit("  RTS");
-      }
-      
-      Stmt::Return(Some(expr)) => {
-        self.reg_depth = 0;
-        self.gen_expr(expr);
-        // return value convention — leave in r0
-        self.emit("  RTS");
+      Stmt::Return(maybe_expr) => {
+        if let Some(expr) = maybe_expr {
+          self.reg_depth = 0;
+          self.gen_expr(expr);  // result in r0
+        }
+
+        // epilogue
+        if self.current_frame_size > 0 {
+          self.emit("; --- Function Epilogue ---");
+          self.emit("  LDA SP");
+          self.emit("  CLC");
+          self.emit(&format!("  ADC #${:02X}", self.current_frame_size));
+          self.emit("  STA SP");
+          self.emit("  LDA SP+1");
+          self.emit("  ADC #$00");
+          self.emit("  STA SP+1");
+        }
+        self.emit("  RTS\n");
       }
       
       Stmt::VarDecl(data_type, name, initializer) => {
@@ -383,8 +455,10 @@ impl Generator {
       Expr::Identifier(name) => {
         let reg = format!("r{}", self.reg_depth);
         
-        // check locals first — they aren't in the symbol table
-        if let Some((_, data_type)) = self.local_offsets.get(name).cloned() {
+        // check params first, then locals, then globals
+        if let Some((_, data_type)) = self.param_offsets.get(name).cloned() {
+          self.emit_param_load(name, &data_type);
+        } else if let Some((_, data_type)) = self.local_offsets.get(name).cloned() {
           self.emit_local_load(name, &data_type);
         } else {
           let symbol = self.symbol_table.local_symbols.get(name).cloned();
@@ -413,6 +487,20 @@ impl Generator {
             None => unreachable!("undefined identifier: {}", name),
           }
         }
+      }
+      
+      Expr::Call(func_name, args) => {
+        for (i, arg_expr) in args.iter().enumerate() {
+          self.reg_depth = 0;
+          self.gen_expr(arg_expr);
+          
+          self.emit("  LDA r0");
+          self.emit(&format!("  STA args{}", i));
+          self.emit("  LDA r0+1");
+          self.emit(&format!("  STA args{}+1", i));  // note +1
+        }
+        self.emit(&format!("  JSR _{}", func_name));
+        // return value is now in r0
       }
       
       Expr::BinOp(left, op, right) => {
