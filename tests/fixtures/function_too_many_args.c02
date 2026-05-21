@@ -1,0 +1,16 @@
+reg u8 PORTB @ 0x6000;
+reg u8 DDRB @ 0x6002;
+
+fn add_bytes(u8 a, u8 b, u8 c, u8 d, u8 e, u8 f, u8 g, u8 h, u8 i) -> u8 {
+  u8 result = a + b;
+  return result;
+}
+
+fn main() -> void {
+  DDRB = 0xFF;
+
+  u8 x = 100;
+  u8 y = 70;
+
+  u8 result = add_bytes(x, y, 0, 0, 0, 0, 0, 0, 0); // assert should fail due to too many arguments
+}

@@ -275,7 +275,6 @@ impl Generator {
       self.emit("  LDA SP+1");
       self.emit("  SBC #$00");
       self.emit("  STA SP+1");
-      self.emit("; -------------------------");
     }
     
     // are there globals to initialize?
@@ -287,7 +286,6 @@ impl Generator {
         self.gen_expr(expr);
         self.emit_global_store(var_name, data_type);
       }
-      self.emit("; --------------------------------------");
     }
     
     // generate function body

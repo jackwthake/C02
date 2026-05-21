@@ -14,5 +14,5 @@ fn main() -> void {
 
   u8 result = add_bytes(x, y); // should return 170 or 0xAA
 
-  PORTB = x; // should set PORTB to 100 if the stack is preserved correctly
+  PORTB = x + y; // should set PORTB to 100 if the stack is preserved correctly
 }

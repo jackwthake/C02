@@ -114,10 +114,14 @@ fn expr_assignable_to(expected: &Type, expr: &Expr, table: &SymbolTable) -> Resu
 /// Infer the type of an expression
 fn infer_expr_type(expr: &Expr, table: &SymbolTable) -> Result<Type, String> {
   match expr {
-    Expr::Number(_) => {
-      // Numeric literals default to u16 (a reasonable default for a systems language)
-      // Could be refined based on size constraints later
-      Ok(Type::U16)
+    Expr::Number(num) => {
+      if (*num >= 0 && *num <= 255) || (*num < 0 && *num >= -128) {
+        Ok(Type::U8) // We can treat all small literals as u8 for simplicity
+      } else if (*num > 255 && *num <= 65535) || (*num < -128 && *num >= -32768) {
+        Ok(Type::U16) // Larger literals can be treated as u16
+      } else {
+        Err(format!("Numeric literal out of range: {}", num))
+      }
     }
     Expr::Identifier(name) => {
       table.get_type(name).ok_or_else(|| format!("Undeclared identifier: '{}'.", name))
