@@ -1,20 +1,21 @@
 reg u8 PORTB @ 0x6000;
 reg u8 DDRB @ 0x6002;
 
+u8 delay = 0;
+u8 x = 0;
+
 fn main() -> void {
-  u8 x = 0;
-  u8 delay = 0;
   DDRB = 0xFF;
   
   PORTB = 0;
   
   while (1) {
     delay = 1;
-    while (delay != 200) {
+    while (delay != 255) {
       delay += 1;
-      PORTB = delay; // this write happens
     }
 
-    PORTB = x; // this write never happens
+    x = x + 1;
+    PORTB = x; // this works!
   }
 }

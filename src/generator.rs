@@ -92,7 +92,7 @@ impl Generator {
     match data_type {
       Type::U8 | Type::I8 => {
         self.emit(&format!("  LDY #${:02X}", offset));
-        self.emit("  LDA (SP),Y");
+        self.emit("  LDA (SP),Y");  // make sure exactly two spaces here
         self.emit(&format!("  STA {}", reg));
         self.emit("  LDA #$00");
         self.emit(&format!("  STA {}+1", reg));
@@ -527,7 +527,7 @@ impl Generator {
           self.emit("  LDA r0+1");
           self.emit(&format!("  STA args{}+1", i));  // note +1
         }
-
+        
         if !is_std_helper {
           // regular function call
           self.emit(&format!("  JSR _{}", func_name));
@@ -721,14 +721,11 @@ pub fn generate(ast: Vec<TopLevel>, symbol_table: SymbolTable, mem_map: Memory_M
   for helper in helpers_to_include {
     generator.emit(&format!("\n; --- Include helper: {} ---", helper));
     
-    
-    
     if let Some((_, code, ..)) = HELPER_FUNCTIONS.iter().find(|(name, _, _, _)| *name == helper) {
       generator.emit(code);
     } else {
       panic!("Helper function '{}' not found in HELPER_FUNCTIONS", helper);
     }
-    
   }
   generator.output
 }
