@@ -25,11 +25,12 @@ struct Generator {
   included_helpers: HashMap<String, bool>,      // track which runtime helpers have been included to avoid duplicates
 }
 
-pub static HELPER_FUNCTIONS: &[(&str, &str)] = &[
-  ("__mul16", include_str!("../libc02/__mul16.s")),
-  ("__div16", include_str!("../libc02/__div16.s")),
-  ("memcpy", include_str!("../libc02/memcpy.s")),
-  ("strcpy", include_str!("../libc02/strcpy.s")),
+// Tuple format: (helper name, helper code, number of 16-bit args expected, return type)
+pub static HELPER_FUNCTIONS: &[(&str, &str, usize, Type)] = &[
+  ("__mul16", include_str!("../libc02/__mul16.s"), 2, Type::U16),
+  ("__div16", include_str!("../libc02/__div16.s"), 2, Type::U16),
+  ("memcpy", include_str!("../libc02/memcpy.s"), 2, Type::U16),
+  ("strcpy", include_str!("../libc02/strcpy.s"), 3, Type::U16),
 ];
 
 impl Generator {
@@ -510,8 +511,13 @@ impl Generator {
       }
       
       Expr::Call(func_name, args) => {
-
-
+        // mark std lib helpers as needed if called so they get included in final output
+        let mut is_std_helper = false; // default to false for non-helpers
+        if let Some((_, _, _, _)) = HELPER_FUNCTIONS.iter().find(|(name, _, _, _)| *name == func_name) {
+          self.included_helpers.insert(func_name.clone(), true);
+          is_std_helper = true;
+        }
+        
         for (i, arg_expr) in args.iter().enumerate() {
           self.reg_depth = 0;
           self.gen_expr(arg_expr);
@@ -521,7 +527,14 @@ impl Generator {
           self.emit("  LDA r0+1");
           self.emit(&format!("  STA args{}+1", i));  // note +1
         }
-        self.emit(&format!("  JSR _{}", func_name));
+
+        if !is_std_helper {
+          // regular function call
+          self.emit(&format!("  JSR _{}", func_name));
+        } else {
+          // std helper call
+          self.emit(&format!("  JSR {}", func_name));
+        }
         // return value is now in r0
       }
       
@@ -708,11 +721,14 @@ pub fn generate(ast: Vec<TopLevel>, symbol_table: SymbolTable, mem_map: Memory_M
   for helper in helpers_to_include {
     generator.emit(&format!("\n; --- Include helper: {} ---", helper));
     
-    if let Some((_, code)) = HELPER_FUNCTIONS.iter().find(|(name, _)| *name == helper) {
+    
+    
+    if let Some((_, code, ..)) = HELPER_FUNCTIONS.iter().find(|(name, _, _, _)| *name == helper) {
       generator.emit(code);
     } else {
       panic!("Helper function '{}' not found in HELPER_FUNCTIONS", helper);
     }
-  }  
+    
+  }
   generator.output
 }

@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use crate::parser::{Type, Expr, Stmt, TopLevel, Op};
+use crate::generator::HELPER_FUNCTIONS;
 
 #[derive(Clone, Debug)]
 pub enum Symbol {
@@ -196,7 +197,14 @@ fn infer_expr_type(expr: &Expr, table: &SymbolTable) -> Result<Type, String> {
       match table.lookup(fn_name) {
         Some(Symbol::Function { return_type, .. }) => Ok(return_type.clone()),
         Some(_) => Err(format!("'{}' is not a function.", fn_name)),
-        None => Err(format!("Undeclared function: '{}'.", fn_name)),
+        None => {
+          // check if its a std library function (e.g., __mul16, __div16, memcpy, strcpy)
+          if let Some((_, _, _, return_type)) = HELPER_FUNCTIONS.iter().find(|(name, _, _, _)| *name == fn_name) {
+            Ok(return_type.clone())
+          } else {
+            Err(format!("Undeclared function: '{}'.", fn_name))
+          }
+        },
       }
     }
     Expr::Deref(expr) => {
@@ -514,7 +522,22 @@ fn analyze_expr(expr: &Expr, table: &SymbolTable) -> Result<(), String> {
           Ok(())
         }
         Some(_) => Err(format!("'{}' is not a function.", fn_name)),
-        None => Err(format!("Undeclared function: '{}'.", fn_name)),
+        None => {
+          // check if its a std library function (e.g., __mul16, __div16, memcpy, strcpy)
+          if let Some((_, _, arg_count, _)) = HELPER_FUNCTIONS.iter().find(|(name, _, _, _)| *name == fn_name) {
+            if args.len() != *arg_count {
+              return Err(format!(
+                "Function '{}' expects {} argument(s), but {} were provided",
+                fn_name,
+                arg_count,
+                args.len()
+              ));
+            }
+            Ok(())
+          } else {
+            Err(format!("Undeclared function: '{}'.", fn_name))
+          }
+        }
       }
     }
     Expr::Deref(expr) => {
