@@ -17,6 +17,9 @@ struct Generator {
   label_count: usize,
   symbol_table: SymbolTable,
   local_offsets: HashMap<String, (u8, Type)>,  // name -> FP offset, type
+  global_offsets: HashMap<String, (u8, Type)>,  // name -> FP offset, type
+  init_stmts: Vec<(String, Type, Expr)>, // global variable initializers to run at start of main
+  global_top: u8,
   current_frame_size: u8,                      // grows as we encounter VarDecls
 }
 
@@ -28,6 +31,9 @@ impl Generator {
       label_count: 0,
       symbol_table,
       local_offsets: HashMap::new(),
+      global_offsets: HashMap::new(),
+      global_top: 0x40,
+      init_stmts: Vec::new(),
       current_frame_size: 0,
     }
   }
@@ -91,6 +97,51 @@ impl Generator {
     }
   }
   
+  
+  fn emit_global_store(&mut self, name: &str, data_type: &Type) {
+    let (offset, _t) = self.global_offsets.get(name)
+    .map(|(offset, t)| (*offset, t.clone()))
+    .expect("global_store called for undeclared global");
+    
+    self.emit(&format!("; --- Store Global '{}' at offset ${:02X} ---", name, offset));
+    match data_type {
+      Type::U8 | Type::I8 => {
+        self.emit(&format!("  LDA r{}", self.reg_depth));
+        self.emit(&format!("  STA ${:04X}", offset));
+      }
+      Type::U16 | Type::I16 => {
+        self.emit(&format!("  LDA r{}", self.reg_depth));
+        self.emit(&format!("  STA ${:04X}", offset));
+        self.emit(&format!("  LDA r{}+1", self.reg_depth));
+        self.emit(&format!("  STA ${:04X}", offset + 1));
+      }
+      _ => unreachable!()
+    }
+  }
+  
+  fn emit_global_load(&mut self, name: &str, data_type: &Type) {
+    let (offset, _t) = self.global_offsets.get(name)
+    .map(|(offset, t)| (*offset, t.clone()))
+    .expect("global_load called for undeclared global");
+    
+    self.emit(&format!("; --- Load Global '{}' from offset ${:02X} ---", name, offset));
+    match data_type {
+      Type::U8 | Type::I8 => {
+        self.emit(&format!("  LDA ${:04X}", offset));
+        self.emit(&format!("  STA r{}", self.reg_depth));
+        self.emit("  LDA #$00");
+        self.emit(&format!("  STA r{}+1", self.reg_depth));
+      }
+      Type::U16 | Type::I16 => {
+        self.emit(&format!("  LDA ${:04X}", offset));
+        self.emit(&format!("  STA r{}", self.reg_depth));
+        self.emit(&format!("  LDA ${:04X}", offset + 1));
+        self.emit(&format!("  STA r{}+1", self.reg_depth));
+      }
+      _ => unreachable!()
+    }
+  }
+  
   fn fresh_label(&mut self) -> String {
     let l = format!(".L{}", self.label_count);
     self.label_count += 1;
@@ -103,7 +154,17 @@ impl Generator {
         // symbol table has everything we need, no code to emit
       }
       TopLevel::GlobalVar(t, name, initializer) => {
-        // zero page allocation in usr_space — later
+        self.global_offsets.insert(name.clone(), (self.global_top, t.clone()));
+        
+        self.global_top += match t {
+          Type::U8 | Type::I8 => 1,
+          Type::U16 | Type::I16 => 2,
+          _ => 0,
+        };
+        
+        if let Some(expr) = initializer {
+          self.init_stmts.push((name.clone(), t.clone(), expr.clone()));
+        }
       }
       TopLevel::Function(name, params, ret, body) => {
         self.gen_function(name, params, ret, body);
@@ -141,6 +202,7 @@ impl Generator {
   
   fn gen_function(&mut self, name: &str, params: &[(Type, String)], ret: &Type, body: &[Stmt]) {
     self.emit(&format!("_{}:", name));
+    
     self.local_offsets.clear();
     self.current_frame_size = 0;
     
@@ -159,6 +221,18 @@ impl Generator {
       self.emit("  SBC #$00");
       self.emit("  STA SP+1");
       self.emit("; -------------------------\n");
+    }
+
+    // are there globals to initialize?
+    if name == "main" && !self.init_stmts.is_empty() {
+      self.emit("\n; --- Global Variable Initialization ---");
+      let inits = std::mem::take(&mut self.init_stmts);
+      for (var_name, data_type, expr) in &inits {
+        self.reg_depth = 0;
+        self.gen_expr(expr);
+        self.emit_global_store(var_name, data_type);
+      }
+      self.emit("; --------------------------------------\n");
     }
     
     // generate function body
@@ -201,7 +275,7 @@ impl Generator {
               self.emit(&format!("  STA ${:04X}", address));
             }
             Some(Symbol::Variable { data_type }) => {
-              todo!("global variable store")
+              self.emit_global_store(name, &data_type);
             }
             _ => unreachable!("assign to undefined or function — analyzer should catch")
           }
@@ -244,7 +318,7 @@ impl Generator {
             for stmt in else_body {
               self.gen_stmt(stmt);
             }
-
+            
             self.emit(&format!("  JMP {}", end_if));
           }
           _ => {
@@ -333,7 +407,7 @@ impl Generator {
               }
             }
             Some(Symbol::Variable { data_type }) => {
-              todo!("global variable load")
+              self.emit_global_load(name, &data_type);
             }
             Some(Symbol::Function { .. }) => unreachable!("function used as expression"),
             None => unreachable!("undefined identifier: {}", name),
@@ -462,11 +536,11 @@ impl Generator {
             self.emit(&format!("  STA {}+1", reg));
             self.emit(&format!("{}:", end_label));
           }
-          _ => todo!("op")
+          _ => todo!("Unimplemented binary operator: {:?}", op)
         }
       }
       
-      _ => todo!("expr")
+      _ => todo!("Unimplemented expression: {:?}", expr)
     }
   }
 }

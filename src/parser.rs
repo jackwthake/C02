@@ -214,7 +214,7 @@ pub enum Type {
   Ptr(Box<Type>),  // pointer to any type, e.g. Ptr(U8) = u8*
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Op {
   Plus,
   Minus,
@@ -230,7 +230,7 @@ pub enum Op {
   Negate
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Expr {
   Number(i64),
   Identifier(String),
