@@ -227,7 +227,8 @@ pub enum Op {
   EqualsEquals,
   BangEquals,
   Bang,
-  Negate
+  Negate,
+  AddressOf,
 }
 
 #[derive(Debug, Clone)]
@@ -245,9 +246,11 @@ pub enum Expr {
 pub enum Stmt {
   VarDecl(Type, String, Option<Expr>),
   Assign(String, Expr),
+  DerefAssign(Expr, Expr),
   Return(Option<Expr>),
   If(Expr, Vec<Stmt>, Option<Vec<Stmt>>),
   While(Expr, Vec<Stmt>),
+  Expr(Expr), // expression as a statement, e.g. function call without assignment
 }
 
 #[derive(Debug)]
@@ -287,24 +290,24 @@ fn parse_type(iter: &mut Peekable<impl Iterator<Item=Token>>, context: &str) -> 
       })
     }
   };
-
+  
   while matches!(iter.peek(), Some(Token::s_star(_))) {
     iter.next();
     t = Type::Ptr(Box::new(t));
   }
-
+  
   Ok(t)
 }
 
 fn primary(iter: &mut Peekable<impl Iterator<Item=Token>>) -> ParseResult<Expr> {
   let token = next_token(iter, "expression")?;
-
+  
   match token {
     Token::l_num(n, _) => Ok(Expr::Number(n)),
-
+    
     Token::s_lparen(_) => {
       let is_cast = matches!(iter.peek(), Some(Token::t_u8(_)) | Some(Token::t_i8(_)) | Some(Token::t_u16(_)) | Some(Token::t_i16(_)));
-
+      
       if is_cast {
         let t = parse_type(iter, "cast type")?;
         expect_symbol(iter, TokenKind::s_rparen, ")", "cast expression")?;
@@ -316,12 +319,12 @@ fn primary(iter: &mut Peekable<impl Iterator<Item=Token>>) -> ParseResult<Expr> 
         Ok(expr)
       }
     }
-
+    
     Token::l_identifier(name, _) => {
       if matches!(iter.peek(), Some(Token::s_lparen(_))) {
         iter.next(); // consume (
         let mut args = Vec::new();
-
+        
         loop {
           match iter.peek() {
             Some(Token::s_rparen(_)) => {
@@ -341,13 +344,13 @@ fn primary(iter: &mut Peekable<impl Iterator<Item=Token>>) -> ParseResult<Expr> 
             }
           }
         }
-
+        
         Ok(Expr::Call(name, args))
       } else {
         Ok(Expr::Identifier(name))
       }
     }
-
+    
     token => {
       let location = token_location(&token);
       Err(ParseError::UnexpectedToken {
@@ -367,17 +370,20 @@ fn unary(iter: &mut Peekable<impl Iterator<Item=Token>>) -> ParseResult<Expr> {
       let operand = unary(iter)?;
       Ok(Expr::Unary(Op::Bang, Box::new(operand)))
     }
-
     Some(Token::s_minus(_)) => {
       iter.next();
       let operand = unary(iter)?;
       Ok(Expr::Unary(Op::Negate, Box::new(operand)))
     }
-
     Some(Token::s_star(_)) | Some(Token::s_mem_lookup(_)) => {
       iter.next();
       let operand = unary(iter)?;
       Ok(Expr::Deref(Box::new(operand)))
+    }
+    Some(Token::s_ampersand(_)) => {
+      iter.next();
+      let operand = unary(iter)?;
+      Ok(Expr::Unary(Op::AddressOf, Box::new(operand)))
     }
     _ => primary(iter),
   }
@@ -385,7 +391,7 @@ fn unary(iter: &mut Peekable<impl Iterator<Item=Token>>) -> ParseResult<Expr> {
 
 fn factor(iter: &mut Peekable<impl Iterator<Item=Token>>) -> ParseResult<Expr> {
   let mut left = unary(iter)?;
-
+  
   loop {
     match iter.peek() {
       Some(Token::s_star(_)) => {
@@ -401,13 +407,13 @@ fn factor(iter: &mut Peekable<impl Iterator<Item=Token>>) -> ParseResult<Expr> {
       _ => break,
     }
   }
-
+  
   Ok(left)
 }
 
 fn term(iter: &mut Peekable<impl Iterator<Item=Token>>) -> ParseResult<Expr> {
   let mut left = factor(iter)?;
-
+  
   loop {
     match iter.peek() {
       Some(Token::s_plus(_)) => {
@@ -423,13 +429,13 @@ fn term(iter: &mut Peekable<impl Iterator<Item=Token>>) -> ParseResult<Expr> {
       _ => break,
     }
   }
-
+  
   Ok(left)
 }
 
 fn comparison(iter: &mut Peekable<impl Iterator<Item=Token>>) -> ParseResult<Expr> {
   let mut left = term(iter)?;
-
+  
   loop {
     match iter.peek() {
       Some(Token::s_lt(_)) => {
@@ -437,19 +443,19 @@ fn comparison(iter: &mut Peekable<impl Iterator<Item=Token>>) -> ParseResult<Exp
         let right = term(iter)?;
         left = Expr::BinOp(Box::new(left), Op::Lt, Box::new(right));
       }
-
+      
       Some(Token::s_gt(_)) => {
         iter.next();
         let right = term(iter)?;
         left = Expr::BinOp(Box::new(left), Op::Gt, Box::new(right));
       }
-
+      
       Some(Token::s_lte(_)) => {
         iter.next();
         let right = term(iter)?;
         left = Expr::BinOp(Box::new(left), Op::Lte, Box::new(right));
       }
-
+      
       Some(Token::s_gte(_)) => {
         iter.next();
         let right = term(iter)?;
@@ -458,7 +464,7 @@ fn comparison(iter: &mut Peekable<impl Iterator<Item=Token>>) -> ParseResult<Exp
       _ => break,
     }
   }
-
+  
   Ok(left)
 }
 
@@ -471,7 +477,7 @@ fn comparison(iter: &mut Peekable<impl Iterator<Item=Token>>) -> ParseResult<Exp
 // primary     looks for literals, identifiers, (expr)   consumes tokens
 fn equality(iter: &mut Peekable<impl Iterator<Item=Token>>) -> ParseResult<Expr> {
   let mut left = comparison(iter)?;
-
+  
   loop {
     match iter.peek() {
       Some(Token::s_equalsequals(_)) => {
@@ -487,7 +493,7 @@ fn equality(iter: &mut Peekable<impl Iterator<Item=Token>>) -> ParseResult<Expr>
       _ => break,
     }
   }
-
+  
   Ok(left)
 }
 
@@ -499,7 +505,7 @@ fn equality(iter: &mut Peekable<impl Iterator<Item=Token>>) -> ParseResult<Expr>
 fn parse_block(iter: &mut Peekable<impl Iterator<Item=Token>>) -> ParseResult<Vec<Stmt>> {
   expect_symbol(iter, TokenKind::s_lbrace, "{", "block")?;
   let mut stmts = Vec::new();
-
+  
   loop {
     match iter.peek() {
       Some(Token::s_rbrace(_)) => {
@@ -516,7 +522,7 @@ fn parse_block(iter: &mut Peekable<impl Iterator<Item=Token>>) -> ParseResult<Ve
       }
     }
   }
-
+  
   Ok(stmts)
 }
 
@@ -524,7 +530,7 @@ fn parse_stmt(iter: &mut Peekable<impl Iterator<Item=Token>>) -> ParseResult<Stm
   match iter.peek() {
     Some(Token::Kw_return(_)) => {
       iter.next(); // consume return
-
+      
       if matches!(iter.peek(), Some(Token::s_semicolon(_))) {
         iter.next();
         Ok(Stmt::Return(None))
@@ -534,7 +540,7 @@ fn parse_stmt(iter: &mut Peekable<impl Iterator<Item=Token>>) -> ParseResult<Stm
         Ok(Stmt::Return(Some(expr)))
       }
     }
-
+    
     Some(Token::Kw_while(_)) => {
       iter.next(); // consume while
       expect_symbol(iter, TokenKind::s_lparen, "(", "while condition")?;
@@ -543,7 +549,7 @@ fn parse_stmt(iter: &mut Peekable<impl Iterator<Item=Token>>) -> ParseResult<Stm
       let body = parse_block(iter)?;
       Ok(Stmt::While(condition, body))
     }
-
+    
     Some(Token::Kw_if(_)) => {
       iter.next(); // consume if
       expect_symbol(iter, TokenKind::s_lparen, "(", "if condition")?;
@@ -558,15 +564,15 @@ fn parse_stmt(iter: &mut Peekable<impl Iterator<Item=Token>>) -> ParseResult<Stm
       };
       Ok(Stmt::If(condition, body, else_body))
     }
-
+    
     Some(Token::t_u8(_)) | Some(Token::t_u16(_)) | Some(Token::t_i8(_)) | Some(Token::t_i16(_)) | Some(Token::Kw_void(_)) => {
       let mut t = parse_type(iter, "variable declaration")?;
-
+      
       if matches!(iter.peek(), Some(Token::s_star(_))) {
         iter.next();
         t = Type::Ptr(Box::new(t));
       }
-
+      
       let identifier = match next_token(iter, "variable declaration")? {
         Token::l_identifier(name, _) => name,
         token => {
@@ -579,23 +585,52 @@ fn parse_stmt(iter: &mut Peekable<impl Iterator<Item=Token>>) -> ParseResult<Stm
           })
         }
       };
-
+      
       expect_symbol(iter, TokenKind::s_equals, "=", "variable declaration")?;
       let expr = equality(iter)?;
       expect_symbol(iter, TokenKind::s_semicolon, ";", "variable declaration")?;
       Ok(Stmt::VarDecl(t, identifier, Some(expr)))
     }
-
+    
+    Some(Token::s_star(_)) => {
+      iter.next(); // consume *
+      let target = equality(iter)?;
+      expect_symbol(iter, TokenKind::s_equals, "=", "pointer assignment")?;
+      let value = equality(iter)?;
+      expect_symbol(iter, TokenKind::s_semicolon, ";", "pointer assignment")?;
+      Ok(Stmt::DerefAssign(target, value))
+    }
+    
     Some(Token::l_identifier(_, _)) => {
       let id = match next_token(iter, "assignment")? {
         Token::l_identifier(name, _) => name,
         _ => unreachable!(),
       };
-
+      
+      // function call as a statement
+      if matches!(iter.peek(), Some(Token::s_lparen(_))) {
+        iter.next(); // consume (
+        let mut args = Vec::new();
+        loop {
+          match iter.peek() {
+            Some(Token::s_rparen(_)) => { iter.next(); break; }
+            Some(Token::s_comma(_)) => { iter.next(); }
+            Some(_) => args.push(equality(iter)?),
+            None => return Err(ParseError::UnexpectedEOF {
+              expected: "closing ')'".into(),
+              context: "function call statement".into(),
+              location: None,
+            }),
+          }
+        }
+        expect_symbol(iter, TokenKind::s_semicolon, ";", "function call statement")?;
+        return Ok(Stmt::Expr(Expr::Call(id, args)));
+      }
+      
       let assign_token = next_token(iter, "assignment")?;
       let expr = equality(iter)?;
       expect_symbol(iter, TokenKind::s_semicolon, ";", "assignment")?;
-
+      
       let stmt = match assign_token {
         Token::s_equals(_) => Stmt::Assign(id, expr),
         Token::s_plus_equals(_) => Stmt::Assign(
@@ -616,10 +651,10 @@ fn parse_stmt(iter: &mut Peekable<impl Iterator<Item=Token>>) -> ParseResult<Stm
           })
         }
       };
-
+      
       Ok(stmt)
     }
-
+    
     Some(token) => {
       let location = token_location(token);
       Err(ParseError::UnexpectedToken {
@@ -640,7 +675,7 @@ fn parse_stmt(iter: &mut Peekable<impl Iterator<Item=Token>>) -> ParseResult<Stm
 fn parse_args(iter: &mut Peekable<impl Iterator<Item=Token>>) -> ParseResult<Vec<(Type, String)>> {
   expect_symbol(iter, TokenKind::s_lparen, "(", "argument list")?;
   let mut args = Vec::new();
-
+  
   loop {
     match iter.peek() {
       Some(Token::s_rparen(_)) => {
@@ -694,14 +729,14 @@ fn parse_toplevel(iter: &mut Peekable<impl Iterator<Item=Token>>) -> ParseResult
           })
         }
       };
-
+      
       let args = parse_args(iter)?;
       expect_symbol(iter, TokenKind::s_arrow, "->", "function declaration")?;
       let ret = parse_type(iter, "function return type")?;
       let body = parse_block(iter)?;
       Ok(TopLevel::Function(name, args, ret, body))
     }
-
+    
     Some(Token::Kw_reg(_)) => {
       iter.next();
       let t = parse_type(iter, "register declaration")?;
@@ -733,15 +768,15 @@ fn parse_toplevel(iter: &mut Peekable<impl Iterator<Item=Token>>) -> ParseResult
       expect_symbol(iter, TokenKind::s_semicolon, ";", "register declaration")?;
       Ok(TopLevel::RegDecl(t, id, addr))
     }
-
+    
     Some(Token::t_u8(_)) | Some(Token::t_u16(_)) | Some(Token::t_i8(_)) | Some(Token::t_i16(_)) => {
       let mut t = parse_type(iter, "global declaration")?;
-
+      
       if matches!(iter.peek(), Some(Token::s_star(_))) {
         iter.next();
         t = Type::Ptr(Box::new(t));
       }
-
+      
       let identifier = match next_token(iter, "global declaration")? {
         Token::l_identifier(name, _) => name,
         token => {
@@ -754,7 +789,7 @@ fn parse_toplevel(iter: &mut Peekable<impl Iterator<Item=Token>>) -> ParseResult
           })
         }
       };
-
+      
       let initialiser = match iter.peek() {
         Some(Token::s_equals(_)) => {
           iter.next();
@@ -778,11 +813,11 @@ fn parse_toplevel(iter: &mut Peekable<impl Iterator<Item=Token>>) -> ParseResult
           })
         }
       };
-
+      
       expect_symbol(iter, TokenKind::s_semicolon, ";", "global declaration")?;
       Ok(TopLevel::GlobalVar(t, identifier, initialiser))
     }
-
+    
     Some(token) => {
       let location = token_location(token);
       Err(ParseError::UnexpectedToken {
@@ -807,6 +842,6 @@ pub fn parse(tokens: Vec<Token>) -> ParseResult<Vec<TopLevel>> {
   while iter.peek().is_some() {
     toplevels.push(parse_toplevel(&mut iter)?);
   }
-
+  
   Ok(toplevels)
 }

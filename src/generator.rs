@@ -27,10 +27,10 @@ struct Generator {
 
 // Tuple format: (helper name, helper code, number of 16-bit args expected, return type)
 pub static HELPER_FUNCTIONS: &[(&str, &str, usize, Type)] = &[
-  ("__mul16", include_str!("../libc02/__mul16.s"), 2, Type::U16),
-  ("__div16", include_str!("../libc02/__div16.s"), 2, Type::U16),
-  ("memcpy", include_str!("../libc02/memcpy.s"), 2, Type::U16),
-  ("strcpy", include_str!("../libc02/strcpy.s"), 3, Type::U16),
+("__mul16", include_str!("../libc02/__mul16.s"), 2, Type::U16),
+("__div16", include_str!("../libc02/__div16.s"), 2, Type::U16),
+("memcpy", include_str!("../libc02/memcpy.s"), 2, Type::U16),
+("strcpy", include_str!("../libc02/strcpy.s"), 3, Type::U16),
 ];
 
 impl Generator {
@@ -69,7 +69,7 @@ impl Generator {
         self.emit(&format!("  LDA {}", reg)); 
         self.emit("  STA (SP),Y");
       }
-      Type::U16 | Type::I16 => {
+      Type::U16 | Type::I16 | Type::Ptr(_) => {
         self.emit(&format!("  LDY #${:02X}", offset));
         self.emit(&format!("  LDA {}", reg));
         self.emit("  STA (SP),Y");
@@ -97,7 +97,7 @@ impl Generator {
         self.emit("  LDA #$00");
         self.emit(&format!("  STA {}+1", reg));
       }
-      Type::U16 | Type::I16 => {
+      Type::U16 | Type::I16 | Type::Ptr(_) => {
         self.emit(&format!("  LDY #${:02X}", offset));
         self.emit("  LDA (SP),Y");
         self.emit(&format!("  STA {}", reg));
@@ -121,7 +121,7 @@ impl Generator {
         self.emit(&format!("  LDA r{}", self.reg_depth));
         self.emit(&format!("  STA ${:04X}", offset));
       }
-      Type::U16 | Type::I16 => {
+      Type::U16 | Type::I16 | Type::Ptr(_) => {
         self.emit(&format!("  LDA r{}", self.reg_depth));
         self.emit(&format!("  STA ${:04X}", offset));
         self.emit(&format!("  LDA r{}+1", self.reg_depth));
@@ -144,7 +144,7 @@ impl Generator {
         self.emit("  LDA #$00");
         self.emit(&format!("  STA r{}+1", self.reg_depth));
       }
-      Type::U16 | Type::I16 => {
+      Type::U16 | Type::I16 | Type::Ptr(_) => {
         self.emit(&format!("  LDA ${:04X}", offset));
         self.emit(&format!("  STA r{}", self.reg_depth));
         self.emit(&format!("  LDA ${:04X}", offset + 1));
@@ -166,7 +166,7 @@ impl Generator {
         self.emit(&format!("  LDA r{}", self.reg_depth));
         self.emit(&format!("  STA ${:04X}", offset));
       }
-      Type::U16 | Type::I16 => {
+      Type::U16 | Type::I16 | Type::Ptr(_) => {
         self.emit(&format!("  LDA r{}", self.reg_depth));
         self.emit(&format!("  STA ${:04X}", offset));
         self.emit(&format!("  LDA r{}+1", self.reg_depth));
@@ -190,7 +190,7 @@ impl Generator {
         self.emit("  LDA #$00");
         self.emit(&format!("  STA r{}+1", self.reg_depth));
       }
-      Type::U16 | Type::I16 => {
+      Type::U16 | Type::I16 | Type::Ptr(_) => {
         self.emit(&format!("  LDA ${:04X}", offset));
         self.emit(&format!("  STA r{}", self.reg_depth));
         self.emit(&format!("  LDA ${:04X}", offset + 1));
@@ -234,10 +234,13 @@ impl Generator {
     let mut size = curr_size;
     for stmt in stmts {
       match stmt {
-        Stmt::Assign(_, _) | Stmt::Return(_) => {} // no size impact
+        Stmt::Assign(_, _) | Stmt::Return(_) | Stmt::Expr(_) => {} // no size impact
+        
         Stmt::While(_, body) => {
           size = self.calc_frame_size(body, size)
         }
+        
+        Stmt::DerefAssign(_, _) => {} // no stack space needed
         
         Stmt::If(_, body, else_body) => {
           size = self.calc_frame_size(body, size);
@@ -245,6 +248,7 @@ impl Generator {
             size = self.calc_frame_size(else_stmts, size);
           }
         }
+        
         Stmt::VarDecl(data_type, var_name, _) => {
           self.local_offsets.insert(var_name.clone(), (size, data_type.clone()));
           size += match data_type {
@@ -353,6 +357,29 @@ impl Generator {
         }
       }
       
+      Stmt::DerefAssign(ptr_expr, value_expr) => {
+        // evaluate value into r0
+        self.reg_depth = 0;
+        self.gen_expr(value_expr);
+        
+        // evaluate pointer into r1
+        self.reg_depth = 1;
+        self.gen_expr(ptr_expr);
+        self.reg_depth = 0;
+        
+        // store value through pointer
+        self.emit("  ; --- DerefAssign");
+        self.emit("  LDY #$00");
+        self.emit("  LDA r0");
+        self.emit("  STA (r1),Y");
+      }
+
+      Stmt::Expr(expr) => {
+        self.reg_depth = 0;
+        self.gen_expr(expr);
+        // result is in r0 but we can ignore it since this is an expression statement
+      }
+      
       Stmt::Return(maybe_expr) => {
         if let Some(expr) = maybe_expr {
           self.reg_depth = 0;
@@ -370,7 +397,7 @@ impl Generator {
           self.emit("  ADC #$00");
           self.emit("  STA SP+1");
         }
-        self.emit("  RTS");
+        self.emit("  RTS\n");
       }
       
       Stmt::VarDecl(data_type, name, initializer) => {
@@ -510,6 +537,17 @@ impl Generator {
         }
       }
       
+      Expr::Deref(inner) => {
+        self.gen_expr(inner);
+        let reg = format!("r{}", self.reg_depth);
+        self.emit(&format!("  ; --- Dereference at address in {}", reg));
+        self.emit("  LDY #$00");
+        self.emit(&format!("  LDA ({reg}),Y"));
+        self.emit(&format!("  STA {reg}"));
+        self.emit("  LDA #$00");
+        self.emit(&format!("  STA {reg}+1"));
+      }
+      
       Expr::Call(func_name, args) => {
         // mark std lib helpers as needed if called so they get included in final output
         let mut is_std_helper = false; // default to false for non-helpers
@@ -536,6 +574,65 @@ impl Generator {
           self.emit(&format!("  JSR {}", func_name));
         }
         // return value is now in r0
+      }
+      
+      Expr::Unary(op, operand) => {
+        let reg = format!("r{}", self.reg_depth);
+        match op {
+          Op::Negate => {
+            self.gen_expr(operand);
+            self.emit(&format!("  ; --- Negate {}", reg));
+            self.emit("  SEC");
+            self.emit("  LDA #$00");
+            self.emit(&format!("  SBC {}", reg));
+            self.emit(&format!("  STA {}", reg));
+            self.emit("  LDA #$00");
+            self.emit(&format!("  SBC {}+1", reg));
+            self.emit(&format!("  STA {}+1", reg));
+          }
+          Op::Bang => {
+            self.gen_expr(operand);
+            let true_label = self.fresh_label();
+            let end_label = self.fresh_label();
+            self.emit(&format!("  ; --- Bang {}", reg));
+            self.emit(&format!("  LDA {}", reg));
+            self.emit(&format!("  BEQ {}", true_label));
+            self.emit("  LDA #$00");
+            self.emit(&format!("  STA {}", reg));
+            self.emit(&format!("  STA {}+1", reg));
+            self.emit(&format!("  JMP {}", end_label));
+            self.emit(&format!("{}:", true_label));
+            self.emit("  LDA #$01");
+            self.emit(&format!("  STA {}", reg));
+            self.emit("  LDA #$00");
+            self.emit(&format!("  STA {}+1", reg));
+            self.emit(&format!("{}:", end_label));
+          }
+          Op::AddressOf => {
+            match operand.as_ref() {
+              Expr::Identifier(name) => {
+                if let Some((offset, _)) = self.global_offsets.get(name).cloned() {
+                  self.emit(&format!("  LDA #${:02X}", offset));
+                  self.emit(&format!("  STA {}", reg));
+                  self.emit("  LDA #$00");
+                  self.emit(&format!("  STA {}+1", reg));
+                } else if let Some((offset, _)) = self.local_offsets.get(name).cloned() {
+                  self.emit("  CLC");
+                  self.emit("  LDA SP");
+                  self.emit(&format!("  ADC #${:02X}", offset));
+                  self.emit(&format!("  STA {}", reg));
+                  self.emit("  LDA SP+1");
+                  self.emit("  ADC #$00");
+                  self.emit(&format!("  STA {}+1", reg));
+                } else {
+                  unreachable!("AddressOf on undeclared identifier");
+                }
+              }
+              _ => unreachable!("AddressOf on non-lvalue"),
+            }
+          }
+          _ => todo!("Unimplemented unary operator: {:?}", op),
+        }
       }
       
       Expr::BinOp(left, op, right) => {

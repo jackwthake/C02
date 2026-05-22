@@ -179,16 +179,10 @@ fn infer_expr_type(expr: &Expr, table: &SymbolTable) -> Result<Type, String> {
     }
     Expr::Unary(op, operand) => {
       let operand_type = infer_expr_type(operand, table)?;
-      
       match op {
-        Op::Bang => {
-          // Logical not returns u8
-          Ok(Type::U8)
-        }
-        Op::Negate => {
-          // Negate preserves the operand type
-          Ok(operand_type)
-        }
+        Op::Bang => Ok(Type::U8),
+        Op::Negate => Ok(operand_type),
+        Op::AddressOf => Ok(Type::Ptr(Box::new(operand_type))),  // add this
         _ => Err(format!("Invalid unary operator in expression")),
       }
     }
@@ -329,6 +323,28 @@ fn analyze_stmt(stmt: &Stmt, table: &mut SymbolTable, return_type: Option<Type>)
     }
     Stmt::Assign(name, expr) => {
       analyze_assign(name, expr, table)?;
+      Ok(())
+    }
+    Stmt::DerefAssign(ptr_expr, value_expr) => {
+      analyze_expr(ptr_expr, table)?;
+      let ptr_type = infer_expr_type(ptr_expr, table)?;
+      let inner_type = match ptr_type {
+        Type::Ptr(inner) => *inner,
+        _ => return Err(format!("Cannot assign through non-pointer type {:?}", ptr_type)),
+      };
+      analyze_expr(value_expr, table)?;
+      let is_assignable = expr_assignable_to(&inner_type, value_expr, table)?;
+      if !is_assignable {
+        let value_type = infer_expr_type(value_expr, table)?;
+        return Err(format!(
+          "Type mismatch in pointer assignment: pointer points to {:?}, but expression is {:?}",
+          inner_type, value_type
+        ));
+      }
+      Ok(())
+    }
+    Stmt::Expr(expr) => {
+      analyze_expr(expr, table)?;
       Ok(())
     }
     Stmt::Return(expr) => {
@@ -490,8 +506,12 @@ fn analyze_expr(expr: &Expr, table: &SymbolTable) -> Result<(), String> {
       analyze_expr(right, table)?;
       Ok(())
     }
-    Expr::Unary(_op, expr) => {
-      // Recursively check the operand
+    Expr::Unary(op, expr) => {
+      if matches!(op, Op::AddressOf) {
+        if !matches!(expr.as_ref(), Expr::Identifier(_) | Expr::Deref(_)) {
+          return Err("Cannot take address of a non-lvalue expression".to_string());
+        }
+      }
       analyze_expr(expr, table)?;
       Ok(())
     }
