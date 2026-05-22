@@ -12,6 +12,7 @@ fn main() -> void {
   while (1) { // ERR: whiles are causing stack corruption somehow
     delay = 1;
     while (delay != 255) {
+      u8 delay = 5;
       delay += 1;
     }
 

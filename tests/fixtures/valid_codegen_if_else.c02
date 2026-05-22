@@ -7,7 +7,7 @@ fn main() -> void {
 
   PORTB = x;
 
-  if (0 == 1) {
+  if (x > 0) {
     x = 0xAA;
     PORTB = x;
   } else {
