@@ -26,10 +26,10 @@ struct Generator {
 
 // Tuple format: (helper name, helper code, number of 16-bit args expected, return type)
 pub static STD_LIB_FUNCTIONS: &[(&str, &str, usize, Type)] = &[
-  ("__mul16", include_str!("../libc02/__mul16.s"), 2, Type::U16),
-  ("__div16", include_str!("../libc02/__div16.s"), 2, Type::U16),
-  ("memcpy", include_str!("../libc02/memcpy.s"), 2, Type::U16),
-  ("strcpy", include_str!("../libc02/strcpy.s"), 3, Type::U16),
+("__mul16", include_str!("../libc02/__mul16.s"), 2, Type::U16),
+("__div16", include_str!("../libc02/__div16.s"), 2, Type::U16),
+("memcpy", include_str!("../libc02/memcpy.s"), 2, Type::U16),
+("strcpy", include_str!("../libc02/strcpy.s"), 3, Type::U16),
 ];
 
 impl Generator {
@@ -918,14 +918,24 @@ impl Generator {
           }
           Op::Gt => {
             // left > right  ↔  right < left
+            // result lands in right_reg (lhs of swapped call) — copy back to reg
             self.emit_lt_op(&right_reg, &reg, &format!("{} > {}", reg, right_reg));
+            self.emit(&format!("  LDA {}", right_reg));
+            self.emit(&format!("  STA {}", reg));
+            self.emit(&format!("  LDA {}+1", right_reg));
+            self.emit(&format!("  STA {}+1", reg));
           }
           Op::Gte => {
             self.emit_gte_op(&reg, &right_reg, &format!("{} >= {}", reg, right_reg));
           }
           Op::Lte => {
             // left <= right  ↔  right >= left
+            // result lands in right_reg (lhs of swapped call) — copy back to reg
             self.emit_gte_op(&right_reg, &reg, &format!("{} <= {}", reg, right_reg));
+            self.emit(&format!("  LDA {}", right_reg));
+            self.emit(&format!("  STA {}", reg));
+            self.emit(&format!("  LDA {}+1", right_reg));
+            self.emit(&format!("  STA {}+1", reg));
           }
           _ => todo!("Unimplemented binary operator: {:?}", op)
         }

@@ -24,8 +24,6 @@ pub enum Token {
   // SYMBOLS
   s_mem_lookup(TokenLocation),     // @
   s_star(TokenLocation),           // *, pointer and multiply
-  s_lbracket(TokenLocation),       // [
-  s_rbracket(TokenLocation),       // ]
   s_arrow(TokenLocation),          // ->
   s_plus(TokenLocation),           // +
   s_minus(TokenLocation),          // -
@@ -45,7 +43,7 @@ pub enum Token {
   s_gt(TokenLocation),             // >
   s_lte(TokenLocation),            // <=
   s_gte(TokenLocation),            // >=
-  s_ampersand(TokenLocation),      // & (for address-of later)
+  s_ampersand(TokenLocation),      // & (Address of operator)
   s_comma(TokenLocation),          // , (for function args)
   
   // LITERALS
@@ -93,8 +91,6 @@ pub fn tokenize(src: &str, file_path: &str) -> Vec<Token> {
       '{' => tokens.push(Token::s_lbrace(location)),
       '}' => tokens.push(Token::s_rbrace(location)),
       '@' => tokens.push(Token::s_mem_lookup(location)),
-      '[' => tokens.push(Token::s_lbracket(location)),
-      ']' => tokens.push(Token::s_rbracket(location)),
       '&' => tokens.push(Token::s_ampersand(location)),
       ',' => tokens.push(Token::s_comma(location)),
       '*' => tokens.push(Token::s_star(location)),

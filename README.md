@@ -104,3 +104,12 @@ The included cc02 wrapper script compiles your source code through the compiler 
 ```
 
 If compilation, syntax checking, or type scoping fail at any point, detailed error locations are written back to stderr using editor-compatible tracking standards.
+
+---
+
+## Known Bugs
+
+1. **Nested while + locals hang** — after an inner while exits, execution never reaches subsequent statements in the outer loop body. No-locals version unaffected. Root cause not yet isolated.
+2. **`for` loops unimplemented** — tokenizer recognizes `Kw_for` but `parse_stmt` doesn't handle it. Will produce a parse error.
+3. **Type casting unimplemented** — cast expressions (e.g. `(u8*)addr`) not yet handled in codegen.
+4. **String literals unimplemented** — no parsing, or ROM placement for string data.

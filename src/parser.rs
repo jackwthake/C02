@@ -50,8 +50,6 @@ enum TokenKind {
   t_i16,
   s_mem_lookup,
   s_star,
-  s_lbracket,
-  s_rbracket,
   s_arrow,
   s_plus,
   s_minus,
@@ -94,8 +92,6 @@ fn token_kind(token: &Token) -> TokenKind {
     Token::t_i16(_) => TokenKind::t_i16,
     Token::s_mem_lookup(_) => TokenKind::s_mem_lookup,
     Token::s_star(_) => TokenKind::s_star,
-    Token::s_lbracket(_) => TokenKind::s_lbracket,
-    Token::s_rbracket(_) => TokenKind::s_rbracket,
     Token::s_arrow(_) => TokenKind::s_arrow,
     Token::s_plus(_) => TokenKind::s_plus,
     Token::s_minus(_) => TokenKind::s_minus,
@@ -139,8 +135,6 @@ fn token_name(token: &Token) -> String {
     Token::t_i16(_) => "i16".into(),
     Token::s_mem_lookup(_) => "@".into(),
     Token::s_star(_) => "*".into(),
-    Token::s_lbracket(_) => "[".into(),
-    Token::s_rbracket(_) => "]".into(),
     Token::s_arrow(_) => "->".into(),
     Token::s_plus(_) => "+".into(),
     Token::s_minus(_) => "-".into(),
@@ -173,7 +167,7 @@ fn token_location(token: &Token) -> TokenLocation {
     Token::Kw_fn(loc) | Token::Kw_reg(loc) | Token::Kw_return(loc) | Token::Kw_void(loc) |
     Token::Kw_if(loc) | Token::Kw_else(loc) | Token::Kw_while(loc) | Token::Kw_for(loc) |
     Token::t_u8(loc) | Token::t_i8(loc) | Token::t_u16(loc) | Token::t_i16(loc) |
-    Token::s_mem_lookup(loc) | Token::s_star(loc) | Token::s_lbracket(loc) | Token::s_rbracket(loc) |
+    Token::s_mem_lookup(loc) | Token::s_star(loc) |
     Token::s_arrow(loc) | Token::s_plus(loc) | Token::s_minus(loc) | Token::s_divide(loc) |
     Token::s_lparen(loc) | Token::s_rparen(loc) | Token::s_lbrace(loc) | Token::s_rbrace(loc) |
     Token::s_semicolon(loc) | Token::s_equals(loc) | Token::s_equalsequals(loc) |
