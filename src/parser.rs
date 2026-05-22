@@ -34,91 +34,6 @@ fn format_location(location: &Option<TokenLocation>) -> String {
 
 impl std::error::Error for ParseError {}
 
-#[derive(Debug, PartialEq, Clone)]
-enum TokenKind {
-  Kw_fn,
-  Kw_reg,
-  Kw_return,
-  Kw_void,
-  Kw_if,
-  Kw_else,
-  Kw_while,
-  Kw_for,
-  t_u8,
-  t_i8,
-  t_u16,
-  t_i16,
-  s_mem_lookup,
-  s_star,
-  s_arrow,
-  s_plus,
-  s_minus,
-  s_divide,
-  s_lparen,
-  s_rparen,
-  s_lbrace,
-  s_rbrace,
-  s_semicolon,
-  s_equals,
-  s_equalsequals,
-  s_plus_equals,
-  s_minus_equals,
-  s_bang,
-  s_bang_equals,
-  s_lt,
-  s_gt,
-  s_lte,
-  s_gte,
-  s_ampersand,
-  s_comma,
-  l_num,
-  l_string,
-  l_identifier,
-}
-
-fn token_kind(token: &Token) -> TokenKind {
-  match token {
-    Token::Kw_fn(_) => TokenKind::Kw_fn,
-    Token::Kw_reg(_) => TokenKind::Kw_reg,
-    Token::Kw_return(_) => TokenKind::Kw_return,
-    Token::Kw_void(_) => TokenKind::Kw_void,
-    Token::Kw_if(_) => TokenKind::Kw_if,
-    Token::Kw_else(_) => TokenKind::Kw_else,
-    Token::Kw_while(_) => TokenKind::Kw_while,
-    Token::Kw_for(_) => TokenKind::Kw_for,
-    Token::t_u8(_) => TokenKind::t_u8,
-    Token::t_i8(_) => TokenKind::t_i8,
-    Token::t_u16(_) => TokenKind::t_u16,
-    Token::t_i16(_) => TokenKind::t_i16,
-    Token::s_mem_lookup(_) => TokenKind::s_mem_lookup,
-    Token::s_star(_) => TokenKind::s_star,
-    Token::s_arrow(_) => TokenKind::s_arrow,
-    Token::s_plus(_) => TokenKind::s_plus,
-    Token::s_minus(_) => TokenKind::s_minus,
-    Token::s_divide(_) => TokenKind::s_divide,
-    Token::s_lparen(_) => TokenKind::s_lparen,
-    Token::s_rparen(_) => TokenKind::s_rparen,
-    Token::s_lbrace(_) => TokenKind::s_lbrace,
-    Token::s_rbrace(_) => TokenKind::s_rbrace,
-    Token::s_semicolon(_) => TokenKind::s_semicolon,
-    Token::s_equals(_) => TokenKind::s_equals,
-    Token::s_equalsequals(_) => TokenKind::s_equalsequals,
-    Token::s_plus_equals(_) => TokenKind::s_plus_equals,
-    Token::s_minus_equals(_) => TokenKind::s_minus_equals,
-    Token::s_bang(_) => TokenKind::s_bang,
-    Token::s_bang_equals(_) => TokenKind::s_bang_equals,
-    Token::s_lt(_) => TokenKind::s_lt,
-    Token::s_gt(_) => TokenKind::s_gt,
-    Token::s_lte(_) => TokenKind::s_lte,
-    Token::s_gte(_) => TokenKind::s_gte,
-    Token::s_ampersand(_) => TokenKind::s_ampersand,
-    Token::s_comma(_) => TokenKind::s_comma,
-    Token::l_num(_, _) => TokenKind::l_num,
-    Token::l_string(_, _) => TokenKind::l_string,
-    Token::l_identifier(_, _) => TokenKind::l_identifier,
-  }
-}
-
 fn token_name(token: &Token) -> String {
   match token {
     Token::Kw_fn(_) => "fn".into(),
@@ -180,12 +95,12 @@ fn token_location(token: &Token) -> TokenLocation {
 
 fn expect_symbol(
   iter: &mut Peekable<impl Iterator<Item=Token>>,
-  expected_kind: TokenKind,
+  pred: impl Fn(&Token) -> bool,
   expected_desc: &str,
   context: &str,
 ) -> ParseResult<()> {
   let token = next_token(iter, context)?;
-  if token_kind(&token) == expected_kind {
+  if pred(&token) {
     Ok(())
   } else {
     let location = token_location(&token);
@@ -304,12 +219,12 @@ fn primary(iter: &mut Peekable<impl Iterator<Item=Token>>) -> ParseResult<Expr> 
       
       if is_cast {
         let t = parse_type(iter, "cast type")?;
-        expect_symbol(iter, TokenKind::s_rparen, ")", "cast expression")?;
+        expect_symbol(iter, |t| matches!(t, Token::s_rparen(_)), ")", "cast expression")?;
         let val = equality(iter)?;
         Ok(Expr::Cast(t, Box::new(val)))
       } else {
         let expr = equality(iter)?;
-        expect_symbol(iter, TokenKind::s_rparen, ")", "grouped expression")?;
+        expect_symbol(iter, |t| matches!(t, Token::s_rparen(_)), ")", "grouped expression")?;
         Ok(expr)
       }
     }
@@ -497,7 +412,7 @@ fn equality(iter: &mut Peekable<impl Iterator<Item=Token>>) -> ParseResult<Expr>
 /////////////////////////////////////////////////////////////////////////////
 
 fn parse_block(iter: &mut Peekable<impl Iterator<Item=Token>>) -> ParseResult<Vec<Stmt>> {
-  expect_symbol(iter, TokenKind::s_lbrace, "{", "block")?;
+  expect_symbol(iter, |t| matches!(t, Token::s_lbrace(_)), "{", "block")?;
   let mut stmts = Vec::new();
   
   loop {
@@ -530,25 +445,25 @@ fn parse_stmt(iter: &mut Peekable<impl Iterator<Item=Token>>) -> ParseResult<Stm
         Ok(Stmt::Return(None))
       } else {
         let expr = equality(iter)?;
-        expect_symbol(iter, TokenKind::s_semicolon, ";", "return statement")?;
+        expect_symbol(iter, |t| matches!(t, Token::s_semicolon(_)), ";", "return statement")?;
         Ok(Stmt::Return(Some(expr)))
       }
     }
     
     Some(Token::Kw_while(_)) => {
       iter.next(); // consume while
-      expect_symbol(iter, TokenKind::s_lparen, "(", "while condition")?;
+      expect_symbol(iter, |t| matches!(t, Token::s_lparen(_)), "(", "while condition")?;
       let condition = equality(iter)?;
-      expect_symbol(iter, TokenKind::s_rparen, ")", "while condition")?;
+      expect_symbol(iter, |t| matches!(t, Token::s_rparen(_)), ")", "while condition")?;
       let body = parse_block(iter)?;
       Ok(Stmt::While(condition, body))
     }
     
     Some(Token::Kw_if(_)) => {
       iter.next(); // consume if
-      expect_symbol(iter, TokenKind::s_lparen, "(", "if condition")?;
+      expect_symbol(iter, |t| matches!(t, Token::s_lparen(_)), "(", "if condition")?;
       let condition = equality(iter)?;
-      expect_symbol(iter, TokenKind::s_rparen, ")", "if condition")?;
+      expect_symbol(iter, |t| matches!(t, Token::s_rparen(_)), ")", "if condition")?;
       let body = parse_block(iter)?;
       let else_body = if matches!(iter.peek(), Some(Token::Kw_else(_))) {
         iter.next(); // consume else
@@ -580,18 +495,18 @@ fn parse_stmt(iter: &mut Peekable<impl Iterator<Item=Token>>) -> ParseResult<Stm
         }
       };
       
-      expect_symbol(iter, TokenKind::s_equals, "=", "variable declaration")?;
+      expect_symbol(iter, |t| matches!(t, Token::s_equals(_)), "=", "variable declaration")?;
       let expr = equality(iter)?;
-      expect_symbol(iter, TokenKind::s_semicolon, ";", "variable declaration")?;
+      expect_symbol(iter, |t| matches!(t, Token::s_semicolon(_)), ";", "variable declaration")?;
       Ok(Stmt::VarDecl(t, identifier, Some(expr)))
     }
     
     Some(Token::s_star(_)) => {
       iter.next(); // consume *
       let target = equality(iter)?;
-      expect_symbol(iter, TokenKind::s_equals, "=", "pointer assignment")?;
+      expect_symbol(iter, |t| matches!(t, Token::s_equals(_)), "=", "pointer assignment")?;
       let value = equality(iter)?;
-      expect_symbol(iter, TokenKind::s_semicolon, ";", "pointer assignment")?;
+      expect_symbol(iter, |t| matches!(t, Token::s_semicolon(_)), ";", "pointer assignment")?;
       Ok(Stmt::DerefAssign(target, value))
     }
     
@@ -617,13 +532,13 @@ fn parse_stmt(iter: &mut Peekable<impl Iterator<Item=Token>>) -> ParseResult<Stm
             }),
           }
         }
-        expect_symbol(iter, TokenKind::s_semicolon, ";", "function call statement")?;
+        expect_symbol(iter, |t| matches!(t, Token::s_semicolon(_)), ";", "function call statement")?;
         return Ok(Stmt::Expr(Expr::Call(id, args)));
       }
       
       let assign_token = next_token(iter, "assignment")?;
       let expr = equality(iter)?;
-      expect_symbol(iter, TokenKind::s_semicolon, ";", "assignment")?;
+      expect_symbol(iter, |t| matches!(t, Token::s_semicolon(_)), ";", "assignment")?;
       
       let stmt = match assign_token {
         Token::s_equals(_) => Stmt::Assign(id, expr),
@@ -667,7 +582,7 @@ fn parse_stmt(iter: &mut Peekable<impl Iterator<Item=Token>>) -> ParseResult<Stm
 }
 
 fn parse_args(iter: &mut Peekable<impl Iterator<Item=Token>>) -> ParseResult<Vec<(Type, String)>> {
-  expect_symbol(iter, TokenKind::s_lparen, "(", "argument list")?;
+  expect_symbol(iter, |t| matches!(t, Token::s_lparen(_)), "(", "argument list")?;
   let mut args = Vec::new();
   
   loop {
@@ -725,7 +640,7 @@ fn parse_toplevel(iter: &mut Peekable<impl Iterator<Item=Token>>) -> ParseResult
       };
       
       let args = parse_args(iter)?;
-      expect_symbol(iter, TokenKind::s_arrow, "->", "function declaration")?;
+      expect_symbol(iter, |t| matches!(t, Token::s_arrow(_)), "->", "function declaration")?;
       let ret = parse_type(iter, "function return type")?;
       let body = parse_block(iter)?;
       Ok(TopLevel::Function(name, args, ret, body))
@@ -746,7 +661,7 @@ fn parse_toplevel(iter: &mut Peekable<impl Iterator<Item=Token>>) -> ParseResult
           })
         }
       };
-      expect_symbol(iter, TokenKind::s_mem_lookup, "@", "register declaration")?;
+      expect_symbol(iter, |t| matches!(t, Token::s_mem_lookup(_)), "@", "register declaration")?;
       let addr = match next_token(iter, "register declaration")? {
         Token::l_num(n, _) => n as u16,
         token => {
@@ -759,7 +674,7 @@ fn parse_toplevel(iter: &mut Peekable<impl Iterator<Item=Token>>) -> ParseResult
           })
         }
       };
-      expect_symbol(iter, TokenKind::s_semicolon, ";", "register declaration")?;
+      expect_symbol(iter, |t| matches!(t, Token::s_semicolon(_)), ";", "register declaration")?;
       Ok(TopLevel::RegDecl(t, id, addr))
     }
     
@@ -808,7 +723,7 @@ fn parse_toplevel(iter: &mut Peekable<impl Iterator<Item=Token>>) -> ParseResult
         }
       };
       
-      expect_symbol(iter, TokenKind::s_semicolon, ";", "global declaration")?;
+      expect_symbol(iter, |t| matches!(t, Token::s_semicolon(_)), ";", "global declaration")?;
       Ok(TopLevel::GlobalVar(t, identifier, initialiser))
     }
     
