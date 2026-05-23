@@ -89,19 +89,21 @@ fn types_compatible(expected: &Type, actual: &Type) -> bool {
 }
 
 /// Check if an expression type can be assigned to a target type
-/// This is more lenient than types_compatible: numeric literals can be assigned to any integer type
+/// This is more lenient than types_compatible: numeric literals can be assigned to any integer type OR pointer
 fn expr_assignable_to(expected: &Type, expr: &Expr, table: &SymbolTable) -> Result<bool, String> {
   match expr {
     Expr::Number(_) => {
       match expected {
-        Type::U8 | Type::I8 | Type::U16 | Type::I16 => Ok(true),
+        // Allow numbers to be assigned to integers AND pointers
+        Type::U8 | Type::I8 | Type::U16 | Type::I16 | Type::Ptr(_) => Ok(true),
         _ => Ok(false),
       }
     }
-    // If the expression is a binary operation on two numbers, allow it to assign to a u8
+    // If the expression is a binary operation on two numbers, allow it to assign to a u8 or pointer
     Expr::BinOp(left, _, right) if matches!(left.as_ref(), Expr::Number(_)) && matches!(right.as_ref(), Expr::Number(_)) => {
       match expected {
-        Type::U8 | Type::I8 | Type::U16 | Type::I16 => Ok(true),
+        // Allow constant math (e.g., 0x40 + 0x01) to be assigned to pointers as well
+        Type::U8 | Type::I8 | Type::U16 | Type::I16 | Type::Ptr(_) => Ok(true),
         _ => Ok(false),
       }
     }
