@@ -533,8 +533,9 @@ fn analyze_expr(expr: &Expr, table: &SymbolTable) -> Result<(), String> {
           
           // Check each argument type matches the corresponding parameter type
           for (i, (arg, (param_type, _param_name))) in args.iter().zip(params.iter()).enumerate() {
-            let arg_type = infer_expr_type(arg, table)?;
-            if !types_compatible(param_type, &arg_type) {
+            let is_assignable = expr_assignable_to(param_type, arg, table)?;
+            if !is_assignable {
+              let arg_type = infer_expr_type(arg, table)?;
               return Err(format!(
                 "Type mismatch in argument {} of function '{}': expected {:?}, found {:?}",
                 i + 1, fn_name, param_type, arg_type
