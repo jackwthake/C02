@@ -128,13 +128,13 @@ impl Generator {
     match data_type {
       Type::U8 | Type::I8 => {
         self.emit(&format!("  LDA r{}", self.reg_depth));
-        self.emit(&format!("  STA ${:04X}", offset));
+        self.emit(&format!("  STA ${:02X}", offset));
       }
       Type::U16 | Type::I16 | Type::Ptr(_) => {
         self.emit(&format!("  LDA r{}", self.reg_depth));
-        self.emit(&format!("  STA ${:04X}", offset));
+        self.emit(&format!("  STA ${:02X}", offset));
         self.emit(&format!("  LDA r{}+1", self.reg_depth));
-        self.emit(&format!("  STA ${:04X}", offset + 1));
+        self.emit(&format!("  STA ${:02X}", offset + 1));
       }
       _ => unreachable!()
     }
@@ -151,15 +151,15 @@ impl Generator {
     self.emit(&format!("; --- Load Global '{}' from offset ${:02X} ---", name, offset));
     match data_type {
       Type::U8 | Type::I8 => {
-        self.emit(&format!("  LDA ${:04X}", offset));
+        self.emit(&format!("  LDA ${:02X}", offset));
         self.emit(&format!("  STA r{}", self.reg_depth));
         self.emit("  LDA #$00");
         self.emit(&format!("  STA r{}+1", self.reg_depth));
       }
       Type::U16 | Type::I16 | Type::Ptr(_) => {
-        self.emit(&format!("  LDA ${:04X}", offset));
+        self.emit(&format!("  LDA ${:02X}", offset));
         self.emit(&format!("  STA r{}", self.reg_depth));
-        self.emit(&format!("  LDA ${:04X}", offset + 1));
+        self.emit(&format!("  LDA ${:02X}", offset + 1));
         self.emit(&format!("  STA r{}+1", self.reg_depth));
       }
       _ => unreachable!()
@@ -174,18 +174,18 @@ impl Generator {
     .map(|(offset, t)| (*offset, t.clone()))
     .expect("param_store called for undeclared parameter");
     
-    self.emit(&format!("; --- Store Parameter '{}' at offset ${:04X} ---", name, offset));
+    self.emit(&format!("; --- Store Parameter '{}' at offset ${:02X} ---", name, offset));
     
     match data_type {
       Type::U8 | Type::I8 => {
         self.emit(&format!("  LDA r{}", self.reg_depth));
-        self.emit(&format!("  STA ${:04X}", offset));
+        self.emit(&format!("  STA ${:02X}", offset));
       }
       Type::U16 | Type::I16 | Type::Ptr(_) => {
         self.emit(&format!("  LDA r{}", self.reg_depth));
-        self.emit(&format!("  STA ${:04X}", offset));
+        self.emit(&format!("  STA ${:02X}", offset));
         self.emit(&format!("  LDA r{}+1", self.reg_depth));
-        self.emit(&format!("  STA ${:04X}", offset + 1));
+        self.emit(&format!("  STA ${:02X}", offset + 1));
       }
       _ => unreachable!()
     }
@@ -203,19 +203,35 @@ impl Generator {
     
     match data_type {
       Type::U8 | Type::I8 => {
-        self.emit(&format!("  LDA ${:04X}", offset));
+        self.emit(&format!("  LDA ${:02X}", offset));
         self.emit(&format!("  STA r{}", self.reg_depth));
         self.emit("  LDA #$00");
         self.emit(&format!("  STA r{}+1", self.reg_depth));
       }
       Type::U16 | Type::I16 | Type::Ptr(_) => {
-        self.emit(&format!("  LDA ${:04X}", offset));
+        self.emit(&format!("  LDA ${:02X}", offset));
         self.emit(&format!("  STA r{}", self.reg_depth));
-        self.emit(&format!("  LDA ${:04X}", offset + 1));
+        self.emit(&format!("  LDA ${:02X}", offset + 1));
         self.emit(&format!("  STA r{}+1", self.reg_depth));
       }
       _ => unreachable!()
     }
+  }
+
+  // Restores the software stack pointer and returns from the subroutine.
+  fn emit_epilogue(&mut self) {
+    if self.current_frame_size > 0 {
+      self.emit("; --- Function Epilogue ---");
+      self.emit("  LDA SP");
+      self.emit("  CLC");
+      self.emit(&format!("  ADC #${:02X}", self.current_frame_size));
+      self.emit("  STA SP");
+      self.emit("  LDA SP+1");
+      self.emit("  ADC #$00");
+      self.emit("  STA SP+1");
+      self.emit("; -------------------------");
+    }
+    self.emit("  RTS\n");
   }
   
   // Returns a unique local label string (.L0, .L1, ...) and advances the counter.
@@ -263,20 +279,20 @@ impl Generator {
     for stmt in stmts {
       match stmt {
         Stmt::Assign(_, _) | Stmt::Return(_) | Stmt::Expr(_) | Stmt::DerefAssign(_, _) => {}
-
+        
         Stmt::While(_, body) => {
           let inner = Self::calc_frame_size(body, size);
           if inner > size { size = inner; }
         }
-
+        
         Stmt::If(_, body, else_body) => {
           let then_size = Self::calc_frame_size(body, size);
           let else_size = else_body.as_ref()
-            .map(|e| Self::calc_frame_size(e, size))
-            .unwrap_or(size);
+          .map(|e| Self::calc_frame_size(e, size))
+          .unwrap_or(size);
           size = then_size.max(else_size);
         }
-
+        
         Stmt::VarDecl(data_type, _, _) => {
           size += match data_type {
             Type::U8 | Type::I8 => 1,
@@ -288,7 +304,7 @@ impl Generator {
     }
     size
   }
-
+  
   // Scope-aware offset assignment. Walks stmts at the current nesting level
   // and assigns slots only to VarDecls seen here, starting from `base`.
   // Recurses into nested blocks with the updated watermark so inner locals
@@ -299,13 +315,13 @@ impl Generator {
     for stmt in stmts {
       match stmt {
         Stmt::Assign(_, _) | Stmt::Return(_) | Stmt::Expr(_) | Stmt::DerefAssign(_, _) => {}
-
+        
         Stmt::While(_, body) => {
           // Inner locals live above the current watermark.
           // The inner watermark may grow, but siblings start fresh from `watermark`.
           self.assign_offsets(body, watermark);
         }
-
+        
         Stmt::If(_, body, else_body) => {
           // Both branches are mutually exclusive — both start from watermark.
           self.assign_offsets(body, watermark);
@@ -313,7 +329,7 @@ impl Generator {
             self.assign_offsets(else_stmts, watermark);
           }
         }
-
+        
         Stmt::VarDecl(data_type, var_name, _) => {
           let slot_size = match data_type {
             Type::U8 | Type::I8 => 1,
@@ -350,11 +366,11 @@ impl Generator {
     
     self.local_offsets.clear();
     self.current_frame_size = 0;
-
+    
     // Pass 1: calculate how much stack space this frame needs (pure, no side effects).
     self.current_frame_size = Self::calc_frame_size(body, 0);
     assert!(self.current_frame_size < 250, "Stack frame exceeded 250 bytes!");
-
+    
     // Pass 2: assign concrete offsets into local_offsets, scope-aware so that
     // inner redeclarations of the same name never clobber the outer binding.
     self.assign_offsets(body, 0);
@@ -390,19 +406,7 @@ impl Generator {
     if ret == &Type::Void {
       // Stack Frame Clean-up
       // main never needs to clean up the stack because if main returns, execution stops
-      if self.current_frame_size > 0 && !matches!(name, "main") {
-        self.emit("; --- Function Epilogue ---");
-        self.emit("  LDA SP");
-        self.emit("  CLC");
-        self.emit(&format!("  ADC #${:02X}", self.current_frame_size));
-        self.emit("  STA SP");
-        self.emit("  LDA SP+1");
-        self.emit("  ADC #$00");
-        self.emit("  STA SP+1");
-        self.emit("; -------------------------");
-      }
-      
-      self.emit("  RTS\n");
+      self.emit_epilogue();
     }
     
     self.param_offsets.clear();
@@ -415,7 +419,8 @@ impl Generator {
   fn gen_stmt(&mut self, stmt: &Stmt) {
     match stmt {
       Stmt::Assign(name, expr) => {
-        self.reg_depth = 0;
+        // We preserve incoming depth, evaluate the right-hand side, and store it.
+        // This keeps expression assignments mid-scoping perfectly safe.
         self.gen_expr(expr);
         
         // check args then locals then globals
@@ -430,7 +435,8 @@ impl Generator {
           match symbol {
             Some(Symbol::Register { address, .. }) => {
               self.emit(&format!("; --- register write at addr: {:04X}", address));
-              self.emit("  LDA r0");
+              let reg = format!("r{}", self.reg_depth);
+              self.emit(&format!("  LDA {}", reg));
               self.emit(&format!("  STA ${:04X}", address));
             }
             Some(Symbol::Variable { data_type }) => {
@@ -442,120 +448,106 @@ impl Generator {
       }
       
       Stmt::DerefAssign(ptr_expr, value_expr) => {
-        // evaluate value into r0
-        self.reg_depth = 0;
+        let saved_depth = self.reg_depth;
+        
+        // evaluate value into current register
+        let val_reg = format!("r{}", self.reg_depth);
         self.gen_expr(value_expr);
         
-        // evaluate pointer into r1
-        self.reg_depth = 1;
+        // evaluate pointer into the next virtual register slot up
+        self.reg_depth += 1;
+        let ptr_reg = format!("r{}", self.reg_depth);
         self.gen_expr(ptr_expr);
-        self.reg_depth = 0;
+        
+        // restore depth balance
+        self.reg_depth = saved_depth;
         
         // store value through pointer
         self.emit("  ; --- DerefAssign");
         self.emit("  LDY #$00");
-        self.emit("  LDA r0");
-        self.emit("  STA (r1),Y");
+        self.emit(&format!("  LDA {}", val_reg));
+        self.emit(&format!("  STA ({}),Y", ptr_reg));
       }
-
+      
       Stmt::Expr(expr) => {
-        self.reg_depth = 0;
+        // Evaluate expression cleanly using inherited register tracking
         self.gen_expr(expr);
-        // result is in r0 but we can ignore it since this is an expression statement
       }
       
       Stmt::Return(maybe_expr) => {
         if let Some(expr) = maybe_expr {
-          self.reg_depth = 0;
-          self.gen_expr(expr);  // result in r0
+          self.gen_expr(expr); // Result lands in current reg_depth
         }
         
         // epilogue
-        if self.current_frame_size > 0 {
-          self.emit("; --- Function Epilogue ---");
-          self.emit("  LDA SP");
-          self.emit("  CLC");
-          self.emit(&format!("  ADC #${:02X}", self.current_frame_size));
-          self.emit("  STA SP");
-          self.emit("  LDA SP+1");
-          self.emit("  ADC #$00");
-          self.emit("  STA SP+1");
-        }
-        self.emit("  RTS\n");
+        self.emit_epilogue();
       }
       
       Stmt::VarDecl(data_type, name, initializer) => {
-        // Offsets are already calculated in pre-scan pass!
-        // Just evaluate the optional initializer expression and write to memory
+        // Offsets were pre-allocated in the layout pass.
+        // Just evaluate the optional initializer expression and write it out.
         if let Some(expr) = initializer {
-          self.reg_depth = 0;
           self.gen_expr(expr);
           self.emit_local_store(name, data_type);
         }
       }
       
       Stmt::If(cond_expr, then_stmts, else_stmts) => {
-        let saved_depth = self.reg_depth;
-        self.reg_depth = 0;
+        let current_reg = format!("r{}", self.reg_depth);
         
         self.emit("\n  ; --- If");
         self.gen_expr(cond_expr);
         
+        // Pre-allocate all labels BEFORE dropping into child block code generation.
+        // This solves structural clobbering when inner child statements generate fresh labels.
+        let end_if = self.fresh_label();
+        
         match else_stmts {
           Some(else_body) => {
             let else_block = self.fresh_label();
-            let end_if = self.fresh_label();
             
-            self.emit(&format!("  LDA r0"));
+            self.emit(&format!("  LDA {}", current_reg));
             self.emit(&format!("  BEQ {}", else_block));
             
-            // then block (fall-through when condition true)
             self.emit("  ; then block");
             for stmt in then_stmts {
               self.gen_stmt(stmt);
             }
             self.emit(&format!("  JMP {}", end_if));
             
-            // else block
             self.emit(&format!("\n{}:   ; else block", else_block));
             for stmt in else_body {
               self.gen_stmt(stmt);
             }
-            
-            self.emit(&format!("{}:", end_if));
           }
           None => {
-            let end_if = self.fresh_label();
-            
-            self.emit(&format!("  LDA r0"));
+            self.emit(&format!("  LDA {}", current_reg));
             self.emit(&format!("  BEQ {}", end_if));
             
             for stmt in then_stmts {
               self.gen_stmt(stmt);
             }
-            
-            self.emit(&format!("{}:", end_if));
           }
         }
         
-        self.reg_depth = saved_depth;
+        self.emit(&format!("{}:", end_if));
       }
       
-      // TODO: this doesnt work with nested loops
       Stmt::While(cond_expr, body_stmts) => {
-        let saved_depth = self.reg_depth;
-        self.reg_depth = 0;
+        let current_reg = format!("r{}", self.reg_depth);
         
+        // Grab labels before executing child elements to keep nested loop logic fully isolated
         let start_label = self.fresh_label();
-        let body_label = self.fresh_label();
-        let end_label = self.fresh_label();
+        let body_label  = self.fresh_label();
+        let end_label   = self.fresh_label();
         
         self.emit("; --- While Loop");
-        
         self.emit(&format!("{}:", start_label));
+        
+        // Evaluate condition at our safe inherited depth
         self.gen_expr(cond_expr);
         
-        self.emit(&format!("  LDA r0"));
+        self.emit(&format!("  LDA {}", current_reg));
         self.emit(&format!("  BNE {}", body_label));
         self.emit(&format!("  JMP {}", end_label));
         
@@ -566,10 +558,7 @@ impl Generator {
         
         self.emit(&format!("  JMP {}", start_label));
         self.emit(&format!("{}:", end_label));
-        
-        self.reg_depth = saved_depth;
       }
-      
     }
   }
   
@@ -604,7 +593,7 @@ impl Generator {
     self.emit(&format!("  STA {}+1", lhs));
     self.emit(&format!("{}:", end_label));
   }
-
+  
   // Emit a 16-bit unsigned `left >= right`, producing 0 or 1 in `lhs_reg`.
   // Template for >= and <= (caller swaps lhs/rhs for <=).
   //
@@ -636,12 +625,20 @@ impl Generator {
     self.emit(&format!("  STA {}+1", lhs));
     self.emit(&format!("{}:", end_label));
   }
-
+  
   // Emits assembly for an expression, leaving the result in the virtual register
   // at the current reg_depth. Nested BinOps increment reg_depth for the right
   // operand so both sides can be live simultaneously without clobbering each other.
   // Callers are responsible for saving/restoring reg_depth around calls.
   fn gen_expr(&mut self, expr: &Expr) {
+    // --- Register File Overflow Guard ---
+    let max_registers = 15; // see c02rt/reg.s 
+    assert!(
+      self.reg_depth < max_registers,
+      "Compiler Panic: Expression depth exceeded available virtual registers (depth: {}). Needs a stack spill implementation.",
+      self.reg_depth
+    );
+
     match expr {
       Expr::Number(n) => {
         let reg = format!("r{}", self.reg_depth);
@@ -708,14 +705,32 @@ impl Generator {
           is_std_helper = true;
         }
         
+        let func_symbol = self.symbol_table.local_symbols.get(func_name).cloned();
+        
         for (i, arg_expr) in args.iter().enumerate() {
           self.reg_depth = 0;
-          self.gen_expr(arg_expr);
+          self.gen_expr(arg_expr); // Evaluates argument into r0
           
           self.emit("  LDA r0");
           self.emit(&format!("  STA args{}", i));
-          self.emit("  LDA r0+1");
-          self.emit(&format!("  STA args{}+1", i));  // note +1
+          
+          // Fallback checking: default to checking the function's declaration rules
+          let mut is_16_bit = true; // Safe default, every virtual register spans 16 bits
+          
+          if let Some(Symbol::Function { params, .. }) = func_symbol.as_ref() {
+            if let Some((param_type, _)) = params.get(i) {
+              match param_type {
+                Type::U8 | Type::I8 => is_16_bit = false,
+                _ => is_16_bit = true,
+              }
+            }
+          }
+          
+          // Only emit the high byte write if it's a 16-bit or pointer type!
+          if is_16_bit {
+            self.emit("  LDA r0+1");
+            self.emit(&format!("  STA args{}+1", i));
+          }
         }
         
         if !is_std_helper {

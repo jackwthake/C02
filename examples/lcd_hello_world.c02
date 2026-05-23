@@ -29,11 +29,22 @@ fn lcd_init() -> void {
 
 fn lcd_putc(u8 ch) -> void {
   PORTB = ch; // Put character on data lines
-  PORTA = 0x20;
-  PORTA = 0xA0; 
-  PORTA = 0x20;
+  PORTA = 0x32; // RS
+  PORTA = 0xA0; // RS | E
+  PORTA = 0x32; // RS
 }
 
 fn main() -> void {
   lcd_init();
+
+  lcd_putc(72);   // H
+  lcd_putc(101);  // e
+  lcd_putc(108);  // l
+  lcd_putc(108);  // l
+  lcd_putc(111);  // o
+  lcd_putc(32);   // 
+  lcd_putc(67);   // C
+  lcd_putc(48);   // 0
+  lcd_putc(50);   // 2
+  lcd_putc(33);   // !
 }
