@@ -56,6 +56,11 @@ impl Generator {
     self.output.push(0xa2);
     self.output.push(val);
   }
+
+  fn emit_ldx_zpg(&mut self, addr: u8) {
+    self.output.push(0xA6);
+    self.output.push(addr);
+  }
   
   fn emit_ldy_imm(&mut self, val: u8) {
     self.output.push(0xa0);
@@ -102,6 +107,10 @@ impl Generator {
   fn emit_rts(&mut self) {
     self.output.push(0x60);
   }
+
+  fn emit_txs(&mut self) {
+    self.output.push(0x9a);
+  }
   
   fn emit_label(&mut self, name: &str) {
     self.labels.insert(name.to_string(), self.output.len());
@@ -135,8 +144,8 @@ impl Generator {
     self.emit_label("_reset_vector");
     self.output.push(0x78);       // SEI, disable interrupts
     self.output.push(0xD8);       // CLD, clear decimal mode
-    self.emit_ldx_imm(0xFF);      // get ready to setup hardware SP
-    self.output.push(0x9A);       // TXS, move val in x reg to SP (hardware)
+    self.emit_ldx_imm(0xFF);  // get ready to setup hardware SP
+    self.emit_txs();              // TXS, move val in x reg to SP (hardware)
     
     // everything is initialized, start program
     self.emit_jsr("_main");
@@ -255,8 +264,8 @@ impl Generator {
       
       if !is_main {
         // epilogue: cleanly restore hardware S from FP
-        self.output.push(0xA6); self.output.push(FP); // LDX FP
-        self.output.push(0x9A); // TXS
+        self.emit_ldx_zpg(FP);
+        self.emit_txs();
       }
       
       self.param_slots.clear();
