@@ -183,7 +183,6 @@ impl Generator {
       .expect(&format!("undefined label: {}", label));
       
       let absolute_addr = rom_start as usize + label_offset;
-      dbg!(label, patch_offset, label_offset, absolute_addr);
       
       let lo = (absolute_addr & 0xFF) as u8;
       let hi = ((absolute_addr >> 8) & 0xFF) as u8;
@@ -345,7 +344,6 @@ pub fn generate(ast: Vec<TopLevel>, symbol_table: SymbolTable, mem_map: Memory_M
     generator.gen_function(item);
   }
   
-  dbg!(mem_map.rom_start);
   generator.resolve_patches(mem_map.rom_start);
   generator.pad_binary_and_emit_vectors(mem_map);
   

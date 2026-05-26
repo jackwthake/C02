@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/jackwthake/C02/actions/workflows/ci.yml/badge.svg)](https://github.com/jackwthake/C02/actions/workflows/ci.yml)
 
-A systems language compiler for the C02 language, implemented in Rust. It reads `.c02` source files, tokenizes and parses them into an Abstract Syntax Tree (AST), runs an advanced semantic analysis pass, and generates native, high-performance machine code for the 65C02 Microprocessor.
+A systems language compiler for the C02 language, implemented in Rust. It reads `.c02` source files, tokenizes and parses them into an Abstract Syntax Tree (AST), runs a semantic analysis pass, and generates native machine code for the 65C02 microprocessor.
 
 ## What it is
 
@@ -10,12 +10,13 @@ C02 is a strongly typed, C-like systems programming language designed specifical
 
 ## Key Features & Architecture
 
-The compiler is built as a complete, modern multi-stage pipeline:
+The compiler is built as a complete multi-stage pipeline:
 
 1. **Source Tracking Tokenizer:** Maps characters to discrete tokens while maintaining source locations (file, line, column) for robust compilation errors.
 2. **Recursive Descent Parser:** Transforms the token stream into a structured AST, treating hardware registers and standard controls as first-class grammatical constructs.
-3. **Lexically Scoped Semantic Analyzer:** Implements a type synthesizer and validation engine. It enforces a hierarchical symbol table structure to handle block scoping (`if/else`, `while`), tracking variable lifetimes, validating function signatures, and trapping type mismatches *before* code generation.
-4. **Optimized Code Generator:** Generates valid 65C02 binaries. It avoids slow virtual-machine stack execution by mapping parameters and expression scratchpads directly onto a high-performance zero-page register design.
+3. **Lexically Scoped Semantic Analyzer:** Implements a type synthesizer and validation engine. It enforces a hierarchical symbol table structure to handle block scoping (`if/else`, `while`), tracking variable lifetimes, validating function signatures, and trapping type mismatches before code generation.
+4. **Optimized Code Generator:** Generates valid 65C02 binaries. It avoids slow stack execution by mapping parameters and expression scratchpads directly onto a high-performance zero-page register design.
+5. **Disassembler:** Decodes compiled `.bin` files back into annotated 65C02 assembly, resolving jump targets to named labels for readability.
 
 ### Zero-Page Hardware-Register Layout
 
@@ -24,10 +25,10 @@ To maximize compilation density and execution speed, the code generator reserves
 | Address Range | Identifier | Purpose |
 | :--- | :--- | :--- |
 | **`$00`** | `FP` | **Frame Pointer:** Tracks multi-byte local variable frames in main RAM. |
-| **`$02`** | `RET` | **Return Register:** Where ever function or conditional puts its return value. |
+| **`$02`** | `RET` | **Return Register:** Where every function or conditional puts its return value. |
 | **`$04` – `$1D`** | `r0` – `r13` | **Virtual Registers:** General 16-bit high-speed scratchpads for nested expression evaluation. |
 | **`$1E` – `$2F`** | `args0` – `args9` | **Function ABI Zone:** Rapid parameter passing into function bounds without stack overhead. |
-| **`$30` – `$FF`** | `usr_space` | **User Space:** Globals and variable caching up to the programmers discretion. |
+| **`$30` – `$FF`** | `usr_space` | **User Space:** Globals and variable caching at the programmer's discretion. |
 
 ---
 
@@ -42,7 +43,7 @@ To maximize compilation density and execution speed, the code generator reserves
 
 ### Memory Mapped I/O (`reg`)
 
-Hardware interface registers are pinned directly to absolute memory bounds. Interacting with them compiles straight to ultra-fast absolute addressing instructions (`STA`, `LDA`), bypassing memory allocation entirely.
+Hardware interface registers are pinned directly to absolute memory addresses. Interacting with them compiles to absolute addressing instructions (`STA`, `LDA`), bypassing memory allocation entirely.
 
 ```c
 reg u8 PORTA @ 0x6001;
@@ -51,7 +52,7 @@ reg u8 PORTB @ 0x6000;
 
 ## Compilation Example
 
-Given a valid .c02 source snippet:
+Given a valid `.c02` source snippet:
 
 ```c
 u16 monitor_addr = 0x8000;
@@ -67,20 +68,21 @@ fn main() -> void {
 }
 ```
 
-The compiler evaluates scope boundaries, types, and emits optimized structural loops and operations targeting the vasm compiler output.
+The compiler evaluates scope boundaries and types, then emits optimized 65C02 machine code targeting the configured memory map.
 
 ## Toolchain Usage
 
-### Compiling the Compiler & Submodules
+### Compiling the Compiler
 
 ```shell
-# Compile the C02 compiler binary
+git clone https://github.com/jackwthake/C02.git
+cd C02
 cargo build
 ```
 
-### Memory Map Config File, `c02_config.ron`
+### Memory Map Config File (`c02_config.ron`)
 
-The compiler will look for a `.ron` (Rusty Object Notation) file containing the memory map for the target in whatever base directory `C02` gets invoked in. This file defines how the compiler will format the outputted assembly. This is a sample config that fits the specs of the Ben Eater Kit Computer:
+The compiler looks for a `.ron` (Rusty Object Notation) config file in whatever directory `C02` is invoked from. This defines the target memory map. A sample config for the Ben Eater Kit Computer:
 
 ```ron
 Memory_Map(
@@ -88,10 +90,49 @@ Memory_Map(
 )
 ```
 
+If no config file is found, the compiler falls back to a default memory map with a warning.
+
 ### Running the Compiler
 
-```Bash
-./C02 test/valid.c02
+```bash
+./C02 <source.c02>
 ```
 
-If compilation, syntax checking, or type scoping fail at any point, detailed error locations are written back to stderr using editor-compatible tracking standards.
+If compilation, syntax checking, or type scoping fail at any point, detailed error locations are written to stderr using editor-compatible source tracking.
+
+### Disassembling a Binary
+
+Pass a compiled `.bin` file with the `-d` flag to decode it back into annotated assembly:
+
+```bash
+./C02 <binary.bin> -d
+```
+
+The disassembler strips NOP padding and vector table bytes, resolves JSR/JMP targets to named labels, and prints each instruction with its absolute address:
+
+```assembly
+8000: SEI
+8001: CLD
+8002: LDX #$FF
+8004: TXS
+8005: JSR L3
+L0:
+8008: JMP L0
+L1:
+800B: TSX
+...
+L3:
+80AE: LDA $00
+80B0: PHA
+...
+```
+
+The same `c02_config.ron` is used in both modes to ensure addresses are consistent between compilation and disassembly.
+
+### Debug Output
+
+Pass `--no-out` to dump the compiler's internal pipeline stages (tokens, AST, symbol table) without emitting a binary:
+
+```bash
+./C02 <source.c02> --no-out
+```
