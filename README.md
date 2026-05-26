@@ -136,3 +136,9 @@ Pass `--no-out` to dump the compiler's internal pipeline stages (tokens, AST, sy
 ```bash
 ./C02 <source.c02> --no-out
 ```
+
+---
+
+## Known Bugs
+
+- Programs without globals crash... see ```examples/lcd_hello_world.c02```

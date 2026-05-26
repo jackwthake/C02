@@ -34,6 +34,10 @@ fn lcd_putc(u8 ch) -> void {
   PORTA = 0x32; // RS
 }
 
+// interesting - no globals = code crash 
+u8 space = 32;
+// u8 l = 108
+
 fn main() -> void {
   lcd_init();
 
