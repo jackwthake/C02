@@ -405,12 +405,10 @@ impl Generator {
 
       // Pre-pass: count locals so we know how many scratch regs to save
       let local_count = count_locals(&body);
-      let raw_regs = params.len() as u8 + local_count;
+      let regs_used = local_count;
       // If this function makes any calls, FP will be clobbered by callees.
       // Ensure at least 1 scratch slot is saved so the epilogue can restore
       // SP correctly regardless of how many locals/params we have.
-      let regs_used = if !is_main && raw_regs == 0 && body_has_calls(&body) { 1 } else { raw_regs };
-
       self.emit_label(&format!("_{}", name));
 
       if !is_main {
@@ -537,25 +535,6 @@ impl Generator {
 ////////////////////////////////////////////////////////
 /// Body pre-pass: count VarDecl statements (non-recursive for now)
 ////////////////////////////////////////////////////////
-
-fn body_has_calls(body: &[Stmt]) -> bool {
-  for stmt in body {
-    let found = match stmt {
-      Stmt::Expr(Expr::Call(_, _)) => true,
-      Stmt::VarDecl(_, _, Some(Expr::Call(_, _))) => true,
-      Stmt::Assign(_, Expr::Call(_, _)) => true,
-      Stmt::Return(Some(Expr::Call(_, _))) => true,
-      Stmt::If(_, then_body, else_body) => {
-        body_has_calls(then_body)
-          || else_body.as_ref().map_or(false, |b| body_has_calls(b))
-      }
-      Stmt::While(_, loop_body) => body_has_calls(loop_body),
-      _ => false,
-    };
-    if found { return true; }
-  }
-  false
-}
 
 fn count_locals(body: &[Stmt]) -> u8 {
   let mut count = 0u8;
