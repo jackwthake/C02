@@ -96,44 +96,31 @@ If no config file is found, the compiler falls back to a default memory map with
 ### Running the Compiler
 
 ```bash
-./C02 <source.c02>
+./C02 [OPTIONS] <FILE>
 ```
 
-If compilation, syntax checking, or type scoping fail at any point, detailed error locations are written to stderr using editor-compatible source tracking.
+## Options
 
-### Disassembling a Binary
+- `<FILE>`: The input source file (.c02) or binary file (.bin or .out when using -d).
+- `-d`, `--disassemble`: Decode a .bin or .out file back into annotated 65C02 assembly.
+- `-v`, `--verbose`: Print intermediate compiler stages (Tokens, AST, Symbol Table) to stdout.
+- `-o`, `--output <PATH>`: Specify a custom path for the generated binary file (defaults to input file with a .bin extension).
+- `-c`, `--cfg <CFG>`: Path to c02_config.ron file used for memory map definition, will look in cwd if not passed
+- `-h`, `--help`: Display the help message.
+- `-V`, `--version`: Show the compiler version.
 
-Pass a compiled `.bin` file with the `-d` flag to decode it back into annotated assembly:
+## Examples
 
-```bash
-./C02 <binary.bin> -d
-```
+**Compile a source file:**
+`./C02 src/main.c02`
 
-The disassembler strips NOP padding and vector table bytes, resolves JSR/JMP targets to named labels, and prints each instruction with its absolute address:
+**Compile with a custom output name:**
+`./C02 src/main.c02 -o build/firmware.bin`
 
-```assembly
-8000: SEI
-8001: CLD
-8002: LDX #$FF
-8004: TXS
-8005: JSR L3
-L0:
-8008: JMP L0
-L1:
-800B: TSX
-...
-L3:
-80AE: LDA $00
-80B0: PHA
-...
-```
+**Disassemble a binary:**
+`./C02 build/firmware.bin -d`
 
-The same `c02_config.ron` is used in both modes to ensure addresses are consistent between compilation and disassembly.
+**Debug compiler stages:**
+`./C02 src/main.c02 -v`
 
-### Debug Output
-
-Pass `--no-out` to dump the compiler's internal pipeline stages (tokens, AST, symbol table) without emitting a binary:
-
-```bash
-./C02 <source.c02> --no-out
-```
+The same `c02_config.ron` is used in both compilation and disassembly to ensure addresses are consistent between compilation and disassembly.
