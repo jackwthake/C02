@@ -1,0 +1,21 @@
+reg u8 PORTB @ 0x6000;
+reg u8 DDRB @ 0x6002;
+
+u8 delay = 0;
+u8 x = 0;
+
+fn main() -> void {
+  DDRB = 0xFF;
+  
+  PORTB = 0;
+  
+  while (1) {
+    delay = 1;
+    while (delay != 50) {
+      delay += 1;
+    }
+
+    x = x + 1;
+    PORTB = x; // this works!
+  }
+}

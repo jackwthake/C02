@@ -34,15 +34,26 @@ fn lcd_putc(u8 ch) -> void {
   PORTA = 0x32; // RS
 }
 
-// interesting - no globals = code crash 
-u8 space = 32;
-// u8 l = 108
+// test cases:
+// global and local no padding chars:    Success - full program runs
+// global no local no padding chars:     Success - full program runs
+// local no global no padding chars:     Success - full program runs
+// no local no global no padding chars:  Fails - Lcd inits properly but freezes with 'H' on the screen, and 72 (H) on PortB
+// global and local w/ padding chars:    Success - full program runs
+// global no local w/ padding chars:     Success - full program runs
+// local no global w/ padding chars:     Success - full program runs
+// no local no global  w/ padding chars: Fails - Lcd inits properly but freezes with nothing on the screen, and 32 (space) on PortB
 
+// My best guess is something latent to do with the stack in page 1 getting corrupted
+// what if the args are overflowing the argument section of zeropage?
+// can't be a timing issue Im running the clock at 1khz far too slow for those issues
+
+u8 space = 32;
 fn main() -> void {
+  // u8 l = 108;
   lcd_init();
 
-  // pad to center
-  lcd_putc(32);   // 
+  lcd_putc(32);   //
   lcd_putc(32);   // 
   lcd_putc(32);   // 
 

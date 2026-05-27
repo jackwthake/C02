@@ -3,9 +3,10 @@
 use std::env;
 use std::process;
 use std::fs;
+use std::time::{Instant};
 
 use crate::disassembler::disassembler;
-use crate::generator::emit_binary;
+use crate::generator::{Memory_Map, emit_binary};
 
 mod tokenizer;
 mod parser;
@@ -15,6 +16,7 @@ mod disassembler;
 
 fn main() {
   let args: Vec<String> = env::args().collect();
+  let comp_start = Instant::now();
   
   if args.len() < 2 {
     eprintln!("Error: Must specify file to compile.");
@@ -42,7 +44,16 @@ fn main() {
     String::new()
   });
   
-  let mem_map = ron::from_str(&config).unwrap();
+  let mem_map = match ron::from_str(&config) {
+    Ok(cfg) => {cfg}
+    Err(_) => {
+      eprintln!("WARNING: c02_config.ron not found, falling back to defaults.");
+      Memory_Map {
+        rom_start: 0x0000,
+        rom_top: 0xFFFF
+      }
+    }
+  };
   
   if disassemble {
     match fs::read(path) {
@@ -54,12 +65,14 @@ fn main() {
     }
     process::exit(0);
   }
+
+  println!("Compiling: {}", path);
   
   // compiler path
   let contents = match fs::read_to_string(path) {
     Ok(s) => s,
     Err(e) => {
-      eprintln!("Error: failed to read file at {}: {}", path, e);
+      eprintln!("\n\nError: failed to read file at {}: {}", path, e);
       process::exit(1);
     }
   };
@@ -75,22 +88,22 @@ fn main() {
   let ast = match parser::parse(tokens) {
     Ok(ast) => ast,
     Err(e) => {
-      eprintln!("Parse error: {}", e);
+      eprintln!("\n\nParse error: {}", e);
       process::exit(1);
     }
   };
-  
+
   if no_out {
     println!("\n=== AST ===");
     for node in &ast {
       println!("{:#?}", node);
     }
   }
-  
+
   let symbol_table = match analyzer::analyze(&ast) {
     Ok(st) => st,
     Err(e) => {
-      eprintln!("Semantic error: {}", e);
+      eprintln!("\n\nSemantic error: {}", e);
       process::exit(1);
     }
   };
@@ -100,12 +113,17 @@ fn main() {
     println!("{:#?}", symbol_table);
     return;
   }
-  
-  let output = generator::generate(ast, symbol_table, mem_map);
+
+  let (prog_len, output) = generator::generate(ast, symbol_table, mem_map);
+
   let output_path = path.strip_suffix(".c02").unwrap_or(path).to_owned() + ".bin";
   
   if let Err(e) = emit_binary(&output, output_path) {
-    eprintln!("Failed to write binary: {}", e);
+    eprintln!("\n\nFailed to write binary: {}", e);
     process::exit(1);
   }
+
+  let comp_duration = comp_start.elapsed();
+  let rom_perc = (prog_len as f64 / ((mem_map.rom_top - mem_map.rom_start) as f64)) * 100.00;
+  println!("Done in: {:?}\nProgram size: {} bytes, {:.2}% of total ROM", comp_duration, prog_len, rom_perc);
 }

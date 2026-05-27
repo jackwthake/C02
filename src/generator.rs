@@ -8,9 +8,10 @@ use std::io::{self, Write};
 use std::path::Path;
 use std::collections::HashMap;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone, Copy)]
 pub struct Memory_Map {
   pub rom_start: u16,
+  pub rom_top: u16
 }
 
 // ZP layout
@@ -72,6 +73,8 @@ impl Generator {
   fn alloc_scratch_reg(&mut self) -> u8 {
     let idx = self.local_reg_top + self.reg_depth;
     self.reg_depth += 1;
+    assert!((REG_START + idx * 2) > REG_TOP, "Scratch register overflow!");
+
     REG_START + idx * 2
   }
 
@@ -85,6 +88,7 @@ impl Generator {
   // Returns ZP address of lo byte.
   fn alloc_local(&mut self, name: String) -> u8 {
     let addr = REG_START + self.local_reg_top * 2;
+    
     self.local_reg_top += 1;
     self.local_slots.insert(name, addr);
     addr
@@ -170,7 +174,7 @@ impl Generator {
   fn emit_push_a(&mut self) { self.output.push(0x48); }
   fn emit_pop_a(&mut self) { self.output.push(0x68); }
 
-  fn emit_push_imm(&mut self, val: u8) { self.emit_lda_imm(val); self.emit_push_a(); }
+  // fn emit_push_imm(&mut self, val: u8) { self.emit_lda_imm(val); self.emit_push_a(); }
   fn emit_push_zpg(&mut self, addr: u8) { self.emit_lda_zpg(addr); self.emit_push_a(); }
   fn emit_pop_zpg(&mut self, addr: u8) { self.emit_pop_a(); self.emit_sta_zpg(addr); }
 
@@ -323,7 +327,7 @@ impl Generator {
 
     // Clean up args
     for _ in 0..arg_count {
-      self.emit_pop_zpg(REG_START); // discard into scratch
+      self.emit_pop_a(); // discard to a reg
     }
 
     // Restore FP (LIFO: hi first)
@@ -397,13 +401,17 @@ impl Generator {
       self.local_reg_top = 0;
       self.reg_depth = 0;
 
+      let is_main = name == "main";
+
       // Pre-pass: count locals so we know how many scratch regs to save
       let local_count = count_locals(&body);
-      let regs_used = params.len() as u8 + local_count; // rough upper bound
+      let raw_regs = params.len() as u8 + local_count;
+      // If this function makes any calls, FP will be clobbered by callees.
+      // Ensure at least 1 scratch slot is saved so the epilogue can restore
+      // SP correctly regardless of how many locals/params we have.
+      let regs_used = if !is_main && raw_regs == 0 && body_has_calls(&body) { 1 } else { raw_regs };
 
       self.emit_label(&format!("_{}", name));
-
-      let is_main = name == "main";
 
       if !is_main {
         // Capture hardware SP into FP *before* pushing saved regs.
@@ -435,10 +443,12 @@ impl Generator {
       // account for those since FP was snapshotted before the reg saves.
       let mut offset: u8 = 3;
       for (i, (param_type, param_name)) in params.iter().enumerate() {
-        self.param_slots.insert(param_name.clone(), ARGS_START + (i as u8) * 2);
+        let arg_idx = ARGS_START + ((i as u8) * 2);
+
+        self.param_slots.insert(param_name.clone(), arg_idx);
         self.emit_ldy_imm(offset);
         self.emit_lda_indirect_zpg(FP);
-        self.emit_sta_zpg(ARGS_START + (i as u8) * 2);
+        self.emit_sta_zpg(arg_idx);
         offset += match param_type {
           Type::U16 | Type::I16 => 2,
           _ => 1,
@@ -484,6 +494,14 @@ impl Generator {
     self.emit_ldx_imm(0xFF);
     self.emit_txs();
 
+    // Initialise FP ($00/$01) to $01FF — a safe sentinel pointing into page 1.
+    // Without this, the first gen_call in main pushes garbage as "saved FP",
+    // and the entire call chain uses a corrupt stack anchor on every restore.
+    self.emit_lda_imm(0xFF);
+    self.emit_sta_zpg(FP);
+    self.emit_lda_imm(0x01);
+    self.emit_sta_zpg(FP + 1);
+
     // Initialise globals before calling main
     self.emit_global_init(items);
 
@@ -520,6 +538,25 @@ impl Generator {
 /// Body pre-pass: count VarDecl statements (non-recursive for now)
 ////////////////////////////////////////////////////////
 
+fn body_has_calls(body: &[Stmt]) -> bool {
+  for stmt in body {
+    let found = match stmt {
+      Stmt::Expr(Expr::Call(_, _)) => true,
+      Stmt::VarDecl(_, _, Some(Expr::Call(_, _))) => true,
+      Stmt::Assign(_, Expr::Call(_, _)) => true,
+      Stmt::Return(Some(Expr::Call(_, _))) => true,
+      Stmt::If(_, then_body, else_body) => {
+        body_has_calls(then_body)
+          || else_body.as_ref().map_or(false, |b| body_has_calls(b))
+      }
+      Stmt::While(_, loop_body) => body_has_calls(loop_body),
+      _ => false,
+    };
+    if found { return true; }
+  }
+  false
+}
+
 fn count_locals(body: &[Stmt]) -> u8 {
   let mut count = 0u8;
   for stmt in body {
@@ -540,7 +577,7 @@ fn count_locals(body: &[Stmt]) -> u8 {
 /// Public API
 ////////////////////////////////////////////////////////
 
-pub fn generate(ast: Vec<TopLevel>, symbol_table: SymbolTable, mem_map: Memory_Map) -> Vec<u8> {
+pub fn generate(ast: Vec<TopLevel>, symbol_table: SymbolTable, mem_map: Memory_Map) -> (usize, Vec<u8>) {
   let mut generator = Generator::new(symbol_table);
 
   // Pre-pass: assign ZP addresses to all globals before any codegen
@@ -557,10 +594,12 @@ pub fn generate(ast: Vec<TopLevel>, symbol_table: SymbolTable, mem_map: Memory_M
     }
   }
 
+  let prog_len = generator.output.len();
+
   generator.resolve_patches(mem_map.rom_start);
   generator.pad_binary_and_emit_vectors(mem_map);
 
-  generator.output
+  (prog_len, generator.output)
 }
 
 pub fn emit_binary<P: AsRef<Path>>(data: &[u8], path: P) -> io::Result<()> {

@@ -1,0 +1,13 @@
+reg u8 PORTB @ 0x6000;
+reg u8 DDRB @ 0x6002;
+
+fn out_to_portb(u8 *value) -> void {
+  PORTB = *value;
+}
+
+fn main() -> void {
+  DDRB = 0xFF;
+  u8 delay = 0xAA;
+
+  out_to_portb(&delay);
+}

@@ -87,6 +87,7 @@ The compiler looks for a `.ron` (Rusty Object Notation) config file in whatever 
 ```ron
 Memory_Map(
   rom_start: 0x8000
+  rom_top: 0xFFFF
 )
 ```
 
