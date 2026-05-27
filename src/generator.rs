@@ -49,6 +49,72 @@ struct Generator {
   reg_depth: u8,                       // current expression scratch depth above local_reg_top
 }
 
+fn max_expr_scratch_depth(expr: &Expr) -> u8 {
+  match expr {
+    // Leaves — no scratch needed
+    Expr::Number(_) | Expr::Identifier(_) => 0,
+    
+    Expr::Cast(_, inner) => max_expr_scratch_depth(inner),
+    
+    Expr::BinOp(lhs, op, rhs) => {
+      // Evaluating lhs first, then stashing it in a scratch reg while rhs runs.
+      // That scratch reg is live the whole time rhs evaluates, so rhs depth
+      // is offset by 1 (or 2 for Minus which needs a second stash slot).
+      let lhs_depth = max_expr_scratch_depth(lhs);
+      
+      let (stash_slots, rhs_depth) = match op {
+        Op::Minus => {
+          // lhs scratch + rhs scratch both live simultaneously
+          let rhs_d = max_expr_scratch_depth(rhs);
+          (2, rhs_d + 2)
+        }
+        _ => {
+          let rhs_d = max_expr_scratch_depth(rhs);
+          (1, rhs_d + 1)
+        }
+      };
+      
+      // Peak is either: during lhs eval (lhs_depth),
+      // or during rhs eval with stash slots already occupied (rhs_depth)
+      lhs_depth.max(rhs_depth).max(stash_slots)
+    }
+    
+    // A call itself uses no scratch — args are evaluated left-to-right
+    // and each is pushed immediately, so they don't accumulate in scratch regs.
+    // The depth is just the max across all arg expressions evaluated individually.
+    Expr::Call(_, args) => {
+      args.iter().map(|a| max_expr_scratch_depth(a)).max().unwrap_or(0)
+    }
+    
+    _ => 0,
+  }
+}
+
+fn max_stmt_scratch_depth(stmt: &Stmt) -> u8 {
+  match stmt {
+    Stmt::VarDecl(_, _, Some(e)) => max_expr_scratch_depth(e),
+    Stmt::Assign(_, e)           => max_expr_scratch_depth(e),
+    Stmt::Expr(e)                => max_expr_scratch_depth(e),
+    Stmt::Return(Some(e))        => max_expr_scratch_depth(e),
+    Stmt::If(cond, then_b, else_b) => {
+      let cond_d  = max_expr_scratch_depth(cond);
+      let then_d  = max_body_scratch_depth(then_b);
+      let else_d  = else_b.as_ref().map_or(0, |b| max_body_scratch_depth(b));
+      cond_d.max(then_d).max(else_d)
+    }
+    Stmt::While(cond, body) => {
+      max_expr_scratch_depth(cond).max(max_body_scratch_depth(body))
+    }
+    _ => 0,
+  }
+}
+
+fn max_body_scratch_depth(body: &[Stmt]) -> u8 {
+  // Statements are sequential — scratch is fully freed between them,
+  // so we take the max, not the sum.
+  body.iter().map(max_stmt_scratch_depth).max().unwrap_or(0)
+}
+
 impl Generator {
   fn new(symbol_table: SymbolTable) -> Self {
     Generator {
@@ -144,6 +210,10 @@ impl Generator {
     self.output.push((addr & 0xFF) as u8);
     self.output.push((addr >> 8) as u8);
   }
+  // fn emit_sta_indirect_zpg(&mut self, addr: u8) { // Ill need this eventually
+  //   self.output.push(0x91); 
+  //   self.output.push(addr); 
+  // }
 
   fn emit_ldx_imm(&mut self, val: u8) { self.output.push(0xA2); self.output.push(val); }
   fn emit_ldx_zpg(&mut self, addr: u8) { self.output.push(0xA6); self.output.push(addr); }
@@ -400,9 +470,26 @@ impl Generator {
       }
 
       Stmt::Return(maybe_expr) => {
-        if let Some(expr) = maybe_expr {
-          self.gen_expr_into_a(expr);
-          self.emit_sta_zpg(RET);
+        match maybe_expr { // TODO: make this work for 16 bit types
+          Some(Expr::Identifier(identifier)) => {
+            match self.resolve_identifier(&identifier) {
+              Some(VarLocation::ZeroPage(addr)) => {
+                self.emit_lda_zpg(addr);
+                self.emit_sta_zpg(RET);
+              },
+              Some(VarLocation::Absolute(addr)) => {
+                self.emit_lda_abs(addr);
+                self.emit_sta_zpg(RET);
+              },
+              None => panic!("codegen: assignment to undeclared identifier '{}'", identifier),
+            }
+          }
+          _ => {
+            if let Some(expr) = maybe_expr {
+              self.gen_expr_into_a(expr);
+              self.emit_sta_zpg(RET);
+            }
+          }
         }
         // Actual RTS is emitted at end of gen_function epilogue
       }
@@ -432,8 +519,8 @@ impl Generator {
 
       // Pre-pass: count locals so we know how many scratch regs to save
       let local_count = count_locals(&body);
-      let regs_used = local_count;
-      // If this function makes any calls, FP will be clobbered by callees.
+      let scratch_depth = max_body_scratch_depth(&body);
+      let regs_used = local_count + scratch_depth;      // If this function makes any calls, FP will be clobbered by callees.
       // Ensure at least 1 scratch slot is saved so the epilogue can restore
       // SP correctly regardless of how many locals/params we have.
       self.emit_label(&format!("_{}", name));

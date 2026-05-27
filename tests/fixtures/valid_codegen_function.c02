@@ -2,6 +2,10 @@ reg u8 PORTB @ 0x6000;
 reg u8 DDRB @ 0x6002;
 
 fn add_bytes(u8 a, u8 b) -> u8 {
+  return a + b;
+}
+
+fn add_bytes_local(u8 a, u8 b) -> u8 {
   u8 result = a + b;
   return result;
 }
@@ -12,7 +16,15 @@ fn main() -> void {
   u8 x = 100;
   u8 y = 70;
 
-  u8 result = add_bytes(x, y); // should return 170 or 0xAA
+  u8 result = add_bytes(x, y); // should return 170 or 0xAA -> runs correct
 
-  PORTB = x + y; // should set PORTB to 100 if the stack is preserved correctly
+  PORTB = x + y; // should set PORTB to 170 if the stack is preserved correctly -> runs correct
+  PORTB = result; // shouldnt change PORTB -> runs correct
+
+  PORTB = add_bytes_local(45, 40); // 0x55 same pattern shifted -> runs correct
+
+  PORTB = result; // ensure locals are still usable -> this line runs correct
+  PORTB = x + y; // should set PORTB to 170 if the stack is preserved correctly -> runs correct
+  PORTB = x; // should be 100 -> runs correct
+  PORTB = y; // should be 70 -> runs correct
 }

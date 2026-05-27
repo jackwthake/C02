@@ -1,0 +1,13 @@
+reg u8 PORTB @ 0x6000;
+reg u8 DDRB @ 0x6002;
+
+u8 x = 15; // Global variable at zero page address 0x40 
+u8 z; // should be zero initialised by default
+u8 y = 0xFF;
+
+fn main() -> void {
+  DDRB = y;
+
+  PORTB = x; // bottom 4 bits set <- correct
+  PORTB = z; // should clear portb <- correct
+}

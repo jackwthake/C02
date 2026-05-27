@@ -9,11 +9,11 @@ use std::time::Instant;
 use crate::disassembler::disassembler;
 use crate::generator::{emit_binary, Memory_Map};
 
-mod analyzer;
-mod disassembler;
-mod generator;
 mod parser;
 mod tokenizer;
+mod analyzer;
+mod generator;
+mod disassembler;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about = "C02 Compiler", long_about = None)]
