@@ -1,7 +1,7 @@
 #![allow(non_camel_case_types)] // dont tell me how to name MY variables.
 
 use clap::Parser;
-use std::fs;
+use std::{fs, mem};
 use std::path::PathBuf;
 use std::process;
 use std::time::Instant;
@@ -59,10 +59,20 @@ fn main() {
   // Config loading
   let config_path = args.cfg.unwrap_or_else(|| PathBuf::from("./c02_config.ron"));
   let config = fs::read_to_string(config_path).unwrap_or_default();
-  let mem_map = ron::from_str(&config).unwrap_or_else(|_| {
+  let mut mem_map = ron::from_str(&config).unwrap_or_else(|_| {
     eprintln!("WARNING: c02_config.ron not found or invalid, using defaults.");
     Memory_Map { rom_start: 0x0000, rom_top: 0xFFFF }
   });
+
+  if mem_map.rom_start > mem_map.rom_top {
+    eprintln!("WARNING: bad config, rom start > rom_top. swapping");
+    mem::swap(&mut mem_map.rom_start, &mut mem_map.rom_top);
+  }
+
+  if mem_map.rom_start == mem_map.rom_top {
+    eprintln!("ERROR: ROM defined in config is invalid, available ROM size is 0");
+    process::exit(1);
+  }
   
   // Handle Disassembly
   if disassemble {

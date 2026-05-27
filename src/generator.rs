@@ -5,6 +5,7 @@ use serde::Deserialize;
 
 use std::fs::File;
 use std::io::{self, Write};
+use std::process;
 use std::path::Path;
 use std::collections::HashMap;
 
@@ -73,22 +74,31 @@ impl Generator {
   fn alloc_scratch_reg(&mut self) -> u8 {
     let idx = self.local_reg_top + self.reg_depth;
     self.reg_depth += 1;
-    assert!((REG_START + idx * 2) > REG_TOP, "Scratch register overflow!");
+    assert!((REG_START + idx * 2) <= REG_TOP, "Scratch register overflow!");
 
     REG_START + idx * 2
   }
 
   fn free_scratch_reg(&mut self) {
-    if self.reg_depth > 0 {
-      self.reg_depth -= 1;
-    }
+    assert!(self.reg_depth > 0, "free_scratch_reg: underflow — freed more scratch regs than were allocated");
+    self.reg_depth -= 1;
   }
 
   // Allocate a permanent local variable slot (below the scratch watermark).
   // Returns ZP address of lo byte.
   fn alloc_local(&mut self, name: String) -> u8 {
     let addr = REG_START + self.local_reg_top * 2;
-    
+
+    assert!(
+      !self.local_slots.contains_key(&name),
+      "alloc_local: duplicate local variable '{}'", name
+    );
+    assert!(
+      addr + 1 <= REG_TOP,
+      "alloc_local: local variable '{}' would overflow scratch register zone (addr=${:02X}, REG_TOP=${:02X})",
+      name, addr, REG_TOP
+    );
+
     self.local_reg_top += 1;
     self.local_slots.insert(name, addr);
     addr
@@ -164,6 +174,13 @@ impl Generator {
   fn emit_txs(&mut self) { self.output.push(0x9A); }
 
   fn emit_label(&mut self, name: &str) {
+    assert!(
+      !self.labels.contains_key(name),
+      "emit_label: duplicate label '{}' (first defined at offset {}, now at {})",
+      name,
+      self.labels[name],
+      self.output.len()
+    );
     self.labels.insert(name.to_string(), self.output.len());
   }
 
@@ -187,6 +204,10 @@ impl Generator {
   fn alloc_globals(&mut self, items: &[TopLevel]) {
     for item in items {
       if let TopLevel::GlobalVar(_, name, _) = item {
+        assert!(
+          !self.global_slots.contains_key(name),
+          "alloc_globals: duplicate global variable '{}'", name
+        );
         let addr = self.next_global;
         assert!(addr <= GLOBALS_TOP - 1, "global ZP overflow");
         self.global_slots.insert(name.clone(), addr);
@@ -310,6 +331,12 @@ impl Generator {
 
   fn gen_call(&mut self, name: String, args: Vec<Expr>) {
     let arg_count = args.len();
+
+    assert!(
+      ARGS_START.saturating_add((arg_count as u8).saturating_mul(2)) <= GLOBALS_START,
+      "gen_call: too many arguments to '{}' — would overflow args zone ({} args, ARGS_START=${:02X}, GLOBALS_START=${:02X})",
+      name, arg_count, ARGS_START, GLOBALS_START
+    );
 
     // Save FP
     self.emit_push_zpg(FP);
@@ -443,6 +470,12 @@ impl Generator {
       for (i, (param_type, param_name)) in params.iter().enumerate() {
         let arg_idx = ARGS_START + ((i as u8) * 2);
 
+        assert!(
+          arg_idx + 1 < GLOBALS_START,
+          "gen_function: param '{}' of '{}' overflows args zone (arg_idx=${:02X})",
+          param_name, name, arg_idx
+        );
+
         self.param_slots.insert(param_name.clone(), arg_idx);
         self.emit_ldy_imm(offset);
         self.emit_lda_indirect_zpg(FP);
@@ -457,6 +490,12 @@ impl Generator {
       for stmt in body {
         self.gen_statement(stmt);
       }
+
+      assert!(
+        self.reg_depth == 0,
+        "gen_function '{}': scratch register leak — reg_depth is {} after body (expected 0)",
+        name, self.reg_depth
+      );
 
       if !is_main {
         // Epilogue: pop saved scratch regs back into ZP (restoring caller's values),
@@ -478,6 +517,8 @@ impl Generator {
 
       self.param_slots.clear();
       self.emit_rts();
+    } else {
+      panic!("gen_function: called with non-Function TopLevel variant");
     }
   }
 
@@ -511,6 +552,12 @@ impl Generator {
 
   fn pad_binary_and_emit_vectors(&mut self, mem_map: Memory_Map) {
     let vector_offset = (0xFFFA - mem_map.rom_start) as usize;
+    assert!(
+      self.output.len() <= vector_offset,
+      "pad_binary_and_emit_vectors: program already overruns 6502 vector table \
+       (output={} bytes, vector_offset={} bytes from rom_start=${:04X})",
+      self.output.len(), vector_offset, mem_map.rom_start
+    );
     while self.output.len() < vector_offset {
       self.output.push(0xEA); // NOP padding
     }
@@ -526,6 +573,11 @@ impl Generator {
       let label_offset = self.labels.get(label)
         .expect(&format!("undefined label: {}", label));
       let absolute_addr = rom_start as usize + label_offset;
+      assert!(
+        *patch_offset + 1 < self.output.len(),
+        "resolve_patches: patch site for '{}' at offset {} is out of bounds (output len={})",
+        label, patch_offset, self.output.len()
+      );
       self.output[*patch_offset] = (absolute_addr & 0xFF) as u8;
       self.output[*patch_offset + 1] = ((absolute_addr >> 8) & 0xFF) as u8;
     }
@@ -559,6 +611,23 @@ fn count_locals(body: &[Stmt]) -> u8 {
 pub fn generate(ast: Vec<TopLevel>, symbol_table: SymbolTable, mem_map: Memory_Map) -> (usize, Vec<u8>) {
   let mut generator = Generator::new(symbol_table);
 
+  assert!(
+    ast.iter().any(|item| matches!(item, TopLevel::Function(name, _, _, _) if name == "main")),
+    "generate: no 'main' function found in AST"
+  );
+
+  assert!(
+    mem_map.rom_top > mem_map.rom_start,
+    "generate: invalid memory map — rom_top (${:04X}) must be greater than rom_start (${:04X})",
+    mem_map.rom_top, mem_map.rom_start
+  );
+
+  assert!(
+    mem_map.rom_start <= 0xFFFA,
+    "generate: rom_start (${:04X}) must be below the 6502 vector table at $FFFA",
+    mem_map.rom_start
+  );
+
   // Pre-pass: assign ZP addresses to all globals before any codegen
   generator.alloc_globals(&ast);
 
@@ -574,6 +643,13 @@ pub fn generate(ast: Vec<TopLevel>, symbol_table: SymbolTable, mem_map: Memory_M
   }
 
   let prog_len = generator.output.len();
+  let rom_size = (mem_map.rom_top - mem_map.rom_start) as usize;
+
+  if prog_len > rom_size {
+    eprintln!("Error: Program is larger than ROM defined in c02_config.ron. Aborting.");
+    eprintln!("\tProgram size: {} bytes. ROM size: {} bytes", prog_len, rom_size);
+    process::exit(1);
+  }
 
   generator.resolve_patches(mem_map.rom_start);
   generator.pad_binary_and_emit_vectors(mem_map);
