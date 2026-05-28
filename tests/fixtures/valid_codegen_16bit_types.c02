@@ -1,0 +1,46 @@
+reg u8 PORTB @ 0x6000;
+reg u8 DDRB  @ 0x6002;
+
+fn add_wide(u16 a, u16 b) -> u16 {
+  return a + b;
+}
+
+fn wide_to_narrow(u16 val) -> u8 {
+  return (u8)val;
+}
+
+fn main() -> void {
+  DDRB = 0xFF;
+
+  // Basic 16-bit local and arithmetic
+  u16 x = 1000;   // 0x03E8
+  u16 y = 24;     // 0x0018
+  u16 z = x + y;  // 0x0400 — tests wide add with carry into hi byte
+
+  // Call returning u16, result stored in wide local
+  u16 r = add_wide(x, y);  // should also be 0x0400
+
+  // Cast down and write to PORTB — should show 0x00 (lo byte of 0x0400)
+  PORTB = (u8)z;
+
+  // A value whose lo byte is interesting after a wide add
+  u16 a = 200;    // 0x00C8
+  u16 b = 100;    // 0x0064
+  u16 c = a + b;  // 0x012C — carry into hi byte, lo byte is 0x2C
+
+  // Cast lo byte to PORTB — should show 0x2C (44)
+  PORTB = (u8)c;
+
+  // // Subtraction — 0x012C - 0x0064 = 0x00C8, lo byte 0xC8 (200)
+  u16 d = c - b;
+  PORTB = (u8)d;
+
+  // wide_to_narrow via function call — same cast but through the calling convention
+  // passes u16, returns u8 via RET lo byte
+  u8 narrow = wide_to_narrow(c);  // lo byte of 0x012C = 0x2C
+  PORTB = narrow;
+
+  // // Immediate wide arg — tests that literal args are pushed as 2 bytes correctly
+  PORTB = (u8)add_wide(0x00FF, 0x0001);  // 0x0100, lo byte = 0x00
+  PORTB = (u8)add_wide(0x00FE, 0x0001);  // 0x00FF, lo byte = 0xFF
+}

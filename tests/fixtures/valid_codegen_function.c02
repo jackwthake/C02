@@ -11,20 +11,21 @@ fn add_bytes_local(u8 a, u8 b) -> u8 {
 }
 
 fn main() -> void {
-  DDRB = 0xFF;
+  DDRB = 0xFF; // LEDs clear so this happens
 
   u8 x = 100;
   u8 y = 70;
 
-  u8 result = add_bytes(x, y); // should return 170 or 0xAA -> runs correct
+  u8 result = add_bytes(x, y); // should return 170 or 0xAA
 
-  PORTB = x + y; // should set PORTB to 170 if the stack is preserved correctly -> runs correct
-  PORTB = result; // shouldnt change PORTB -> runs correct
+  // PORTB just gets cleared no visible writes, either crashes or just writes 0x00 to portb for each of these
+  PORTB = x + y; // should set PORTB to 170 if the stack is preserved correctly
+  PORTB = result; // shouldnt change PORTB
 
-  PORTB = add_bytes_local(45, 40); // 0x55 same pattern shifted -> runs correct
+  PORTB = add_bytes_local(45, 40); // 0x55 same pattern shifted
 
   PORTB = result; // ensure locals are still usable -> this line runs correct
-  PORTB = x + y; // should set PORTB to 170 if the stack is preserved correctly -> runs correct
-  PORTB = x; // should be 100 -> runs correct
-  PORTB = y; // should be 70 -> runs correct
+  PORTB = x + y; // should set PORTB to 170 if the stack is preserved correctly
+  PORTB = x; // should be 100
+  PORTB = y; // should be 70
 }

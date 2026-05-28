@@ -35,7 +35,7 @@ fn lcd_putc(u8 ch) -> void {
 }
 
 fn main() -> void {
-  lcd_init();
+  lcd_init(); // this does happen
 
   // padding chars
   lcd_putc(32);   //
@@ -47,6 +47,8 @@ fn main() -> void {
   lcd_putc(108);  // l
   lcd_putc(108);  // l
   lcd_putc(111);  // o
+
+  // execution completely skips prior calls, cant be timing? computer is at 1khz..
   lcd_putc(32);   // 
   lcd_putc(67);   // C
   lcd_putc(48);   // 0

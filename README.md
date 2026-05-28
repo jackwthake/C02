@@ -124,3 +124,15 @@ If no config file is found, the compiler falls back to a default memory map with
 `./C02 src/main.c02 -v`
 
 The same `c02_config.ron` is used in both compilation and disassembly to ensure addresses are consistent between compilation and disassembly.
+
+---
+
+## Known Bugs
+
+- Interesting behavior in `examples/lcd_hello_world.c02`
+  - Function calls in main appear to be getting skipped
+  - Appeared after implementing 16 bit types
+- Interesting behavior in `tests/fixtures/valid_codegen_functions.c02`
+  - No portb writes appear to happen, PORTB does clear which suggests its only writing 0x00s or crashing after setting DDRB
+  - other tests show the issue is not with register writes
+  - Appeared after implementing 16 bit types
