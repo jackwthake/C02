@@ -1,0 +1,27 @@
+reg u8 PORTB @ 0x6000;
+reg u8 DDRB  @ 0x6002;
+
+fn add_mixed(u8 x, u16 y) -> u16 {
+  return (u16)x + y;
+}
+
+fn add_mixed_local(u8 x, u16 y) -> u16 {
+  u16 result = (u16)x + y;
+  return result;
+}
+
+fn main() -> void {
+  DDRB = 0xFF;
+
+  u8 x = 170;
+  u16 y = 0x0055;
+
+  PORTB = x; // alternating bit pattern <--- correct
+  
+  u16 res = add_mixed(x, y);
+  PORTB = (u8)res; // should read 0xFF; <--- correct
+  PORTB = 0x00;
+  PORTB = (u8)add_mixed(x, y); // should restore PORTB, inlined version <--- correct
+  PORTB = 0x00;
+  PORTB = (u8)add_mixed_local(x, y); // should restore PORTB, inlined version <--- correct
+}

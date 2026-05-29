@@ -22,9 +22,10 @@ fn main() -> void {
   PORTB = x + y; // should set PORTB to 170 if the stack is preserved correctly
   PORTB = result; // shouldnt change PORTB
 
-  PORTB = add_bytes_local(45, 40); // 0x55 same pattern shifted
+  // im pretty sure this line causes a crash, no subsequent writes happen.
+  PORTB = add_bytes_local(45, 40); // 0x55 same pattern shifted <-- PORTB doesnt change, fail
 
-  PORTB = result; // ensure locals are still usable -> this line runs correct
+  PORTB = result; // ensure locals are still usable
   PORTB = x + y; // should set PORTB to 170 if the stack is preserved correctly
   PORTB = x; // should be 100
   PORTB = y; // should be 70
