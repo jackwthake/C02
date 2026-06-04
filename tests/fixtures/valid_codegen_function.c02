@@ -18,14 +18,14 @@ fn main() -> void {
 
   u8 result = add_bytes(x, y); // should return 170 or 0xAA
 
-  // PORTB just gets cleared no visible writes, either crashes or just writes 0x00 to portb for each of these
   PORTB = x + y; // should set PORTB to 170 if the stack is preserved correctly
+  PORTB = 0x00;
   PORTB = result; // shouldnt change PORTB
 
-  // im pretty sure this line causes a crash, no subsequent writes happen.
-  PORTB = add_bytes_local(45, 40); // 0x55 same pattern shifted <-- PORTB doesnt change, fail
+  PORTB = add_bytes_local(45, 40); // 0x55 same pattern shifted
 
   PORTB = result; // ensure locals are still usable
+  PORTB = 0x00;
   PORTB = x + y; // should set PORTB to 170 if the stack is preserved correctly
   PORTB = x; // should be 100
   PORTB = y; // should be 70
