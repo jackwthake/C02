@@ -1,8 +1,73 @@
-# 65C02 Disassembler - Complete Instruction Set
+# 65C02 Disassembler
 
-## Overview
+The disassembler implementation in [src/disassembler.rs](src/disassembler.rs) uses a large match statement to decode each of the 256 possible 6502/65C02 opcodes. Each instruction case handles:
 
-The C02 disassembler has been updated to support the complete WDC 65C02 instruction set, including both the standard 6502 instructions and the W65C02 extensions.
+1. Reading any required operands from the binary
+2. Determining the addressing mode
+3. Formatting the instruction in standard assembly syntax
+4. Printing the output with the current address
+
+## Usage
+
+```shell
+./C02 <BIN FILE> -d
+```
+
+Each instruction is displayed as:
+
+```assembly
+ADDRESS: MNEMONIC OPERAND
+```
+
+Examples:
+
+```assembly
+L1:
+8013: TSX
+8014: STX $00
+8016: LDA #$01
+8018: STA $01
+801A: LDA $04
+801C: PHA
+801D: LDA $05
+801F: PHA
+8020: LDA #$00
+8022: STA $05
+8024: LDA #$55
+8026: STA $04
+8028: LDA #$00
+802A: STA $03
+802C: LDA $04
+802E: STA $02
+8030: JMP L2
+
+L2:
+8033: PLA
+8034: STA $05
+8036: PLA
+8037: STA $04
+8039: LDX $00
+803B: TXS
+803C: RTS
+```
+
+Unknown opcodes are displayed as "Unknown Opcode: XX" for debugging purposes
+
+## Implementation Details
+
+### Label Generation
+
+The disassembler automatically generates labels for jump targets:
+
+- JSR (Jump to Subroutine) and JMP (Jump) instructions create labels
+- Labels are named sequentially (L0, L1, L2, etc.) in address order
+- Branch targets are displayed either as labels or as addresses
+
+## References
+
+- [6502 Instruction Set Reference](https://www.masswerk.at/6502/6502_instruction_set.html)
+- [WDC 65C02 Documentation](https://www.westerndesigncenter.com/)
+- [Western Design Center W65C02S Datasheet](https://www.westerndesigncenter.com/wdc/documentation/w65c02s.pdf)
 
 ## Total Instructions Implemented: 256 Opcodes
 
@@ -148,80 +213,3 @@ The C02 disassembler has been updated to support the complete WDC 65C02 instruct
 
 - **STP** - Stop/Sleep Mode (opcode 0xDB)
 - **WAI** - Wait for Interrupt (opcode 0xCB)
-
-## Address Modes Supported
-
-The disassembler now supports all 6502 and W65C02 addressing modes:
-
-1. **Implied** - No operand
-2. **Accumulator** - Operates on accumulator
-3. **Immediate** - 8-bit literal value (`#$oper`)
-4. **ZeroPage** - 8-bit address in zero page (`$oper`)
-5. **ZeroPage,X** - Zero page address indexed by X (`$oper,X`)
-6. **ZeroPage,Y** - Zero page address indexed by Y (`$oper,Y`)
-7. **Absolute** - 16-bit address (`$oper`)
-8. **Absolute,X** - Absolute address indexed by X (`$oper,X`)
-9. **Absolute,Y** - Absolute address indexed by Y (`$oper,Y`)
-10. **Indirect** - Indirect address (`($oper)`)
-11. **Indirect,X** - Pre-indexed indirect (`($oper,X)`)
-12. **Indirect,Y** - Post-indexed indirect (`($oper),Y`)
-13. **Relative** - Relative branch offset (`$oper`)
-14. **ZeroPage Indirect** (W65C02) - Zero page indirect (`($oper)`)
-15. **Absolute,X Indirect** (W65C02) - Absolute indexed indirect (`($oper,X)`)
-16. **ZeroPage,Relative** (W65C02) - For bit manipulation branches
-
-## Implementation Details
-
-The disassembler implementation in [src/disassembler.rs](src/disassembler.rs) uses a large match statement to decode each of the 256 possible 6502/65C02 opcodes. Each instruction case handles:
-
-1. Reading any required operands from the binary
-2. Determining the addressing mode
-3. Formatting the instruction in standard assembly syntax
-4. Printing the output with the current address
-
-### Label Generation
-
-The disassembler automatically generates labels for jump targets:
-
-- JSR (Jump to Subroutine) and JMP (Jump) instructions create labels
-- Labels are named sequentially (L0, L1, L2, etc.) in address order
-- Branch targets are displayed either as labels or as addresses
-
-### Output Format
-
-Each instruction is displayed as:
-
-```assembly
-ADDRESS: MNEMONIC OPERAND
-```
-
-Examples:
-
-```assembly
-8000: SEI
-8001: CLD
-8002: LDX #$FF
-8004: TXS
-8005: LDA $00
-```
-
-## Testing
-
-The disassembler has been tested with various compiled C02 programs and correctly disassembles:
-
-- All standard 6502 instructions
-- All W65C02 extensions
-- Complex programs with jumps and subroutine calls
-- Various addressing modes
-
-## References
-
-- [6502 Instruction Set Reference](https://www.masswerk.at/6502/6502_instruction_set.html)
-- [WDC 65C02 Documentation](https://www.westerndesigncenter.com/)
-- [Western Design Center W65C02S Datasheet](https://www.westerndesigncenter.com/wdc/documentation/w65c02s.pdf)
-
-## Notes
-
-- Some W65C02 instructions like STP and WAI are implemented with placeholder operands in the current version
-- The disassembler distinguishes between standard 6502 and W65C02-specific instructions in comments
-- Unknown opcodes are displayed as "Unknown Opcode: XX" for debugging purposes

@@ -98,11 +98,9 @@ If no config file is found, the compiler falls back to a default memory map with
 The C02 compiler is designed to be portable across any 6502-based system. The memory map configuration allows you to define:
 
 - ROM start and end addresses
-- RAM boundaries
-- Hardware register mappings
-- Interrupt vectors
 
-For reference, see [memmap.md](memmap.md) for the Ben Eater 65C02 Kit Computer memory layout. You can create custom configs for other 6502 systems (Apple II, Commodore 64, custom boards, etc.) by adjusting the memory boundaries and register locations in your `c02_config.ron`.
+For reference, see [memmap.md](memmap.md) for the Ben Eater 65C02 Kit Computer memory layout. You can create custom configs for other 6502 systems (Apple II, Commodore 64, custom boards, etc.) by adjusting the memory boundaries your `c02_config.ron`.
+> The C02 compiler will automatically look for a `c02_config.ron` file in the directory its invoked in. To pass a config file in a different directory use the: `-c` or `--cfg` flag followed by the path.
 
 ### Running the Compiler
 
@@ -116,7 +114,7 @@ For reference, see [memmap.md](memmap.md) for the Ben Eater 65C02 Kit Computer m
 - `-d`, `--disassemble`: Decode a .bin or .out file back into annotated 65C02 assembly.
 - `-v`, `--verbose`: Print intermediate compiler stages (Tokens, AST, Symbol Table) to stdout.
 - `-o`, `--output <PATH>`: Specify a custom path for the generated binary file (defaults to input file with a .bin extension).
-- `-c`, `--cfg <CFG>`: Path to c02_config.ron file used for memory map definition, will look in cwd if not passed
+- `-c`, `--cfg <CFG>`: Path to c02_config.ron file used for memory map definition, will look in cwd if not passed.
 - `-h`, `--help`: Display the help message.
 - `-V`, `--version`: Show the compiler version.
 
