@@ -1,7 +1,7 @@
 BIN_DIR = ../bin
 BIN = $(BIN_DIR)/cc02
 CC = gcc
-CFLAGS = -Wall -Wextra -g
+CFLAGS = -Wall -Wextra -ggdb
 SRCS = $(wildcard src/*.c)
 OBJS = $(patsubst src/%.c,src/%.o,$(SRCS))
 

@@ -2,6 +2,8 @@
 #define __TOKENIZER_H__
 
 typedef enum {
+  t_invalid = 0,
+
   // KEYWORDS
   Kw_fn,
   Kw_reg,
@@ -20,28 +22,28 @@ typedef enum {
 
   // SYMBOLS
   s_mem_lookup,     // @
-  s_star,           // *, pointer and multiply
   s_arrow,          // ->
-  s_plus,           // +
-  s_minus,          // -
   s_divide,         // /
   s_lparen,         // (
   s_rparen,         // )
   s_lbrace,         // {
   s_rbrace,         // }
   s_semicolon,      // ;
+  s_ampersand,      // & (Address of operator)
+  s_comma,          // , (for function args)
+  s_plus,           // +
+  s_minus,          // -
   s_equals,         // =
+  s_star,           // *, pointer and multiply
   s_equalsequals,   // ==
   s_plus_equals,    // +=
   s_minus_equals,   // -=
   s_bang,           // !
-  s_bang_equals,     // !=
+  s_bang_equals,    // !=
   s_lt,             // <
   s_gt,             // >
   s_lte,            // <=
   s_gte,            // >=
-  s_ampersand,      // & (Address of operator)
-  s_comma,          // , (for function args)
   
   // LITERALS
   l_num,
@@ -59,6 +61,10 @@ typedef struct {
   void *value;
 } token_t;
 
-token_t *tokenize(const char *file_path, const char *source_code);
+const char *token_type_to_string(token_type_t type);
+void print_tokens(const token_t *tokens, unsigned count);
+
+token_t *tokenize(const char *file_path, const char *source_code, const long file_size, unsigned *num_tokens);
+void free_tokens(token_t *tokens, unsigned count);
 
 #endif

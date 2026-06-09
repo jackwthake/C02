@@ -8,14 +8,25 @@
 
 #define UNUSED(x) (void)(x)
 
+static void print_help(const char *prog_name) {
+  fprintf(stderr, "Usage: %s [-h] [-v] [-o output] input\n", prog_name);
+  fprintf(stderr, "Options:\n");
+  fprintf(stderr, "  -h            Show this help message\n");
+  fprintf(stderr, "  -v            Enable verbose output (print tokens)\n");
+  fprintf(stderr, "  -o output     Specify output file (not implemented yet)\n");
+}
+
 static int read_params(int argc, char * const *argv, int *verbose, char **output, char **input) {
   int opt;
-  while ((opt = getopt(argc, argv, "vo:")) != -1) {
+  while ((opt = getopt(argc, argv, "hvo:")) != -1) {
     switch (opt) {
+      case 'h':
+        print_help(argv[0]);
+        return 2;
       case 'v': *verbose = 1; break;
       case 'o': *output = optarg; break;
-      default: 
-        fprintf(stderr, "Usage: %s [-v] [-o output] input\n", argv[0]);
+      default:
+        fprintf(stderr, "Bad options: use %s -h to display help message\n", argv[0]);
         return -1;
     }
   }
@@ -30,7 +41,7 @@ static int read_params(int argc, char * const *argv, int *verbose, char **output
       return -1;
     }
   } else {
-    fprintf(stderr, "Usage: %s [-v] [-o output] input\n", argv[0]);
+    fprintf(stderr, "Bad options: use %s -h to display help message\n", argv[0]);
     fprintf(stderr, "Input file is required\n");
     return -1;
   }
@@ -45,23 +56,45 @@ static int load_file(const char *file_path, char **out_content) {
     return -1;
   }
 
-  fseek(f, 0, SEEK_END);
-  long fsize = ftell(f);
-  fseek(f, 0, SEEK_SET);
+  if (fseek(f, 0, SEEK_END) != 0) {
+    perror("Failed to seek input file");
+    fclose(f);
+    return -1;
+  }
 
-  char *content = malloc(fsize + 1);
+  long fsize = ftell(f);
+  if (fsize < 0) {
+    perror("Failed to determine input file size");
+    fclose(f);
+    return -1;
+  }
+
+  if (fseek(f, 0, SEEK_SET) != 0) {
+    perror("Failed to rewind input file");
+    fclose(f);
+    return -1;
+  }
+
+  char *content = malloc((size_t)fsize + 1);
   if (!content) {
     perror("Failed to allocate memory for file content");
     fclose(f);
     return -1;
   }
 
-  fread(content, 1, fsize, f);
-  content[fsize] = 0;
+  const size_t bytes_read = fread(content, 1, (size_t)fsize, f);
+  if (bytes_read != (size_t)fsize) {
+    perror("Failed to read input file");
+    free(content);
+    fclose(f);
+    return -1;
+  }
+
+  content[fsize] = '\0';
   fclose(f);
 
   *out_content = content;
-  return 0;
+  return fsize + 1;
 }
 
 int main(int argc, char * const *argv) {
@@ -69,26 +102,36 @@ int main(int argc, char * const *argv) {
   char *output = NULL;
   char *input = NULL;
     
-  UNUSED(verbose); // UNIMPLEMENTED
   UNUSED(output);
   
   /* Read command-line parameters */
-  if (read_params(argc, argv, &verbose, &output, &input) != 0) {
-    return 1;
+  int parse_status = read_params(argc, argv, &verbose, &output, &input);
+  if (parse_status != 0) {
+    return parse_status == 2 ? 0 : 1;
   }
 
   /* Load the input file */
   char *source_code;
-  if (load_file(input, &source_code) != 0) {
+  long fsize;
+  if ((fsize = load_file(input, &source_code)) < 0) {
     return 1;
   }
   
   /* tokenize the source code */
-  token_t *tokens = tokenize(input, source_code);
+  unsigned num_tokens;
+  token_t *tokens = tokenize(input, source_code, fsize, &num_tokens);
+  if (!tokens) {
+    free(source_code);
+    return 1;
+  }
+
+  if (verbose) {
+    print_tokens(tokens, num_tokens);
+  }
 
   /* free the allocated memory */
   free(source_code);
-  free(tokens);
+  free_tokens(tokens, num_tokens);
 
   return 0;
 }
