@@ -2,8 +2,8 @@ BIN_DIR = ../bin
 BIN = $(BIN_DIR)/cc02
 CC = gcc
 CFLAGS = -Wall -Wextra -g
-SRCS = src/main.c
-OBJS = $(SRCS:.c=.o)
+SRCS = $(wildcard src/*.c)
+OBJS = $(patsubst src/%.c,src/%.o,$(SRCS))
 
 .PHONY: all clean
 
