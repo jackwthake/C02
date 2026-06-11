@@ -1,9 +1,13 @@
 .PHONY: all clean
 
 all:
-	$(MAKE) -C cc02
-	$(MAKE) -C c02-objdump
+	@printf '\n==> cc02\n'
+	@$(MAKE) -C cc02
+	@printf '\n==> c02-objdump\n'
+	@$(MAKE) -C c02-objdump
 
 clean:
-	$(MAKE) -C cc02 clean
-	$(MAKE) -C c02-objdump clean
+	@printf '\n==> cc02 clean\n'
+	@$(MAKE) -C cc02 clean
+	@printf '\n==> c02-objdump clean\n'
+	@$(MAKE) -C c02-objdump clean
