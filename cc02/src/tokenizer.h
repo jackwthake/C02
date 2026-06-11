@@ -1,57 +1,56 @@
 #ifndef __TOKENIZER_H__
 #define __TOKENIZER_H__
 
+#define TOKEN_TYPES                 \
+  X(t_invalid,       "INVALID")     \
+  X(Kw_fn,           "fn")          \
+  X(Kw_reg,          "reg")         \
+  X(Kw_return,       "return")      \
+  X(Kw_void,         "void")        \
+  X(Kw_if,           "if")          \
+  X(Kw_else,         "else")        \
+  X(Kw_while,        "while")       \
+  X(Kw_for,          "for")         \
+  X(t_u8,            "u8")          \
+  X(t_i8,            "i8")          \
+  X(t_u16,           "u16")         \
+  X(t_i16,           "i16")         \
+  X(s_mem_lookup,    "@")           \
+  X(s_arrow,         "->")          \
+  X(s_divide,        "/")           \
+  X(s_divide_equals, "/=")          \
+  X(s_lparen,        "(")           \
+  X(s_rparen,        ")")           \
+  X(s_lbrace,        "{")           \
+  X(s_rbrace,        "}")           \
+  X(s_semicolon,     ";")           \
+  X(s_ampersand,     "&")           \
+  X(s_comma,         ",")           \
+  X(s_plus,          "+")           \
+  X(s_minus,         "-")           \
+  X(s_equals,        "=")           \
+  X(s_star,          "*")           \
+  X(s_star_equals,   "*=")          \
+  X(s_equalsequals,  "==")          \
+  X(s_plus_equals,   "+=")          \
+  X(s_minus_equals,  "-=")          \
+  X(s_bang,          "!")           \
+  X(s_bang_equals,   "!=")          \
+  X(s_lt,            "<")           \
+  X(s_gt,            ">")           \
+  X(s_lte,           "<=")          \
+  X(s_gte,           ">=")          \
+  X(s_and,           "&&")          \
+  X(s_or,            "||")          \
+  X(l_num,           "NUMBER")      \
+  X(l_string,        "STRING")      \
+  X(l_identifier,    "IDENTIFIER")  \
+  X(t_eof,           "END_OF_FILE")
+
 typedef enum {
-  t_invalid = 0,
-
-  // KEYWORDS
-  Kw_fn,
-  Kw_reg,
-  Kw_return,
-  Kw_void,
-  Kw_if,
-  Kw_else,
-  Kw_while,
-  Kw_for,
-
-  // TYPES
-  t_u8,             // only integer based types, chars can be u8, 6502 has no FPU
-  t_i8,
-  t_u16,
-  t_i16,
-
-  // SYMBOLS
-  s_mem_lookup,     // @
-  s_arrow,          // ->
-  s_divide,         // /
-  s_lparen,         // (
-  s_rparen,         // )
-  s_lbrace,         // {
-  s_rbrace,         // }
-  s_semicolon,      // ;
-  s_ampersand,      // & (Address of operator)
-  s_comma,          // , (for function args)
-  s_plus,           // +
-  s_minus,          // -
-  s_equals,         // =
-  s_star,           // *, pointer and multiply
-  s_equalsequals,   // ==
-  s_plus_equals,    // +=
-  s_minus_equals,   // -=
-  s_bang,           // !
-  s_bang_equals,    // !=
-  s_lt,             // <
-  s_gt,             // >
-  s_lte,            // <=
-  s_gte,            // >=
-  
-  // LITERALS
-  l_num,
-  l_string,
-  l_identifier,
-
-  // SPECIAL
-  t_eof,
+  #define X(tok, str) tok,
+  TOKEN_TYPES
+  #undef X
 } token_type_t;
 
 typedef struct {

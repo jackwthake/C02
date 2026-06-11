@@ -5,6 +5,47 @@
 #include <stdio.h>
 #include <string.h>
 
+/**
+ * MATCH_KEYWORD(kw, tok)
+ * Checks if the current position in the source code matches the given keyword `kw`.
+ */
+#define MATCH_KEYWORD(kw, tok, val)                                       \
+  if (strncmp(*ptr, kw, sizeof(kw) - 1) == 0                              \
+      && !isalnum((unsigned char)(*ptr)[sizeof(kw) - 1])                  \
+      && (*ptr)[sizeof(kw) - 1] != '_') {                                 \
+    add_token(tokens, token_count, tok, line, *column, file_path, val);   \
+    *ptr += sizeof(kw) - 1;                                               \
+    *column += sizeof(kw) - 1;                                            \
+    return 1;                                                             \
+  }
+
+/**
+ * DOUBLE_OR_SINGLE_CHAR_TOKEN_(peek_ch, tok2, tok1)
+ * Helper macro to handle tokens that can be either a single character (tok1) or a
+ * double character (tok2) depending on the next character in the source code (peek_ch).
+ */
+#define DOUBLE_OR_SINGLE_CHAR_TOKEN_(peek_ch, tok2, tok1)                 \
+    if (*(*ptr + 1) == (peek_ch)) {                                       \
+      add_token(tokens, token_count, tok2, line, *column,                 \
+                file_path, NULL);                                         \
+      *ptr += 2; (*column) += 2;                                          \
+    } else {                                                              \
+      add_token(tokens, token_count, tok1, line, *column,                 \
+                file_path, NULL);                                         \
+      (*ptr)++; (*column)++;                                              \
+    }                                                                     \
+    return 1;
+
+/**
+ * MATCH_DOUBLE_OR_SINGLE_TOKEN(ch, peek_ch, tok2, tok1)
+ * Macro to match a token that can be either a single character (tok1) or a
+ * double character (tok2) based on the next character in the source code (peek_ch).
+ */
+#define MATCH_DOUBLE_OR_SINGLE_TOKEN(ch, peek_ch, tok2, tok1)             \
+  case ch:                                                                \
+    DOUBLE_OR_SINGLE_CHAR_TOKEN_(peek_ch, tok2, tok1)
+
+
 static void add_token(token_t *tokens, unsigned *token_count, token_type_t type, unsigned line, unsigned column, char *file_path, void *value) {
   tokens[(*token_count)++] = (token_t){
     .type = type,
@@ -15,51 +56,26 @@ static void add_token(token_t *tokens, unsigned *token_count, token_type_t type,
   };
 }
 
+/**
+ * MATCH_SINGLE_CHAR_SYMBOL(ch, tok)
+ * Macro to match a single character symbol (ch) and add the corresponding token (tok).
+ */
+#define MATCH_SINGLE_CHAR_SYMBOL(ch, tok)                                \
+  case ch:                                                               \
+    add_token(tokens, token_count, tok, line, *column, file_path, NULL); \
+    (*ptr)++; (*column)++;                                               \
+    return 1;
+
+
 const char *token_type_to_string(token_type_t type) {
   switch (type) {
-    case t_invalid: return "INVALID";
-    case Kw_fn: return "fn";
-    case Kw_reg: return "reg";
-    case Kw_return: return "return";
-    case Kw_void: return "void";
-    case Kw_if: return "if";
-    case Kw_else: return "else";
-    case Kw_while: return "while";
-    case Kw_for: return "for";
-    case t_u8: return "u8";
-    case t_i8: return "i8";
-    case t_u16: return "u16";
-    case t_i16: return "i16";
-    case s_mem_lookup: return "@";
-    case s_arrow: return "->";
-    case s_divide: return "/";
-    case s_lparen: return "(";
-    case s_rparen: return ")";
-    case s_lbrace: return "{";
-    case s_rbrace: return "}";
-    case s_semicolon: return ";";
-    case s_ampersand: return "&";
-    case s_comma: return ",";
-    case s_plus: return "+";
-    case s_minus: return "-";
-    case s_equals: return "=";
-    case s_star: return "*";
-    case s_equalsequals: return "==";
-    case s_plus_equals: return "+=";
-    case s_minus_equals: return "-=";
-    case s_bang: return "!";
-    case s_bang_equals: return "!=";
-    case s_lt: return "<";
-    case s_gt: return ">";
-    case s_lte: return "<=";
-    case s_gte: return ">=";
-    case l_num: return "NUMBER";
-    case l_string: return "STRING";
-    case l_identifier: return "IDENTIFIER";
-    case t_eof: return "END_OF_FILE";
+    #define X(tok, str) case tok: return str;
+    TOKEN_TYPES
+    #undef X
     default: return "UNKNOWN";
   }
-}
+}  
+
 
 void print_tokens(const token_t *tokens, unsigned count) {
   for (unsigned i = 0; i < count; i++) {
@@ -73,11 +89,12 @@ void print_tokens(const token_t *tokens, unsigned count) {
       printf("Token: %s, %s:%u:%u\n", token_type_to_string(token.type), token.file_path, token.line, token.column);
     }
 
-    if (token.type == t_eof || token.type == t_invalid) {
+    if (token.type == t_eof) {
       break;
     }
   }
 }
+
 
 void free_tokens(token_t *tokens, unsigned count) {
   for (unsigned i = 0; i < count; i++) {
@@ -88,6 +105,12 @@ void free_tokens(token_t *tokens, unsigned count) {
   free(tokens);
 }
 
+
+/**
+ * skip_whitespace_and_comments(ptr, line, column)
+ * Skips over whitespace and comments in the source code, updating the line and column numbers accordingly.
+ * Returns 1 if there is more source code to process after skipping, or 0 if the end of the source code is reached.
+ */
 static int skip_whitespace_and_comments(char **ptr, unsigned *line, unsigned *column) {
   while (**ptr != '\0') {
     // skip whitespace
@@ -139,181 +162,66 @@ static int skip_whitespace_and_comments(char **ptr, unsigned *line, unsigned *co
   return **ptr != '\0'; // Return whether we have more to process
 }
 
+
 static int tokenize_symbol(token_t *tokens, unsigned *token_count, char **ptr, unsigned line, unsigned *column, char *file_path) {
   char c = **ptr;
   switch (c) {
-    case ';':
-      add_token(tokens, token_count, s_semicolon, line, *column, file_path, NULL);
-      (*ptr)++;
-      return 1;
-    case '(':
-      add_token(tokens, token_count, s_lparen, line, *column, file_path, NULL);
-      (*ptr)++;
-      return 1;
-    case ')':
-      add_token(tokens, token_count, s_rparen, line, *column, file_path, NULL);
-      (*ptr)++;
-      return 1;
-    case '{':
-      add_token(tokens, token_count, s_lbrace, line, *column, file_path, NULL);
-      (*ptr)++;
-      return 1;
-    case '}':
-      add_token(tokens, token_count, s_rbrace, line, *column, file_path, NULL);
-      (*ptr)++;
-      return 1;
-    case '@':
-      add_token(tokens, token_count, s_mem_lookup, line, *column, file_path, NULL);
-      (*ptr)++;
-      return 1;
-    case '*':
-      add_token(tokens, token_count, s_star, line, *column, file_path, NULL);
-      (*ptr)++;
-      return 1;
-    case '+':
-      if (*(*ptr + 1) == '=') {
-        add_token(tokens, token_count, s_plus_equals, line, *column, file_path, NULL);
-        *ptr += 2;
-        column++;
-      } else {
-        add_token(tokens, token_count, s_plus, line, *column, file_path, NULL);
-        (*ptr)++;
-      }
-      return 1;
-    case '-':
-      if (*(*ptr + 1) == '=') {
-        add_token(tokens, token_count, s_minus_equals, line, *column, file_path, NULL);
-        *ptr += 2;
-        column++;
-      } else if (*(*ptr + 1) == '>') {
+    MATCH_SINGLE_CHAR_SYMBOL(';', s_semicolon)
+    MATCH_SINGLE_CHAR_SYMBOL('(', s_lparen)
+    MATCH_SINGLE_CHAR_SYMBOL(')', s_rparen)
+    MATCH_SINGLE_CHAR_SYMBOL('{', s_lbrace)
+    MATCH_SINGLE_CHAR_SYMBOL('}', s_rbrace)
+    MATCH_SINGLE_CHAR_SYMBOL('@', s_mem_lookup)
+    MATCH_SINGLE_CHAR_SYMBOL(',', s_comma)
+    MATCH_DOUBLE_OR_SINGLE_TOKEN('*', '=', s_star_equals, s_star)
+    MATCH_DOUBLE_OR_SINGLE_TOKEN('+', '=', s_plus_equals, s_plus)
+    MATCH_DOUBLE_OR_SINGLE_TOKEN('/', '=', s_divide_equals, s_divide)
+    MATCH_DOUBLE_OR_SINGLE_TOKEN('&', '&', s_and, s_ampersand)
+    MATCH_DOUBLE_OR_SINGLE_TOKEN('=', '=', s_equalsequals, s_equals)
+    MATCH_DOUBLE_OR_SINGLE_TOKEN('!', '=', s_bang_equals, s_bang)
+    MATCH_DOUBLE_OR_SINGLE_TOKEN('<', '=', s_lte, s_lt)
+    MATCH_DOUBLE_OR_SINGLE_TOKEN('>', '=', s_gte, s_gt)
+    MATCH_DOUBLE_OR_SINGLE_TOKEN('|', '|', s_or, t_invalid) // '|' is not a valid single-character token in this language, only '||'
+    case '-': // 3 possible cases: '-', '->', '-='
+      if (*(*ptr + 1) == '>') {
         add_token(tokens, token_count, s_arrow, line, *column, file_path, NULL);
-        *ptr += 2;
-        column++;
-      } else {
-        add_token(tokens, token_count, s_minus, line, *column, file_path, NULL);
-        (*ptr)++;
+        *ptr += 2; (*column) += 2;
+        return 1;
       }
-      return 1;
-    case '/':
-      add_token(tokens, token_count, s_divide, line, *column, file_path, NULL);
-      (*ptr)++;
-      return 1;
-    case '&':
-      add_token(tokens, token_count, s_ampersand, line, *column, file_path, NULL);
-      (*ptr)++;
-      return 1;
-    case ',':
-      add_token(tokens, token_count, s_comma, line, *column, file_path, NULL);
-      (*ptr)++;
-      return 1;
-    case '=':
-      if (*(*ptr + 1) == '=') {
-        add_token(tokens, token_count, s_equalsequals, line, *column, file_path, NULL);
-        *ptr += 2;
-        column++;
-      } else {
-        add_token(tokens, token_count, s_equals, line, *column, file_path, NULL);
-        (*ptr)++;
-      }
-      return 1;
-    case '!':
-      if (*(*ptr + 1) == '=') {
-        add_token(tokens, token_count, s_bang_equals, line, *column, file_path, NULL);
-        *ptr += 2;
-        column++;
-      } else {
-        add_token(tokens, token_count, s_bang, line, *column, file_path, NULL);
-        (*ptr)++;
-      }
-      return 1;
-    case '<':
-      if (*(*ptr + 1) == '=') {
-        add_token(tokens, token_count, s_lte, line, *column, file_path, NULL);
-        *ptr += 2;
-        column++;
-      } else {
-        add_token(tokens, token_count, s_lt, line, *column, file_path, NULL);
-        (*ptr)++;
-      }
-      return 1;
-    case '>':
-      if (*(*ptr + 1) == '=') {
-        add_token(tokens, token_count, s_gte, line, *column, file_path, NULL);
-        *ptr += 2;
-        column++;
-      } else {
-        add_token(tokens, token_count, s_gt, line, *column, file_path, NULL);
-        (*ptr)++;
-      }
-      return 1;
-    // Handle other symbols similarly...
+      DOUBLE_OR_SINGLE_CHAR_TOKEN_('=', s_minus_equals, s_minus)
     default:
-      return 0; // Not a recognized symbol
+      return t_invalid; // Not a recognized symbol
   }
 }
 
+
+static inline long *make_long(long value) {
+  long *ptr = malloc(sizeof(*ptr));
+  if (ptr) *ptr = value;
+  else {
+    perror("Failed to allocate memory for long value");
+    exit(EXIT_FAILURE);
+  }
+  return ptr;
+}
+
+
 static int tokenize_keyword_or_identifier(token_t *tokens, unsigned *token_count, char **ptr, unsigned line, unsigned *column, char *file_path) {
-  if (strncmp(*ptr, "fn", 2) == 0 && !isalnum((unsigned char)(*ptr)[2]) && (*ptr)[2] != '_') {
-    add_token(tokens, token_count, Kw_fn, line, *column, file_path, NULL);
-    *ptr += 2;
-    *column += 2;
-    return 1;
-  } else if (strncmp(*ptr, "reg", 3) == 0 && !isalnum((unsigned char)(*ptr)[3]) && (*ptr)[3] != '_') {
-    add_token(tokens, token_count, Kw_reg, line, *column, file_path, NULL);
-    *ptr += 3;
-    *column += 3;
-    return 1;
-  } else if (strncmp(*ptr, "return", 6) == 0 && !isalnum((unsigned char)(*ptr)[6]) && (*ptr)[6] != '_') {
-    add_token(tokens, token_count, Kw_return, line, *column, file_path, NULL);
-    *ptr += 6;
-    *column += 6;
-    return 1;
-  } else if (strncmp(*ptr, "void", 4) == 0 && !isalnum((unsigned char)(*ptr)[4]) && (*ptr)[4] != '_') {
-    add_token(tokens, token_count, Kw_void, line, *column, file_path, NULL);
-    *ptr += 4;
-    *column += 4;
-    return 1;
-  } else if (strncmp(*ptr, "if", 2) == 0 && !isalnum((unsigned char)(*ptr)[2]) && (*ptr)[2] != '_') {
-    add_token(tokens, token_count, Kw_if, line, *column, file_path, NULL);
-    *ptr += 2;
-    *column += 2;
-    return 1;
-  } else if (strncmp(*ptr, "else", 4) == 0 && !isalnum((unsigned char)(*ptr)[4]) && (*ptr)[4] != '_') {
-    add_token(tokens, token_count, Kw_else, line, *column, file_path, NULL);
-    *ptr += 4;
-    *column += 4;
-    return 1;
-  } else if (strncmp(*ptr, "while", 5) == 0 && !isalnum((unsigned char)(*ptr)[5]) && (*ptr)[5] != '_') {
-    add_token(tokens, token_count, Kw_while, line, *column, file_path, NULL);
-    *ptr += 5;
-    *column += 5;
-    return 1;
-  } else if (strncmp(*ptr, "for", 3) == 0 && !isalnum((unsigned char)(*ptr)[3]) && (*ptr)[3] != '_') {
-    add_token(tokens, token_count, Kw_for, line, *column, file_path, NULL);
-    *ptr += 3;
-    *column += 3;
-    return 1;
-  } else if (strncmp(*ptr, "u8", 2) == 0 && !isalnum((unsigned char)(*ptr)[2]) && (*ptr)[2] != '_') {
-    add_token(tokens, token_count, t_u8, line, *column, file_path, NULL);
-    *ptr += 2;
-    *column += 2;
-    return 1;
-  } else if (strncmp(*ptr, "i8", 2) == 0 && !isalnum((unsigned char)(*ptr)[2]) && (*ptr)[2] != '_') {
-    add_token(tokens, token_count, t_i8, line, *column, file_path, NULL);
-    *ptr += 2;
-    *column += 2;
-    return 1;
-  } else if (strncmp(*ptr, "u16", 3) == 0 && !isalnum((unsigned char)(*ptr)[3]) && (*ptr)[3] != '_') {
-    add_token(tokens, token_count, t_u16, line, *column, file_path, NULL);
-    *ptr += 3;
-    *column += 3;
-    return 1;
-  } else if (strncmp(*ptr, "i16", 3) == 0 && !isalnum((unsigned char)(*ptr)[3]) && (*ptr)[3] != '_') {
-    add_token(tokens, token_count, t_i16, line, *column, file_path, NULL);
-    *ptr += 3;
-    *column += 3;
-    return 1;
-  } else if (isalpha((unsigned char)**ptr) || **ptr == '_') {
+    MATCH_KEYWORD("fn",     Kw_fn, NULL)
+    MATCH_KEYWORD("reg",    Kw_reg, NULL)
+    MATCH_KEYWORD("return", Kw_return, NULL)
+    MATCH_KEYWORD("void",   Kw_void, NULL)
+    MATCH_KEYWORD("if",     Kw_if, NULL)
+    MATCH_KEYWORD("else",   Kw_else, NULL)
+    MATCH_KEYWORD("while",  Kw_while, NULL)
+    MATCH_KEYWORD("for",    Kw_for, NULL)
+    MATCH_KEYWORD("u8",     t_u8, NULL)
+    MATCH_KEYWORD("i8",     t_i8, NULL)
+    MATCH_KEYWORD("u16",    t_u16, NULL)
+    MATCH_KEYWORD("i16",    t_i16, NULL)
+    MATCH_KEYWORD("null",   l_num, make_long(0)) // treat 'null' as a special numeric literal with value 0
+
+  if (isalpha((unsigned char)**ptr) || **ptr == '_') {
     // Handle identifiers (and potentially keywords that aren't reserved)
     const char *start = *ptr;
     while (isalnum((unsigned char)**ptr) || **ptr == '_') {
@@ -334,6 +242,7 @@ static int tokenize_keyword_or_identifier(token_t *tokens, unsigned *token_count
 
   return 0;
 }
+
 
 static int tokenize_string(token_t *tokens, unsigned *token_count, char **ptr, unsigned line, unsigned *column, char *file_path) {
   if (**ptr != '"') {
@@ -374,6 +283,15 @@ static int tokenize_string(token_t *tokens, unsigned *token_count, char **ptr, u
   return 1;
 }
 
+
+/**
+ * tokenize_number(tokens, token_count, ptr, line, column, file_path)
+ * Attempts to tokenize a number literal starting at the current position in the source code.
+ * Supports decimal, hexadecimal (0x), and binary (0b) literals.
+ * If a valid number literal is found, it is added to the tokens array and the function returns 1.
+ * If the current position does not start a valid number literal, the function returns 0.
+ * If an error occurs while tokenizing the number (e.g., invalid format), the function returns -1 and prints an error message.
+ */
 static int tokenize_number(token_t *tokens, unsigned *token_count, char **ptr, unsigned line, unsigned *column, char *file_path) {
   const char *literal_start = *ptr;
   int base = 10;
@@ -430,8 +348,9 @@ static int tokenize_number(token_t *tokens, unsigned *token_count, char **ptr, u
   return 1;
 }
 
+
 token_t *tokenize(const char *file_path, const char *source_code, const long file_size, unsigned *num_tokens) {
-  const unsigned max_tokens = (unsigned)(file_size);
+  const unsigned max_tokens = (unsigned)(file_size); // lazy upper bound on number of tokens, can't be more than 1 token per character
   char *ptr = (char *)source_code;
   unsigned line = 1, column = 1, token_count = 0;
 

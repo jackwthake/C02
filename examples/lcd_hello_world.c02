@@ -8,6 +8,8 @@ reg u8 DDRA @ 0x6003;
  PORTA = top 3 bits for control lines, PA7 = enable, PA6 = read/write, PA6 = register select
 */
 
+u8 *msg = "Hello C02!";
+
 fn lcd_send_command(u8 cmd) -> void {
   PORTB = cmd; // Put command on data lines
   PORTA = 0x80; // RS=0, E=1 to latch command
@@ -39,19 +41,7 @@ fn lcd_putc(u8 ch) -> void {
 fn main() -> void {
   lcd_init();
 
-  // padding chars
-  lcd_putc(32);   //
-  lcd_putc(32);   // 
-  lcd_putc(32);   // 
-
-  lcd_putc(72);   // H
-  lcd_putc(101);  // e
-  lcd_putc(108);  // l
-  lcd_putc(108);  // l
-  lcd_putc(111);  // o
-  lcd_putc(32);   // 
-  lcd_putc(67);   // C
-  lcd_putc(48);   // 0
-  lcd_putc(50);   // 2
-  lcd_putc(33);   // !
+  for (u8 *p = msg; *p != null; p += 1) {
+    lcd_putc(*p);
+  }
 }
