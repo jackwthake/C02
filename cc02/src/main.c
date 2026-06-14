@@ -5,6 +5,7 @@
 #include <getopt.h>
 
 #include "tokenizer.h"
+#include "parser.h"
 
 #define UNUSED(x) (void)(x)
 
@@ -129,9 +130,35 @@ int main(int argc, char * const *argv) {
     print_tokens(tokens, num_tokens);
   }
 
-  /* free the allocated memory */
-  free(source_code);
+  /* parse the tokens into an AST */
+  parser_arena_t parser_area;
+  if (!parser_init(&parser_area, PARSER_CHUNK_ALLOC_SIZE)) {
+    fprintf(stderr, "Parser allocation failed.");
+    free(source_code);
+    free_tokens(tokens, num_tokens);
+    return 1;
+  }
+
+  node_t *ast = parse(tokens, num_tokens, &parser_area);
+  if (!ast) {
+    fprintf(stderr, "Parsing failed\n");
+    free(source_code);
+    free_tokens(tokens, num_tokens);
+    parser_free(&parser_area);
+    return 1;
+  }
+
+  /* After parsing, tokens are no longer needed */
   free_tokens(tokens, num_tokens);
+
+  /* Semantic analysis */
+
+  /* After analysis, source code is no longer needed */
+  free(source_code);
+
+  /* Code generation */
+
+  parser_free(&parser_area);
 
   return 0;
 }

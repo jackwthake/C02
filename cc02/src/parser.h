@@ -1,0 +1,196 @@
+#ifndef __PARSER_H__
+#define __PARSER_H__
+
+#include <stdint.h>
+#include <stddef.h>
+
+#include "tokenizer.h"
+
+// ----------------------------------------------------------------
+// Types
+// ----------------------------------------------------------------
+
+typedef enum {
+  TYPE_U8, TYPE_I8, TYPE_U16, TYPE_I16, TYPE_VOID,
+} type_kind_t;
+
+typedef struct {
+  type_kind_t kind;
+  int is_ptr;
+} type_t;
+
+// ----------------------------------------------------------------
+// Operators
+// ----------------------------------------------------------------
+
+typedef enum {
+  OP_PLUS, OP_MINUS, OP_MULTIPLY, OP_DIVIDE,
+  OP_LT, OP_GT, OP_LTE, OP_GTE,
+  OP_EQUALSEQUALS, OP_BANGEQUALS,
+  OP_BANG, OP_NEGATE, OP_ADDRESSOF,
+} op_t;
+
+// ----------------------------------------------------------------
+// Node
+// ----------------------------------------------------------------
+
+typedef enum {
+  // expressions
+  NODE_NUMBER,
+  NODE_IDENTIFIER,
+  NODE_BINOP,
+  NODE_UNARY,
+  NODE_CALL,
+  NODE_DEREF,
+  NODE_CAST,
+  // statements
+  NODE_VAR_DECL,
+  NODE_ASSIGN,
+  NODE_DEREF_ASSIGN,
+  NODE_RETURN,
+  NODE_IF,
+  NODE_WHILE,
+  NODE_EXPR_STMT,
+  // top-level
+  NODE_FUNCTION,
+  NODE_REG_DECL,
+  NODE_GLOBAL_VAR,
+  // root
+  NODE_PROGRAM,
+} node_kind_t;
+
+typedef struct node_t node_t;
+
+typedef struct {
+  node_t   **items;
+  unsigned   count;
+} node_list_t;
+
+typedef struct {
+  type_t  type;
+  char   *name;
+} param_t;
+
+typedef struct {
+  param_t  *items;
+  unsigned  count;
+} param_list_t;
+
+struct node_t {
+  node_kind_t kind;
+  union {
+    // --- expressions ---
+    int32_t number;                       // NODE_NUMBER
+    char   *identifier;                   // NODE_IDENTIFIER
+
+    struct {
+      node_t *left;
+      op_t    op;
+      node_t *right;
+    } binop;                              // NODE_BINOP
+
+    struct {
+      op_t    op;
+      node_t *operand;
+    } unary;                              // NODE_UNARY
+
+    struct {
+      char       *name;
+      node_list_t args;
+    } call;                               // NODE_CALL
+
+    node_t *deref_target;                 // NODE_DEREF
+
+    struct {
+      type_t  cast_type;
+      node_t *operand;
+    } cast;                               // NODE_CAST
+
+    // --- statements ---
+    struct {
+      type_t  type;
+      char   *name;
+      node_t *initialiser;                // NULL if absent
+    } var_decl;                           // NODE_VAR_DECL
+
+    struct {
+      char   *name;
+      node_t *value;
+    } assign;                             // NODE_ASSIGN
+
+    struct {
+      node_t *target;
+      node_t *value;
+    } deref_assign;                       // NODE_DEREF_ASSIGN
+
+    node_t *return_val;                   // NODE_RETURN (NULL for bare return)
+
+    struct {
+      node_t     *cond;
+      node_list_t then_block;
+      node_list_t else_block;             // .count == 0 if no else
+    } if_stmt;                            // NODE_IF
+
+    struct {
+      node_t     *cond;
+      node_list_t body;
+    } while_stmt;                         // NODE_WHILE
+
+    node_t *expr_stmt;                    // NODE_EXPR_STMT
+
+    // --- top-level ---
+    struct {
+      char        *name;
+      param_list_t params;
+      type_t       return_type;
+      node_list_t  body;
+    } function;                           // NODE_FUNCTION
+
+    struct {
+      type_t   type;
+      char    *name;
+      uint16_t addr;
+    } reg_decl;                           // NODE_REG_DECL
+
+    struct {
+      type_t  type;
+      char   *name;
+      node_t *initialiser;                // NULL if absent
+    } global_var;                         // NODE_GLOBAL_VAR
+
+    // --- root ---
+    node_list_t program;                  // NODE_PROGRAM
+  };
+};
+
+// ----------------------------------------------------------------
+// Memory Management
+// ----------------------------------------------------------------
+
+typedef struct arena_chunk_t {
+  struct arena_chunk_t *next;
+  size_t used;
+  size_t capacity;
+  char data[];  // flexible array member
+} arena_chunk_t;
+
+typedef struct {
+  arena_chunk_t *first;
+  arena_chunk_t *current;
+  size_t chunk_size;
+} parser_arena_t;
+
+#define PARSER_CHUNK_ALLOC_SIZE (sizeof(node_t) * 100)
+
+int parser_init(parser_arena_t *a, size_t size);
+void parser_free(parser_arena_t *a);
+
+// ----------------------------------------------------------------
+// General API
+// ----------------------------------------------------------------
+
+void print_ast(node_t *node, int indent);
+
+node_t *parse(token_t *tokens, unsigned num_tokens, parser_arena_t *mem_area);
+
+#endif // __PARSER_H__
