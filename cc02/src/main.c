@@ -9,23 +9,56 @@
 
 #define UNUSED(x) (void)(x)
 
+typedef struct params_t {
+  int dump_tokens;
+  int dump_ast;
+  int syntax_only;
+  char *output;
+  char *input;
+} params_t;
+
+
 static void print_help(const char *prog_name) {
-  fprintf(stderr, "Usage: %s [-h] [-v] [-o output] input\n", prog_name);
+  fprintf(stderr, "Usage: %s [-h] [--token-dump] [--ast-dump] [-o output] input\n", prog_name);
   fprintf(stderr, "Options:\n");
-  fprintf(stderr, "  -h            Show this help message\n");
-  fprintf(stderr, "  -v            Enable verbose output (print tokens)\n");
-  fprintf(stderr, "  -o output     Specify output file (not implemented yet)\n");
+  fprintf(stderr, "  -h, --help           Show this help message\n");
+  fprintf(stderr, "  --token-dump         Dump the token list after tokenization\n");
+  fprintf(stderr, "  --ast-dump           Dump the AST using print_ast after parsing\n");
+  fprintf(stderr, "  --syntax-check-only  Stop after syntax and semantic checks\n");
+  fprintf(stderr, "  -o, --output         Specify output file (not implemented yet)\n");
 }
 
-static int read_params(int argc, char * const *argv, int *verbose, char **output, char **input) {
+
+static int read_params(int argc, char * const *argv, params_t *params) {
+  static const struct option long_options[] = {
+    {"help", no_argument, 0, 'h'},
+    {"token-dump", no_argument, 0, 1},
+    {"ast-dump", no_argument, 0, 2},
+    {"syntax-check-only", no_argument, 0, 3},
+    {"output", required_argument, 0, 'o'},
+    {0, 0, 0, 0},
+  };
+
   int opt;
-  while ((opt = getopt(argc, argv, "hvo:")) != -1) {
+  int option_index = 0;
+
+  while ((opt = getopt_long(argc, argv, "ho:", long_options, &option_index)) != -1) {
     switch (opt) {
       case 'h':
         print_help(argv[0]);
         return 2;
-      case 'v': *verbose = 1; break;
-      case 'o': *output = optarg; break;
+      case 'o':
+        params->output = optarg;
+        break;
+      case 1:
+        params->dump_tokens = 1;
+        break;
+      case 2:
+        params->dump_ast = 1;
+        break;
+      case 3:
+        params->syntax_only = 1;
+        break;
       default:
         fprintf(stderr, "Bad options: use %s -h to display help message\n", argv[0]);
         return -1;
@@ -33,10 +66,10 @@ static int read_params(int argc, char * const *argv, int *verbose, char **output
   }
 
   if (optind < argc) {
-    *input = argv[optind];
+    params->input = argv[optind];
 
     // ensure file ends in .c02
-    const char *ext = strrchr(*input, '.');
+    const char *ext = strrchr(params->input, '.');
     if (!ext || strcmp(ext, ".c02") != 0) {
       fprintf(stderr, "Input file must have .c02 extension\n");
       return -1;
@@ -49,6 +82,7 @@ static int read_params(int argc, char * const *argv, int *verbose, char **output
 
   return 0;
 }
+
 
 static int load_file(const char *file_path, char **out_content) {
   FILE *f = fopen(file_path, "r");
@@ -98,15 +132,12 @@ static int load_file(const char *file_path, char **out_content) {
   return fsize + 1;
 }
 
+
 int main(int argc, char * const *argv) {
-  int verbose = 0;
-  char *output = NULL;
-  char *input = NULL;
-    
-  UNUSED(output);
-  
+  params_t params = {0};
+
   /* Read command-line parameters */
-  int parse_status = read_params(argc, argv, &verbose, &output, &input);
+  int parse_status = read_params(argc, argv, &params);
   if (parse_status != 0) {
     return parse_status == 2 ? 0 : 1;
   }
@@ -114,19 +145,19 @@ int main(int argc, char * const *argv) {
   /* Load the input file */
   char *source_code;
   long fsize;
-  if ((fsize = load_file(input, &source_code)) < 0) {
+  if ((fsize = load_file(params.input, &source_code)) < 0) {
     return 1;
   }
   
   /* tokenize the source code */
   unsigned num_tokens;
-  token_t *tokens = tokenize(input, source_code, fsize, &num_tokens);
+  token_t *tokens = tokenize(params.input, source_code, fsize, &num_tokens);
   if (!tokens) {
     free(source_code);
     return 1;
   }
 
-  if (verbose) {
+  if (params.dump_tokens) {
     print_tokens(tokens, num_tokens);
   }
 
@@ -148,6 +179,10 @@ int main(int argc, char * const *argv) {
     return 1;
   }
 
+  if (params.dump_ast) {
+    print_ast(ast);
+  }
+
   /* After parsing, tokens are no longer needed */
   free_tokens(tokens, num_tokens);
 
@@ -155,6 +190,11 @@ int main(int argc, char * const *argv) {
 
   /* After analysis, source code is no longer needed */
   free(source_code);
+
+  if (params.syntax_only) {
+    parser_free(&parser_area);
+    return 0;
+  }
 
   /* Code generation */
 

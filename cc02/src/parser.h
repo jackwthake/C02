@@ -189,7 +189,7 @@ void parser_free(parser_arena_t *a);
 // General API
 // ----------------------------------------------------------------
 
-void print_ast(node_t *node, int indent);
+void print_ast(node_t *node);
 
 node_t *parse(token_t *tokens, unsigned num_tokens, parser_arena_t *mem_area);
 
