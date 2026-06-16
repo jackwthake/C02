@@ -128,6 +128,7 @@ static void print_ast_label(node_t *node) {
     case NODE_REG_DECL:
       printf("%s %s : ", node_kind_name(node->kind), node->reg_decl.name ? node->reg_decl.name : "<anon>");
       print_type_suffix(node->reg_decl.type);
+      printf(" @ %3lx", node->reg_decl.addr);
       break;
     case NODE_GLOBAL_VAR:
       printf("%s %s : ", node_kind_name(node->kind), node->global_var.name ? node->global_var.name : "<anon>");
@@ -246,6 +247,7 @@ static void print_ast_(node_t *node, int is_last, const char *prefix) {
       break;
 
     case NODE_REG_DECL:
+      break;
     case NODE_GLOBAL_VAR:
       if (node->global_var.initialiser) {
         print_ast_(node->global_var.initialiser, 1, child_prefix);

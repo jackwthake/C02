@@ -1,0 +1,5 @@
+u8 global;
+i8 signed_global;
+u16 *global_ptr;
+i16 *signed_global_ptr;
+void *void_ptr;

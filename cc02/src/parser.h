@@ -17,6 +17,7 @@ typedef enum {
 typedef struct {
   type_kind_t kind;
   int is_ptr;
+  unsigned ptr_depth;
 } type_t;
 
 // ----------------------------------------------------------------
@@ -152,7 +153,7 @@ struct node_t {
     struct {
       type_t   type;
       char    *name;
-      uint16_t addr;
+      unsigned long addr;
     } reg_decl;                           // NODE_REG_DECL
 
     struct {

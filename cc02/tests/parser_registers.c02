@@ -1,0 +1,4 @@
+reg u8 PORTB @ 0x6000;
+reg u8 PORTA @ 0x6001;
+reg u8 DDRB @ 0x6002;
+reg u8 DDRA @ 0x6003;

@@ -39,6 +39,29 @@ typedef struct {
 } scratch_t;
 
 
+#define GENERATE_ERROR(PARSER, TYPE, TOKEN, EXPECTED, CTX) \
+  {PARSER->err = malloc(sizeof(error_t));                  \
+  PARSER->err->type = TYPE;                                \
+  PARSER->err->found = TOKEN;                              \
+  PARSER->err->expected = EXPECTED;                        \
+  PARSER->err->context = CTX;                              \
+  PARSER->has_errored = 1;}
+
+
+#define EXPECT_SYMBOL(PARSER, TOKEN, EXPECTED, ERR_EXPECTED, ERR_CTX)         \
+  do {                                                                        \
+    if (TOKEN.type != EXPECTED) {                                             \
+      GENERATE_ERROR(PARSER, UNEXPECTED_TOKEN, TOKEN, ERR_EXPECTED, ERR_CTX); \
+    }                                                                         \
+  } while(0);
+
+
+// dirty panic, debug only, memory leak central
+#define UNIMPLEMENTED_PANIC()                                        \
+    fprintf(stderr, "Unimplemented at %s:%d\n", __FILE__, __LINE__); \
+    exit(1);
+
+
 static void print_parse_error(error_t *e) {
   switch (e->type) {
     case UNEXPECTED_EOF:
@@ -165,31 +188,120 @@ static node_list_t scratch_commit(scratch_t *s, parser_arena_t *arena) {
 }
 
 
+static inline int token_type_to_parser_type(token_type_t t) {
+  switch (t) {
+    case t_u8: return TYPE_U8;
+    case t_i8: return TYPE_I8;
+    case t_u16: return TYPE_U16;
+    case t_i16: return TYPE_I16;
+    case Kw_void: return TYPE_VOID;
+    default: return -1;
+  }
+}
+
+
+static type_t parse_type(parser_t *p) {
+  type_t res = { 0 };
+
+  int type;
+  if ((type = token_type_to_parser_type(p->tokens[p->pos].type)) == -1)
+    GENERATE_ERROR(p, UNEXPECTED_TOKEN, p->tokens[p->pos], "Type name", "type parsing");
+
+  res.kind = (type_kind_t)type;
+
+  ++p->pos; // consume type
+
+  // check for pointer
+  while (p->tokens[p->pos].type == s_star) {
+    res.is_ptr = 1;
+    ++res.ptr_depth;
+    ++p->pos; // consume star
+  }
+
+  return res;
+}
+
+
+static node_t *parse_reg_decl(parser_t *p) {
+  ++p->pos; // consume reg keyword
+
+  node_t *decl = ALLOC_NODE(p);
+  decl->kind = NODE_REG_DECL;
+
+  type_t type = parse_type(p);  // consumes type token
+  if (p->err) return NULL;
+
+  decl->reg_decl.type = type;
+
+  EXPECT_SYMBOL(p, p->tokens[p->pos], l_identifier, "Identifier", "register decl")
+  if (p->err) return NULL;
+
+  // pull identifier from token array
+  decl->reg_decl.name = (char*)p->tokens[p->pos].value;
+  ++p->pos; // consume identifier
+
+  EXPECT_SYMBOL(p, p->tokens[p->pos], s_mem_lookup, "@", "register decl")
+  if (p->err) return NULL;
+  ++p->pos; // consume @
+
+  EXPECT_SYMBOL(p, p->tokens[p->pos], l_num, "Memmry address literal", "register decl")
+  if (p->err) return NULL;
+
+  // pull integer literal (dereference void* to get the stored unsigned long)
+  decl->reg_decl.addr = *(unsigned long*)p->tokens[p->pos].value;
+  ++p->pos; // consume integer literal
+
+  EXPECT_SYMBOL(p, p->tokens[p->pos], s_semicolon, ";", "register decl")
+  if (p->err) return NULL;
+  ++p->pos; // consume ;
+
+  return decl;
+}
+
+
+static node_t *parse_global_var_decl(parser_t *p) {
+  node_t *decl = ALLOC_NODE(p);
+  decl->kind = NODE_GLOBAL_VAR;
+
+  type_t type = parse_type(p); // consumes type token
+  if (p->err) return NULL;
+
+  decl->global_var.type = type;
+
+  EXPECT_SYMBOL(p, p->tokens[p->pos], l_identifier, "Identifier", "register decl")
+  if (p->err) return NULL;
+
+  // pull identifier from token array
+  decl->reg_decl.name = (char*)p->tokens[p->pos].value;
+  ++p->pos; // consume identifier
+
+  if (p->tokens[p->pos].type == s_equals) { // has initialiser, parse it
+    ++p->pos; // consume =
+    UNIMPLEMENTED_PANIC() // TODO: implement expression parsing
+  }
+
+  EXPECT_SYMBOL(p, p->tokens[p->pos], s_semicolon, "; or initialiser expresion", "global var decl")
+  if (p->err) return NULL;
+  ++p->pos; // consume ;
+
+  return decl;
+}
+
+
 static node_t *parse_toplevel(parser_t *p) {
   token_t tok = p->tokens[p->pos]; 
 
   switch (tok.type) {
     case Kw_fn:
       ++p->pos;
-      return NULL;
+      UNIMPLEMENTED_PANIC()
     case Kw_reg:
-      ++p->pos;
-      return NULL;
-    case t_u8: case t_i8: case t_u16: case t_i16:
-      ++p->pos;
-      return NULL;
-    case t_eof: 
-      return NULL;
-      break;
+      return parse_reg_decl(p);
+    case t_u8: case t_i8: case t_u16: case t_i16: case Kw_void:
+      return parse_global_var_decl(p);
 
     default:
-      p->err = malloc(sizeof(error_t));
-      p->err->type = UNEXPECTED_TOKEN;
-      p->err->found = tok;
-      p->err->expected = "Top level declaration. (Variable/Register decl, Function decl)";
-      p->err->context = "top level parse";
-      
-      p->has_errored = 1;
+      GENERATE_ERROR(p, UNEXPECTED_TOKEN, tok, "Top level declaration. (Variable/Register decl, Function decl)", "top level parse");
       return NULL;
   }
 }
