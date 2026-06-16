@@ -79,12 +79,47 @@ static void add_token(token_t *tokens, unsigned *token_count, token_type_t type,
 
 const char *token_type_to_string(token_type_t type) {
   switch (type) {
-    #define X(tok, str) case tok: return str;
+    #define X(tok, str, has_val) case tok: return str;
     TOKEN_TYPES
     #undef X
     default: return "UNKNOWN";
   }
 }  
+
+
+unsigned token_has_value(token_type_t type) {
+  switch (type) {
+    #define X(tok, str, has_val) case tok: return has_val;
+    TOKEN_TYPES
+    #undef X
+    default: return 0;
+  }
+}
+
+char *token_val_to_string(const token_t tok, unsigned *should_free) {
+  if (!token_has_value(tok.type)) {
+    should_free = 0;
+    return NULL;
+  }
+
+  if (tok.type == l_identifier || tok.type == l_string) {
+    should_free = 0;
+    return (char *)tok.value;
+  }
+
+  if (tok.type == l_num) {
+    char *str = malloc(32);
+    if (str == NULL) {
+      return NULL;
+    }
+
+    snprintf(str, 32, "%ld", *(long *)tok.value);
+    *should_free = 1;
+    return str;
+  }
+
+  return NULL;
+}
 
 
 void print_tokens(const token_t *tokens, unsigned count) {

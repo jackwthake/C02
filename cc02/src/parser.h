@@ -34,6 +34,9 @@ typedef enum {
 // Node
 // ----------------------------------------------------------------
 
+// NOTE: string fields in nodes (name, identifier, etc.) point directly into
+// the token array. tokens must remain valid for the lifetime of the AST.
+
 typedef enum {
   // expressions
   NODE_NUMBER,

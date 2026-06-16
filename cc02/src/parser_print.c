@@ -161,6 +161,7 @@ static void print_ast_list(node_list_t list, const char *prefix, int is_last) {
 
 static void print_ast_(node_t *node, int is_last, const char *prefix) {
   if (!node) {
+    printf("<null>\n");
     return;
   }
 

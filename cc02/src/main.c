@@ -172,7 +172,6 @@ int main(int argc, char * const *argv) {
 
   node_t *ast = parse(tokens, num_tokens, &parser_area);
   if (!ast) {
-    fprintf(stderr, "Parsing failed\n");
     free(source_code);
     free_tokens(tokens, num_tokens);
     parser_free(&parser_area);
@@ -183,21 +182,20 @@ int main(int argc, char * const *argv) {
     print_ast(ast);
   }
 
-  /* After parsing, tokens are no longer needed */
-  free_tokens(tokens, num_tokens);
-
+  
   /* Semantic analysis */
-
+  
   /* After analysis, source code is no longer needed */
   free(source_code);
-
+  
   if (params.syntax_only) {
-    parser_free(&parser_area);
-    return 0;
+    goto finish;
   }
 
   /* Code generation */
 
+finish:
+  free_tokens(tokens, num_tokens);
   parser_free(&parser_area);
 
   return 0;
