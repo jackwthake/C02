@@ -43,6 +43,7 @@ static const char *op_name(op_t op) {
 static const char *node_kind_name(node_kind_t kind) {
   switch (kind) {
     case NODE_NUMBER:       return "IntegerLiteral";
+    case NODE_STRING:       return "StringLiteral";
     case NODE_IDENTIFIER:   return "DeclRefExpr";
     case NODE_BINOP:        return "BinaryOperator";
     case NODE_UNARY:        return "UnaryOperator";
@@ -79,6 +80,9 @@ static void print_ast_label(node_t *node) {
   switch (node->kind) {
     case NODE_NUMBER:
       printf("%s (%d)", node_kind_name(node->kind), node->number);
+      break;
+    case NODE_STRING:
+      printf("%s \"%s\"", node_kind_name(node->kind), node->value);
       break;
     case NODE_IDENTIFIER:
       printf("%s %s", node_kind_name(node->kind), node->identifier ? node->identifier : "<anon>");
@@ -180,6 +184,7 @@ static void print_ast_(node_t *node, int is_last, const char *prefix) {
 
   switch (node->kind) {
     case NODE_NUMBER:
+    case NODE_STRING:
     case NODE_IDENTIFIER:
       break;
 

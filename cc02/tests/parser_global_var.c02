@@ -1,5 +1,11 @@
-u8 global;
-i8 signed_global;
-u16 *global_ptr;
+u8 global = 10;
+i8 signed_global = 69 * 420 / 67;
+u16 casted = (u16)signed_global;
+i16 grouped = (10 + 59) * (42 * 10);
+
+u8 *string = "hello world";
+u16 *global_ptr = &casted;
 i16 *signed_global_ptr;
 void *void_ptr;
+
+u16 dereffed = *global_ptr;

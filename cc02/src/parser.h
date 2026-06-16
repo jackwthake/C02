@@ -28,7 +28,7 @@ typedef enum {
   OP_PLUS, OP_MINUS, OP_MULTIPLY, OP_DIVIDE,
   OP_LT, OP_GT, OP_LTE, OP_GTE,
   OP_EQUALSEQUALS, OP_BANGEQUALS,
-  OP_BANG, OP_NEGATE, OP_ADDRESSOF,
+  OP_BANG, OP_NEGATE, OP_ADDRESSOF, OP_AND, OP_OR
 } op_t;
 
 // ----------------------------------------------------------------
@@ -39,9 +39,12 @@ typedef enum {
 // the token array. tokens must remain valid for the lifetime of the AST.
 
 typedef enum {
-  // expressions
+  // literals
   NODE_NUMBER,
+  NODE_STRING,
   NODE_IDENTIFIER,
+
+  // expressions
   NODE_BINOP,
   NODE_UNARY,
   NODE_CALL,
@@ -85,6 +88,7 @@ struct node_t {
   union {
     // --- expressions ---
     int32_t number;                       // NODE_NUMBER
+    char   *value;                        // NODE_STRING
     char   *identifier;                   // NODE_IDENTIFIER
 
     struct {

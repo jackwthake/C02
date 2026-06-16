@@ -200,19 +200,41 @@ static inline int token_type_to_parser_type(token_type_t t) {
 }
 
 
+// ----------------------------------------------------------------
+// Recursive descent parsing functions
+// ----------------------------------------------------------------
+
+// shorthand to check if parser threw an error
+#define GUARD(p) do { if ((p)->err) return NULL; } while(0)
+#define CUR_TOK p->tokens[p->pos]
+
+
+static node_t *logical_or(parser_t *p); // recursive descent entry point
+
+
+static inline int is_token_type_name(parser_t *p) {
+  switch (CUR_TOK.type) {
+    case t_u8: case t_i8: case t_u16:  case t_i16: case Kw_void:
+      return 1;
+    default:
+      return 0;
+  }
+}
+
+
 static type_t parse_type(parser_t *p) {
   type_t res = { 0 };
 
   int type;
-  if ((type = token_type_to_parser_type(p->tokens[p->pos].type)) == -1)
-    GENERATE_ERROR(p, UNEXPECTED_TOKEN, p->tokens[p->pos], "Type name", "type parsing");
+  if ((type = token_type_to_parser_type(CUR_TOK.type)) == -1)
+    GENERATE_ERROR(p, UNEXPECTED_TOKEN, CUR_TOK, "Type name", "type parsing");
 
   res.kind = (type_kind_t)type;
 
   ++p->pos; // consume type
 
   // check for pointer
-  while (p->tokens[p->pos].type == s_star) {
+  while (CUR_TOK.type == s_star) {
     res.is_ptr = 1;
     ++res.ptr_depth;
     ++p->pos; // consume star
@@ -222,6 +244,352 @@ static type_t parse_type(parser_t *p) {
 }
 
 
+/* consumes token, returning next one -> throws error if EOF is encountered */
+static token_t consume(parser_t *p) {
+  if (p->pos >= p->count || CUR_TOK.type == t_eof) {
+    GENERATE_ERROR(p, UNEXPECTED_EOF, CUR_TOK, "token", "expression");
+    return CUR_TOK; // return whatever's there, caller checks p->err
+  }
+
+  return p->tokens[p->pos++];
+}
+
+
+static node_t *primary(parser_t *p) {
+  token_t tok = consume(p);
+  GUARD(p);
+
+  switch (tok.type) {
+    case l_num: { // literal
+      node_t *node = ALLOC_NODE(p);
+      node->kind = NODE_NUMBER;
+      node->number = *(long*)tok.value;
+      return node;
+    }
+
+    case l_string: {
+      node_t *node = ALLOC_NODE(p);
+      node->kind = NODE_STRING;
+      node->value = (char*)tok.value;
+      return node;
+    }
+
+    case s_lparen: { // cast or grouped expression
+      unsigned is_cast = is_token_type_name(p);
+
+      if (is_cast) {
+        type_t t = parse_type(p);
+        GUARD(p);
+
+        EXPECT_SYMBOL(p, CUR_TOK, s_rparen, ")", "cast expression");
+        GUARD(p);
+        ++p->pos; // consume )
+
+        node_t *rhs = logical_or(p);
+        GUARD(p);
+
+        node_t *cast = ALLOC_NODE(p);
+        cast->kind = NODE_CAST;
+        cast->cast.cast_type = t;
+        cast->cast.operand = rhs;
+
+        return cast;
+      } else {
+        node_t *expr = logical_or(p);
+
+        EXPECT_SYMBOL(p, CUR_TOK, s_rparen, ")", "grouped expression");
+        GUARD(p);
+        ++p->pos; // consume )
+
+        return expr;
+      }
+    }
+
+    case l_identifier: {
+      char *name = (char*)tok.value;
+
+      if (CUR_TOK.type == s_lparen) {
+        ++p->pos; // consume (
+        scratch_t args = {0};
+      
+        while (CUR_TOK.type != s_rparen) {
+          scratch_push(&args, logical_or(p));
+          if (p->err) { free(args.items); return NULL; }
+          if (CUR_TOK.type == s_comma) ++p->pos;
+        }
+      
+        ++p->pos; // consume )
+        node_t *call = ALLOC_NODE(p);
+        call->kind = NODE_CALL;
+        call->call.name = name;
+        call->call.args = scratch_commit(&args, p->arena);
+      
+        free(args.items);
+        return call;
+      } else {
+        node_t *ident = ALLOC_NODE(p);
+        ident->kind = NODE_IDENTIFIER;
+        ident->identifier = name;
+        return ident;
+      }
+    }
+
+    default:
+      GENERATE_ERROR(p, UNEXPECTED_TOKEN, tok, "expression", "primary");
+      return NULL;
+  }
+}
+
+
+static node_t *unary(parser_t *p) {
+  switch (CUR_TOK.type) {
+    case s_bang: {
+      ++p->pos;
+
+      node_t *operand = unary(p);
+      GUARD(p);
+
+      node_t *n = ALLOC_NODE(p);
+      n->kind = NODE_UNARY;
+      n->unary.op = OP_BANG;
+      n->unary.operand = operand;
+
+      return n;
+    }
+
+    case s_minus: {
+      ++p->pos;
+
+      node_t *operand = unary(p);
+      GUARD(p);
+
+      node_t *n = ALLOC_NODE(p);
+      n->kind = NODE_UNARY;
+      n->unary.op = OP_NEGATE;
+      n->unary.operand = operand;
+
+      return n;
+    }
+
+    case s_ampersand: {
+      ++p->pos;
+
+      node_t *operand = unary(p);
+      GUARD(p);
+
+      node_t *n = ALLOC_NODE(p);
+      n->kind = NODE_UNARY;
+      n->unary.op = OP_ADDRESSOF;
+      n->unary.operand = operand;
+
+      return n;
+    }
+
+    case s_star: case s_mem_lookup: {
+      ++p->pos;
+
+      node_t *operand = unary(p);
+      GUARD(p);
+
+      node_t *n = ALLOC_NODE(p);
+      n->kind = NODE_DEREF;
+      n->deref_target = operand;
+
+      return n;
+    }
+
+    default: return primary(p);
+  }
+}
+
+
+static node_t *factor(parser_t *p) {
+  node_t *left = unary(p);
+  GUARD(p);
+
+  // collect terms in a compount multiplication / division
+  for (;;) {
+    op_t op;
+    switch (CUR_TOK.type) {
+      case s_star:   op = OP_MULTIPLY; break;
+      case s_divide: op = OP_DIVIDE;   break;
+      default: return left;
+    }
+ 
+    ++p->pos; // consume operator
+ 
+    node_t *right = unary(p);
+    GUARD(p);
+ 
+    node_t *n = ALLOC_NODE(p);
+    n->kind = NODE_BINOP;
+    n->binop.left  = left;
+    n->binop.op    = op;
+    n->binop.right = right;
+  
+    left = n; // setup next iteration
+  }
+}
+
+
+static node_t *term(parser_t *p) {
+  node_t *left = factor(p);
+  GUARD(p);
+
+  // collect terms in a compount summation / addition
+  for (;;) {
+    op_t op;
+    switch (CUR_TOK.type) {
+      case s_plus:   op = OP_PLUS; break;
+      case s_minus:  op = OP_MINUS;   break;
+      default: return left;
+    }
+ 
+    ++p->pos; // consume operator
+ 
+    node_t *right = factor(p);
+    GUARD(p);
+ 
+    node_t *n = ALLOC_NODE(p);
+    n->kind = NODE_BINOP;
+    n->binop.left  = left;
+    n->binop.op    = op;
+    n->binop.right = right;
+  
+    left = n; // setup next iteration
+  }
+}
+
+
+static node_t *comparison(parser_t *p) {
+  node_t *left = term(p);
+  GUARD(p);
+
+  for (;;) {
+    op_t op;
+    switch (CUR_TOK.type) {
+      case s_lt:   op = OP_LT; break;
+      case s_lte:  op = OP_LTE; break;
+      case s_gt:   op = OP_GT; break;
+      case s_gte:  op = OP_GTE; break;
+      default: return left;
+    }
+ 
+    ++p->pos; // consume operator
+ 
+    node_t *right = term(p);
+    GUARD(p);
+ 
+    node_t *n = ALLOC_NODE(p);
+    n->kind = NODE_BINOP;
+    n->binop.left  = left;
+    n->binop.op    = op;
+    n->binop.right = right;
+  
+    left = n; // setup next iteration
+  }
+}
+
+
+static node_t *equality(parser_t *p) {
+  node_t *left = comparison(p);
+  GUARD(p);
+
+  for (;;) {
+    op_t op;
+    switch (CUR_TOK.type) {
+      case s_equalsequals:  op = OP_EQUALSEQUALS; break;
+      case s_bang_equals:   op = OP_BANGEQUALS;   break;
+      default: return left;
+    }
+ 
+    ++p->pos; // consume operator
+ 
+    node_t *right = comparison(p);
+    GUARD(p);
+ 
+    node_t *n = ALLOC_NODE(p);
+    n->kind = NODE_BINOP;
+    n->binop.left  = left;
+    n->binop.op    = op;
+    n->binop.right = right;
+  
+    left = n; // setup next iteration
+  }
+}
+
+
+static node_t *logical_and(parser_t *p) {
+  node_t *left = equality(p);
+  GUARD(p);
+  for (;;) {
+    switch (CUR_TOK.type) {
+      case s_and: {
+        ++p->pos;
+        node_t *right = equality(p);
+        GUARD(p);
+ 
+        node_t *n = ALLOC_NODE(p);
+        n->kind = NODE_BINOP;
+        n->binop.left  = left;
+        n->binop.op    = OP_AND;
+        n->binop.right = right;
+ 
+        left = n;
+        break;
+      }
+ 
+      default: return left;
+    }
+  }
+}
+
+
+// root of recursive descent
+// logical_or   looks for ||         calls logical_and
+// logical_and  looks for &&         calls equality
+// equality     looks for == !=      calls comparison
+// comparison   looks for < > <= >=  calls term
+// term         looks for + -        calls factor
+// factor       looks for * /        calls unary
+// unary        looks for * @ ! -    calls primary
+// primary      looks for literals, identifiers, (expr)   consumes tokens
+static node_t *logical_or(parser_t *p) {
+  node_t *left = logical_and(p);
+  GUARD(p);
+  for (;;) {
+    switch (CUR_TOK.type) {
+      case s_or: {
+        ++p->pos;
+        node_t *right = logical_and(p);
+        GUARD(p);
+ 
+        node_t *n = ALLOC_NODE(p);
+        n->kind = NODE_BINOP;
+        n->binop.left  = left;
+        n->binop.op    = OP_OR;
+        n->binop.right = right;
+ 
+        left = n;
+        break;
+      }
+ 
+      default: return left;
+    }
+  }
+}
+
+
+// wrapper to make code more readable in higher level parsing functions
+static node_t *parse_expr(parser_t *p) {
+  return logical_or(p);
+}
+
+
+// ----------------------------------------------------------------
+// High level parsing
+// ----------------------------------------------------------------
+
 static node_t *parse_reg_decl(parser_t *p) {
   ++p->pos; // consume reg keyword
 
@@ -229,30 +597,30 @@ static node_t *parse_reg_decl(parser_t *p) {
   decl->kind = NODE_REG_DECL;
 
   type_t type = parse_type(p);  // consumes type token
-  if (p->err) return NULL;
+  GUARD(p);
 
   decl->reg_decl.type = type;
 
-  EXPECT_SYMBOL(p, p->tokens[p->pos], l_identifier, "Identifier", "register decl")
-  if (p->err) return NULL;
+  EXPECT_SYMBOL(p, CUR_TOK, l_identifier, "Identifier", "register decl")
+  GUARD(p);
 
   // pull identifier from token array
-  decl->reg_decl.name = (char*)p->tokens[p->pos].value;
+  decl->reg_decl.name = (char*)CUR_TOK.value;
   ++p->pos; // consume identifier
 
-  EXPECT_SYMBOL(p, p->tokens[p->pos], s_mem_lookup, "@", "register decl")
-  if (p->err) return NULL;
+  EXPECT_SYMBOL(p, CUR_TOK, s_mem_lookup, "@", "register decl")
+  GUARD(p);
   ++p->pos; // consume @
 
-  EXPECT_SYMBOL(p, p->tokens[p->pos], l_num, "Memmry address literal", "register decl")
-  if (p->err) return NULL;
+  EXPECT_SYMBOL(p, CUR_TOK, l_num, "Memmry address literal", "register decl")
+  GUARD(p);
 
   // pull integer literal (dereference void* to get the stored unsigned long)
-  decl->reg_decl.addr = *(unsigned long*)p->tokens[p->pos].value;
+  decl->reg_decl.addr = *(unsigned long*)CUR_TOK.value;
   ++p->pos; // consume integer literal
 
-  EXPECT_SYMBOL(p, p->tokens[p->pos], s_semicolon, ";", "register decl")
-  if (p->err) return NULL;
+  EXPECT_SYMBOL(p, CUR_TOK, s_semicolon, ";", "register decl")
+  GUARD(p);
   ++p->pos; // consume ;
 
   return decl;
@@ -264,24 +632,25 @@ static node_t *parse_global_var_decl(parser_t *p) {
   decl->kind = NODE_GLOBAL_VAR;
 
   type_t type = parse_type(p); // consumes type token
-  if (p->err) return NULL;
+  GUARD(p);
 
   decl->global_var.type = type;
 
-  EXPECT_SYMBOL(p, p->tokens[p->pos], l_identifier, "Identifier", "register decl")
-  if (p->err) return NULL;
+  EXPECT_SYMBOL(p, CUR_TOK, l_identifier, "Identifier", "register decl")
+  GUARD(p);
 
   // pull identifier from token array
-  decl->reg_decl.name = (char*)p->tokens[p->pos].value;
+  decl->reg_decl.name = (char*)CUR_TOK.value;
   ++p->pos; // consume identifier
 
-  if (p->tokens[p->pos].type == s_equals) { // has initialiser, parse it
+  if (CUR_TOK.type == s_equals) { // has initialiser, parse it
     ++p->pos; // consume =
-    UNIMPLEMENTED_PANIC() // TODO: implement expression parsing
+    decl->global_var.initialiser = parse_expr(p);
+    GUARD(p);
   }
 
-  EXPECT_SYMBOL(p, p->tokens[p->pos], s_semicolon, "; or initialiser expresion", "global var decl")
-  if (p->err) return NULL;
+  EXPECT_SYMBOL(p, CUR_TOK, s_semicolon, "; or initialiser expresion", "global var decl")
+  GUARD(p);
   ++p->pos; // consume ;
 
   return decl;
@@ -289,7 +658,7 @@ static node_t *parse_global_var_decl(parser_t *p) {
 
 
 static node_t *parse_toplevel(parser_t *p) {
-  token_t tok = p->tokens[p->pos]; 
+  token_t tok = CUR_TOK; 
 
   switch (tok.type) {
     case Kw_fn:
