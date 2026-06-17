@@ -57,6 +57,7 @@ typedef enum {
   NODE_RETURN,
   NODE_IF,
   NODE_WHILE,
+  NODE_FOR,
   NODE_EXPR_STMT,
   // top-level
   NODE_FUNCTION,
@@ -143,6 +144,13 @@ struct node_t {
       node_t     *cond;
       node_list_t body;
     } while_stmt;                         // NODE_WHILE
+
+    struct {
+      node_t     *initialiser;
+      node_t     *cond;
+      node_t     *incrementer;
+      node_list_t body;
+    } for_stmt;                           // NODE_FOR
 
     node_t *expr_stmt;                    // NODE_EXPR_STMT
 

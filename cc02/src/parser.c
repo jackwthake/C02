@@ -1,3 +1,81 @@
+/*
+ * parser.c - C02 recursive descent parser
+ *
+ * OVERVIEW
+ * --------
+ * Converts a flat token array (from tokenizer.c) into an AST rooted at a
+ * NODE_PROGRAM node. All AST nodes are allocated from a chunked arena
+ * (parser_arena_t) — call parser_init() before parse() and parser_free()
+ * when done. String fields in nodes (names, identifiers) point directly into
+ * the token array; the token array must outlive the AST.
+ *
+ * RECURSIVE DESCENT CHAIN
+ * -----------------------
+ * parse_expr() is the public entry point for expression parsing. It delegates
+ * down a precedence chain (lowest to highest):
+ *
+ *   logical_or -> logical_and -> equality -> comparison
+ *              -> term -> factor -> unary -> primary
+ *
+ * primary() handles literals (number, string), identifiers, function calls,
+ * grouped expressions (expr), and C-style casts (type)expr.
+ * unary() handles prefix operators: !, -, &, * / @  (deref).
+ *
+ * STATEMENT PARSING
+ * -----------------
+ * parse_stmt() dispatches on the current token:
+ *   Kw_return    -> NODE_RETURN
+ *   Kw_while     -> NODE_WHILE   (cond + block)
+ *   Kw_for       -> NODE_FOR     (init + cond + incr + block)
+ *   Kw_if        -> NODE_IF      (cond + then block + optional else block)
+ *   type keyword -> NODE_VAR_DECL
+ *   s_star       -> NODE_DEREF_ASSIGN
+ *   l_identifier -> NODE_ASSIGN (peek: next == s_equals)
+ *                -> NODE_CALL   (peek: next == s_lparen)
+ *
+ * For loops use parse_for_clause() for the initialiser slot, which handles
+ * both type-led declarations and plain expressions without consuming a
+ * trailing semicolon (parse_stmt() would eat it). The cond and incrementer
+ * slots use parse_expr() directly.
+ *
+ * parse_block() accumulates statements into a scratch buffer and commits them
+ * to the arena as a node_list_t. parse_function_params() does the same for
+ * param_t using a parallel param_scratch_t.
+ *
+ * TOP-LEVEL PARSING
+ * -----------------
+ * parse_toplevel() dispatches on:
+ *   Kw_fn        -> parse_function()   (name + params + return type + block)
+ *   Kw_reg       -> parse_reg_decl()   (type + name + @ + address)
+ *   type keyword -> parse_global_var_decl()
+ *
+ * ERROR HANDLING
+ * --------------
+ * Errors are stored in parser_t.err (heap allocated error_t). Once set, all
+ * recursive descent functions propagate NULL upward via GUARD(p). The top
+ * level parse() loop catches the error, prints it via print_parse_error(),
+ * frees the error and returns NULL. Only the first error is reported.
+ * EXPECT_SYMBOL sets the error but does NOT return — callers must GUARD(p)
+ * immediately after every EXPECT_SYMBOL call.
+ *
+ * KNOWN TODOS
+ * -----------
+ *  - += and -= compound assignment: add to l_identifier branch in parse_stmt()
+ *    (peek at pos+1 for s_plus_equals / s_minus_equals, desugar to NODE_ASSIGN
+ *    with a NODE_BINOP as value). Also needed in parse_for_clause() for the
+ *    incrementer slot.
+ *  - parse_call() helper: call arg loop is duplicated between primary() and
+ *    parse_stmt(). Extract into a shared helper that builds and returns the
+ *    NODE_CALL node; each call site handles its own terminator (none vs ';').
+ *  - primary() call loop (line ~348) is missing t_eof guard — will spin on
+ *    malformed input. parse_stmt() version already has the guard.
+ *  - parse_function() missing GUARD(p) after parse_block().
+ *  - parse_global_var_decl() has "register decl" as context string — should
+ *    be "global var decl".
+ *  - GENERATE_ERROR uses bare {} instead of do {} while(0) — inconsistent
+ *    with EXPECT_SYMBOL, could misbehave in a braceless if.
+ */
+
 #include "parser.h"
 
 #include <stdlib.h>
@@ -37,6 +115,13 @@ typedef struct {
   unsigned count;
   unsigned capacity;
 } scratch_t;
+
+
+typedef struct {
+  param_t  *items;
+  unsigned  count;
+  unsigned  capacity;
+} param_scratch_t;
 
 
 #define GENERATE_ERROR(PARSER, TYPE, TOKEN, EXPECTED, CTX) \
@@ -188,6 +273,30 @@ static node_list_t scratch_commit(scratch_t *s, parser_arena_t *arena) {
 }
 
 
+static void param_scratch_push(param_scratch_t *s, param_t param) {
+  if (s->count == s->capacity) {
+    s->capacity = s->capacity ? s->capacity * 2 : 8;
+    param_t *grown = realloc(s->items, sizeof(param_t) * s->capacity);
+    if (!grown) return;
+    s->items = grown;
+  }
+  s->items[s->count++] = param;
+}
+
+
+static param_list_t param_scratch_commit(param_scratch_t *s, parser_arena_t *arena) {
+  param_list_t list = { NULL, 0 };
+  if (s->count > 0) {
+    param_t *items = parser_alloc(arena, sizeof(param_t) * s->count);
+    memcpy(items, s->items, sizeof(param_t) * s->count);
+    list.items = items;
+    list.count = s->count;
+  }
+  s->count = 0;
+  return list;
+}
+
+
 static inline int token_type_to_parser_type(token_type_t t) {
   switch (t) {
     case t_u8: return TYPE_U8;
@@ -226,8 +335,10 @@ static type_t parse_type(parser_t *p) {
   type_t res = { 0 };
 
   int type;
-  if ((type = token_type_to_parser_type(CUR_TOK.type)) == -1)
+  if ((type = token_type_to_parser_type(CUR_TOK.type)) == -1) {
     GENERATE_ERROR(p, UNEXPECTED_TOKEN, CUR_TOK, "Type name", "type parsing");
+    return res;
+  }
 
   res.kind = (type_kind_t)type;
 
@@ -590,6 +701,374 @@ static node_t *parse_expr(parser_t *p) {
 // High level parsing
 // ----------------------------------------------------------------
 
+
+static param_list_t parse_function_params(parser_t *p) {
+  param_list_t params = { 0 };
+
+  EXPECT_SYMBOL(p, CUR_TOK, s_lparen, "(", "function decl");
+  if (p->err) return params;
+  ++p->pos;
+
+  param_scratch_t scratch = { 0 };
+
+  while (CUR_TOK.type != s_rparen && CUR_TOK.type != t_eof) {
+    // parse each param: type + identifier
+    type_t type = parse_type(p);
+    if (p->err) { free(scratch.items); return params; }
+
+    EXPECT_SYMBOL(p, CUR_TOK, l_identifier, "identifier", "function params");
+    if (p->err) { free(scratch.items); return params; }
+
+    param_t param = {
+      .type = type,
+      .name = (char*)CUR_TOK.value
+    };
+
+    ++p->pos; // consume identifier
+
+    param_scratch_push(&scratch, param);
+    if (CUR_TOK.type == s_comma) ++p->pos;
+  }
+
+  params = param_scratch_commit(&scratch, p->arena);
+  free(scratch.items);
+
+  EXPECT_SYMBOL(p, CUR_TOK, s_rparen, ")", "function decl");
+  if (p->err) return params;
+  ++p->pos;
+
+  return params;
+}
+
+
+static node_t *parse_stmt(parser_t *);
+
+
+static node_list_t parse_block(parser_t *p) {
+  node_list_t block = { 0 };
+  
+  EXPECT_SYMBOL(p, CUR_TOK, s_lbrace, "{", "function decl")
+  if (p->err) { return block; }
+  ++p->pos; // consume {
+    
+  scratch_t scratch = { 0 };
+
+  // loop through block
+  while (CUR_TOK.type != s_rbrace && CUR_TOK.type != t_eof) {
+    node_t *statement = parse_stmt(p);
+    if (p->err) { free(scratch.items); return block; }
+
+    scratch_push(&scratch, statement);
+  }
+
+  block = scratch_commit(&scratch, p->arena);
+  free(scratch.items);
+
+  EXPECT_SYMBOL(p, CUR_TOK, s_rbrace, "}", "function decl")
+  if (p->err) return block;
+  ++p->pos;
+
+  return block;
+}
+
+
+static node_t *parse_for_clause(parser_t *p) {
+  if (is_token_type_name(p)) {
+    node_t *n = ALLOC_NODE(p);
+    n->kind = NODE_VAR_DECL;
+    n->var_decl.type = parse_type(p);
+    GUARD(p);
+
+    EXPECT_SYMBOL(p, CUR_TOK, l_identifier, "identifier", "for clause");
+    GUARD(p);
+
+    n->var_decl.name = (char*)CUR_TOK.value;
+    ++p->pos; // consume identifier
+
+    if (CUR_TOK.type == s_equals) {
+      ++p->pos; // consume =
+      n->var_decl.initialiser = parse_expr(p);
+      GUARD(p);
+    } else {
+      n->var_decl.initialiser = NULL;
+    }
+
+    return n;
+  }
+
+  return parse_expr(p);
+}
+
+
+static node_t *parse_stmt(parser_t *p) {
+  switch (CUR_TOK.type) {
+    case Kw_return: {
+      node_t *n = ALLOC_NODE(p);
+
+      ++p->pos; // consume return
+      n->kind = NODE_RETURN;
+
+      if (CUR_TOK.type == s_semicolon) {
+        n->return_val = NULL;
+      } else {
+        n->return_val = parse_expr(p);
+        GUARD(p);
+      }
+
+      EXPECT_SYMBOL(p, CUR_TOK, s_semicolon, ";", "return statement");
+      GUARD(p);
+      ++p->pos; // consume semicolon
+
+      return n;
+    }
+
+    case Kw_while: {
+      node_t *n = ALLOC_NODE(p);
+
+      ++p->pos; // consume while
+      n->kind = NODE_WHILE;
+
+      EXPECT_SYMBOL(p, CUR_TOK, s_lparen, "(", "while statement");
+      GUARD(p);
+      ++p->pos;
+
+      n->while_stmt.cond = parse_expr(p);
+      GUARD(p);
+
+      EXPECT_SYMBOL(p, CUR_TOK, s_rparen, ")", "while statement");
+      GUARD(p);
+      ++p->pos;
+
+      n->while_stmt.body = parse_block(p);
+      GUARD(p);
+
+      return n;
+    }
+
+    case Kw_for: {
+      node_t *n = ALLOC_NODE(p);
+
+      ++p->pos; // consume for
+      n->kind = NODE_FOR;
+
+      EXPECT_SYMBOL(p, CUR_TOK, s_lparen, "(", "for statement");
+      GUARD(p);
+      ++p->pos;
+
+      if (CUR_TOK.type == s_semicolon) {
+        n->for_stmt.initialiser = NULL;
+        ++p->pos; // consume semicolon
+      } else {
+        n->for_stmt.initialiser = parse_for_clause(p);
+        GUARD(p);
+
+        EXPECT_SYMBOL(p, CUR_TOK, s_semicolon, ";", "for statement initialiser section");
+        GUARD(p);
+        ++p->pos; // consume semicolon
+      }
+
+      if (CUR_TOK.type == s_semicolon) {
+        n->for_stmt.cond = NULL;
+        ++p->pos; // consume semicolon
+      } else {
+        n->for_stmt.cond = parse_expr(p);
+        GUARD(p);
+
+        EXPECT_SYMBOL(p, CUR_TOK, s_semicolon, ";", "for statement conditional section");
+        GUARD(p);
+        ++p->pos; // consume semicolon
+      }
+
+      if (CUR_TOK.type == s_rparen) {
+        n->for_stmt.incrementer = NULL;
+        ++p->pos; // consume )
+      } else {
+        n->for_stmt.incrementer = parse_expr(p);
+        GUARD(p);
+
+        EXPECT_SYMBOL(p, CUR_TOK, s_rparen, ")", "for statement incrementer section terminator");
+        GUARD(p);
+        ++p->pos; // consume )
+      }
+
+      n->for_stmt.body = parse_block(p);
+      GUARD(p);
+
+      return n;
+    }
+
+    case Kw_if: {
+      node_t *n = ALLOC_NODE(p);
+
+      ++p->pos; // consume if
+      n->kind = NODE_IF;
+
+      EXPECT_SYMBOL(p, CUR_TOK, s_lparen, "(", "if statement");
+      GUARD(p);
+      ++p->pos;
+
+      n->if_stmt.cond = parse_expr(p);
+      GUARD(p);
+
+      EXPECT_SYMBOL(p, CUR_TOK, s_rparen, ")", "if statement");
+      GUARD(p);
+      ++p->pos;
+
+      n->if_stmt.then_block = parse_block(p);
+      GUARD(p);
+
+      if (CUR_TOK.type == Kw_else) {
+        ++p->pos; // consume else
+        n->if_stmt.else_block = parse_block(p);
+        GUARD(p);
+      } else {
+        n->if_stmt.else_block.count = 0;
+      }
+
+      return n;
+    }
+
+    case t_u8: case t_i8: case t_u16: case t_i16: case Kw_void: {
+      node_t *n = ALLOC_NODE(p);
+
+      n->kind = NODE_VAR_DECL;
+      n->var_decl.type = parse_type(p);
+      GUARD(p);
+
+      EXPECT_SYMBOL(p, CUR_TOK, l_identifier, "identifier", "variable decl after typename")
+      GUARD(p);
+
+      n->var_decl.name = (char*)CUR_TOK.value;
+      ++p->pos; // consume identifier
+
+      if (CUR_TOK.type == s_equals) {
+        ++p->pos; // consume =
+        n->var_decl.initialiser = parse_expr(p);
+        GUARD(p);
+      } else {
+        n->var_decl.initialiser = NULL;
+      }
+
+      EXPECT_SYMBOL(p, CUR_TOK, s_semicolon, ";", "variable declaration");
+      GUARD(p);
+      ++p->pos; // consume semicolon
+
+      return n;
+    }
+
+    case s_star: {
+      node_t *n = ALLOC_NODE(p);
+
+      ++p->pos; // consume *
+      n->kind = NODE_DEREF_ASSIGN;
+
+      n->deref_assign.target = parse_expr(p);
+      GUARD(p);
+
+      EXPECT_SYMBOL(p, CUR_TOK, s_equals, "=", "variable assignment");
+      GUARD(p);
+      ++p->pos; // consume =
+
+      n->deref_assign.value = parse_expr(p);
+      GUARD(p);
+
+      EXPECT_SYMBOL(p, CUR_TOK, s_semicolon, ";", "deref assignment");
+      GUARD(p);
+      ++p->pos; // consume semicolon
+
+      return n;
+    }
+
+    case l_identifier: {
+      node_t *n = ALLOC_NODE(p);
+
+      if (p->pos + 1 < p->count && p->tokens[p->pos + 1].type == s_equals) {
+        n->kind = NODE_ASSIGN;
+        n->assign.name = (char*)CUR_TOK.value;
+
+        p->pos += 2; // consume identifier, then =
+        n->assign.value = parse_expr(p);
+        GUARD(p);
+
+        EXPECT_SYMBOL(p, CUR_TOK, s_semicolon, ";", "variable assignment");
+        GUARD(p);
+        ++p->pos; // consume semicolon
+
+        return n;
+      }
+
+      n->kind = NODE_CALL;
+      n->call.name = (char*)CUR_TOK.value;
+      ++p->pos;
+
+      EXPECT_SYMBOL(p, CUR_TOK, s_lparen, "(", "function call");
+      GUARD(p);
+      ++p->pos;
+
+      scratch_t scratch = { 0 };
+
+      while (CUR_TOK.type != s_rparen && CUR_TOK.type != t_eof) {
+        node_t *arg = parse_expr(p);
+        GUARD(p);
+
+        scratch_push(&scratch, arg);
+        if (CUR_TOK.type == s_comma) ++p->pos;
+      }
+
+      n->call.args = scratch_commit(&scratch, p->arena);
+      free(scratch.items);
+
+      EXPECT_SYMBOL(p, CUR_TOK, s_rparen, ")", "function call");
+      GUARD(p);
+      ++p->pos;
+
+      EXPECT_SYMBOL(p, CUR_TOK, s_semicolon, ";", "function call");
+      GUARD(p);
+      ++p->pos;
+
+      return n;
+    }
+
+    default: {
+      GENERATE_ERROR(p, UNEXPECTED_TOKEN, CUR_TOK, "statement", "statement parse");
+      return NULL;
+    }
+  }
+}
+
+
+static node_t *parse_function(parser_t *p) {
+  p->pos++; // consume fn keyword
+
+  node_t *func_decl = ALLOC_NODE(p);
+  func_decl->kind = NODE_FUNCTION;
+
+
+  EXPECT_SYMBOL(p, CUR_TOK, l_identifier, "Identifier", "function decl")
+  GUARD(p);
+
+  // pull identifier from token array
+  func_decl->function.name = (char*)CUR_TOK.value;
+  ++p->pos; // consume identifier
+
+  // parse args
+  func_decl->function.params = parse_function_params(p);
+  GUARD(p);
+
+  EXPECT_SYMBOL(p, CUR_TOK, s_arrow, "->", "function decl")
+  GUARD(p);
+  ++p->pos; // consume ->
+
+  func_decl->function.return_type = parse_type(p);
+  GUARD(p);
+
+  // parse block
+  func_decl->function.body = parse_block(p);
+
+  return func_decl;
+}
+
+
 static node_t *parse_reg_decl(parser_t *p) {
   ++p->pos; // consume reg keyword
 
@@ -640,7 +1119,7 @@ static node_t *parse_global_var_decl(parser_t *p) {
   GUARD(p);
 
   // pull identifier from token array
-  decl->reg_decl.name = (char*)CUR_TOK.value;
+  decl->global_var.name = (char*)CUR_TOK.value;
   ++p->pos; // consume identifier
 
   if (CUR_TOK.type == s_equals) { // has initialiser, parse it
@@ -661,11 +1140,8 @@ static node_t *parse_toplevel(parser_t *p) {
   token_t tok = CUR_TOK; 
 
   switch (tok.type) {
-    case Kw_fn:
-      ++p->pos;
-      UNIMPLEMENTED_PANIC()
-    case Kw_reg:
-      return parse_reg_decl(p);
+    case Kw_fn:  return parse_function(p);
+    case Kw_reg: return parse_reg_decl(p);
     case t_u8: case t_i8: case t_u16: case t_i16: case Kw_void:
       return parse_global_var_decl(p);
 

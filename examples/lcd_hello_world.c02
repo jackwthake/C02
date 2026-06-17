@@ -41,7 +41,11 @@ fn lcd_putc(u8 ch) -> void {
 fn main() -> void {
   lcd_init();
 
-  for (u8 *p = msg; *p != null; p += 1) {
+  // for (u8 *p = msg; *p != null; p += 1) { TODO: parser doesnt like the += or -=
+  u8 *p = msg;
+  while (p != null) {
     lcd_putc(*p);
+
+    p = p + 1;
   }
 }

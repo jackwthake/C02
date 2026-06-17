@@ -51,11 +51,12 @@ static const char *node_kind_name(node_kind_t kind) {
     case NODE_DEREF:        return "UnaryOperator";
     case NODE_CAST:         return "CStyleCastExpr";
     case NODE_VAR_DECL:     return "VarDecl";
-    case NODE_ASSIGN:       return "BinaryOperator";
+    case NODE_ASSIGN:       return "AssignStmt";
     case NODE_DEREF_ASSIGN: return "CompoundAssignOperator";
     case NODE_RETURN:       return "ReturnStmt";
     case NODE_IF:           return "IfStmt";
     case NODE_WHILE:        return "WhileStmt";
+    case NODE_FOR:          return "ForStmt";
     case NODE_EXPR_STMT:    return "ExprStmt";
     case NODE_FUNCTION:     return "FunctionDecl";
     case NODE_REG_DECL:     return "RegDecl";
@@ -108,7 +109,7 @@ static void print_ast_label(node_t *node) {
       print_type_suffix(node->var_decl.type);
       break;
     case NODE_ASSIGN:
-      printf("%s %s", node_kind_name(node->kind), node->assign.name ? node->assign.name : "<anon>");
+      printf("%s %s =", node_kind_name(node->kind), node->assign.name ? node->assign.name : "<anon>");
       break;
     case NODE_DEREF_ASSIGN:
       printf("%s", node_kind_name(node->kind));
@@ -122,11 +123,20 @@ static void print_ast_label(node_t *node) {
     case NODE_WHILE:
       printf("%s", node_kind_name(node->kind));
       break;
+    case NODE_FOR:
+      printf("%s", node_kind_name(node->kind));
+      break;
     case NODE_EXPR_STMT:
       printf("%s", node_kind_name(node->kind));
       break;
     case NODE_FUNCTION:
-      printf("%s %s : ", node_kind_name(node->kind), node->function.name ? node->function.name : "<anon>");
+      printf("%s %s(", node_kind_name(node->kind), node->function.name ? node->function.name : "<anon>");
+      for (unsigned i = 0; i < node->function.params.count; ++i) {
+        param_t *param = &node->function.params.items[i];
+        if (i > 0) printf(", ");
+        printf("%s%s %s", type_name(param->type.kind), param->type.is_ptr ? "*" : "", param->name ? param->name : "<anon>");
+      }
+      printf(") -> ");
       print_type_suffix(node->function.return_type);
       break;
     case NODE_REG_DECL:
@@ -148,18 +158,9 @@ static void print_ast_label(node_t *node) {
 }
 
 
-static void print_ast_list(node_list_t list, const char *prefix, int is_last) {
+static void print_ast_list(node_list_t list, const char *prefix) {
   for (unsigned i = 0; i < list.count; ++i) {
-    char child_prefix[AST_PRINT_MAX_DEPTH];
-
-    if (strlen(prefix) + 4 >= AST_PRINT_MAX_DEPTH) {
-      return;
-    }
-
-    strcpy(child_prefix, prefix);
-    strcat(child_prefix, is_last ? "   " : "|  ");
-
-    print_ast_(list.items[i], (i + 1 == list.count), child_prefix);
+    print_ast_(list.items[i], (i + 1 == list.count), prefix);
   }
 }
 
@@ -198,7 +199,8 @@ static void print_ast_(node_t *node, int is_last, const char *prefix) {
       break;
 
     case NODE_CALL:
-      print_ast_list(node->call.args, child_prefix, is_last);
+      // args are always the last (and only) children of a call
+      print_ast_list(node->call.args, child_prefix);
       break;
 
     case NODE_DEREF:
@@ -232,13 +234,27 @@ static void print_ast_(node_t *node, int is_last, const char *prefix) {
 
     case NODE_IF:
       print_ast_(node->if_stmt.cond, 0, child_prefix);
-      print_ast_list(node->if_stmt.then_block, child_prefix, 0);
-      print_ast_list(node->if_stmt.else_block, child_prefix, 1);
+      if (node->if_stmt.else_block.count > 0) {
+        print_ast_list(node->if_stmt.then_block, child_prefix);
+        print_ast_list(node->if_stmt.else_block, child_prefix);
+      } else {
+        print_ast_list(node->if_stmt.then_block, child_prefix);
+      }
       break;
 
     case NODE_WHILE:
       print_ast_(node->while_stmt.cond, 0, child_prefix);
-      print_ast_list(node->while_stmt.body, child_prefix, 1);
+      print_ast_list(node->while_stmt.body, child_prefix);
+      break;
+    
+    case NODE_FOR:
+      if (node->for_stmt.initialiser)
+        print_ast_(node->for_stmt.initialiser, 0, child_prefix);
+      if (node->for_stmt.cond)
+        print_ast_(node->for_stmt.cond, 0, child_prefix);
+      if (node->for_stmt.incrementer)
+        print_ast_(node->for_stmt.incrementer, 0, child_prefix);
+      print_ast_list(node->for_stmt.body, child_prefix);
       break;
 
     case NODE_EXPR_STMT:
@@ -248,7 +264,7 @@ static void print_ast_(node_t *node, int is_last, const char *prefix) {
       break;
 
     case NODE_FUNCTION:
-      print_ast_list(node->function.body, child_prefix, is_last);
+      print_ast_list(node->function.body, child_prefix);
       break;
 
     case NODE_REG_DECL:
@@ -260,7 +276,7 @@ static void print_ast_(node_t *node, int is_last, const char *prefix) {
       break;
 
     case NODE_PROGRAM:
-      print_ast_list(node->program, child_prefix, is_last);
+      print_ast_list(node->program, child_prefix);
       break;
   }
 }
