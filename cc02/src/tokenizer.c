@@ -300,14 +300,14 @@ static int tokenize_keyword_or_identifier(token_t *tokens, unsigned *token_count
       (*column)++;
     }
    
-    size_t length = *ptr - start;
+    size_t length = (size_t)(*ptr - start);
     char *identifier = strndup(start, length);
     if (!identifier) {
       perror("Failed to allocate memory for identifier");
       return -1;
     }
    
-    add_token(tokens, token_count, l_identifier, line, *column - length, file_path, identifier);
+    add_token(tokens, token_count, l_identifier, line, *column - (unsigned)length, file_path, identifier);
     return 1;
   }
 

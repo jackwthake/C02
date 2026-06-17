@@ -80,7 +80,7 @@ static void print_ast_label(node_t *node) {
 
   switch (node->kind) {
     case NODE_NUMBER:
-      printf("%s (%d)", node_kind_name(node->kind), node->number);
+      printf("%s (%ld)", node_kind_name(node->kind), node->number);
       break;
     case NODE_STRING:
       printf("%s \"%s\"", node_kind_name(node->kind), node->value);

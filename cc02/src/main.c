@@ -84,7 +84,7 @@ static int read_params(int argc, char * const *argv, params_t *params) {
 }
 
 
-static int load_file(const char *file_path, char **out_content) {
+static long load_file(const char *file_path, char **out_content) {
   FILE *f = fopen(file_path, "r");
   if (!f) {
     perror("Failed to open input file");

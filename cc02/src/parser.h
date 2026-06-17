@@ -88,9 +88,9 @@ struct node_t {
   node_kind_t kind;
   union {
     // --- expressions ---
-    int32_t number;                       // NODE_NUMBER
-    char   *value;                        // NODE_STRING
-    char   *identifier;                   // NODE_IDENTIFIER
+    long   number;                        // NODE_NUMBER
+    char  *value;                         // NODE_STRING
+    char  *identifier;                    // NODE_IDENTIFIER
 
     struct {
       node_t *left;

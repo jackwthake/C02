@@ -1,7 +1,13 @@
 BIN_DIR = ../bin
 BIN = $(BIN_DIR)/cc02
 CC = gcc
-CFLAGS = -Wall -Wextra -ggdb
+CFLAGS = -Wall -Wextra -ggdb \
+         -Wshadow \
+         -Wstrict-prototypes \
+         -Wmissing-prototypes \
+         -Wconversion \
+         -Wno-sign-conversion \
+         -Werror
 SRCS = $(wildcard src/*.c)
 OBJS = $(patsubst src/%.c,src/%.o,$(SRCS))
 
