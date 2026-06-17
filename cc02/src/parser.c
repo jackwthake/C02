@@ -1073,6 +1073,12 @@ static node_t *parse_stmt(parser_t *p) {
         return n;
       }
 
+      // catch if parse_assignment returned NULL due to EOF token (error)
+      if (CUR_TOK.type == t_eof) {
+        GENERATE_ERROR(p, UNEXPECTED_EOF, CUR_TOK, "token", "parse statement");
+        return NULL;
+      }
+
       // if we reach here it has to be a function call
       char *name = (char*)CUR_TOK.value;
       ++p->pos; // consume identifier
@@ -1150,7 +1156,7 @@ static node_t *parse_reg_decl(parser_t *p) {
   GUARD(p);
   ++p->pos; // consume @
 
-  EXPECT_SYMBOL(p, CUR_TOK, l_num, "Memmry address literal", "register decl")
+  EXPECT_SYMBOL(p, CUR_TOK, l_num, "Memory address literal", "register decl")
   GUARD(p);
 
   // pull integer literal (dereference void* to get the stored unsigned long)
