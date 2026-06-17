@@ -65,6 +65,7 @@ const char *token_type_to_string(token_type_t type);
 unsigned token_has_value(token_type_t type);
 char *token_val_to_string(const token_t tok, unsigned *should_free);
 
+void print_error_line(unsigned line, unsigned column);
 void print_tokens(const token_t *tokens, unsigned count);
 
 token_t *tokenize(const char *file_path, const char *source_code, const long file_size, unsigned *num_tokens);

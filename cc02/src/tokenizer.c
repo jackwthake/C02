@@ -240,12 +240,41 @@ static int tokenize_symbol(token_t *tokens, unsigned *token_count, char **ptr, u
 }
 
 
+// used solely for error printing in below functions, set at the beggining of the tokenize() func
+// meaning print_error_line functions will fail if called before tokenizing... why would anyone do that tho?
+static char *source;
+
+
 /**
- * print_error_line(source, ptr, column)
+ * get_line_number_from_ptr(ptr)
+ * Helper function to get the line number that a pointer in the source code is pointing to.
+ * If the pointer is outside the source buffer, returns the last line number.
+ */
+static unsigned get_line_number_from_ptr(const char *ptr) {
+  if (!ptr || !source) return 1;
+
+  unsigned current_line = 1;
+  const char *current_ptr = source;
+
+  while (*current_ptr != '\0' && current_ptr < ptr) {
+    if (*current_ptr == '\n') {
+      current_line++;
+    }
+    current_ptr++;
+  }
+
+  return current_line;
+}
+
+
+/**
+ * print_error_line_(source, ptr, column)
  * Helper function to print the line of source code where an error occurred, along with a caret
  * pointing to the column of the error.
  */
-static void print_error_line(const char *source, const char *ptr, unsigned column) {
+static void print_error_line_(const char *ptr, unsigned line_number, unsigned column) {
+  if (!ptr) return;
+  
   // walk back to start of line
   const char *line_start = ptr;
   while (line_start > source && *(line_start - 1) != '\n') {
@@ -259,10 +288,48 @@ static void print_error_line(const char *source, const char *ptr, unsigned colum
   }
 
   // print the line
-  fprintf(stderr, "  %.*s\n", (int)(line_end - line_start), line_start);
+  fprintf(stderr, "%u |  %.*s\n", line_number, (int)(line_end - line_start), line_start);
 
   // print the caret
-  fprintf(stderr, "  %*s^\n", (int)(column - 1), "");
+  fprintf(stderr, "%u |  %*s^\n\n", line_number, (int)(column - 1), "");
+}
+
+
+/**
+ * print_error_line(line_number, column)
+ * Public facing helper function to print the line of source code where an error occurred, 
+ * along with a caret pointing to the column of the error.
+ * Used in parser, semantic analysis error reporting
+*/
+void print_error_line(unsigned line_number, unsigned column) {
+  if (!source) return;
+
+  const char *ptr = source;
+  unsigned current_line = 1;
+
+  while (*ptr != '\0' && current_line < line_number) {
+    if (*ptr == '\n') {
+      current_line++;
+      if (current_line == line_number) {
+        ptr++;
+        break;
+      }
+    }
+    ptr++;
+  }
+
+  if (*ptr == '\0' && current_line < line_number) {
+    // If the requested line number is past the end, fall back to the last line.
+    ptr = source;
+    while (*ptr != '\0' && *ptr != '\n') {
+      ptr++;
+    }
+    if (*ptr == '\n') {
+      ptr++;
+    }
+  }
+
+  print_error_line_(ptr, line_number, column);
 }
 
 
@@ -315,7 +382,7 @@ static int tokenize_keyword_or_identifier(token_t *tokens, unsigned *token_count
 }
 
 
-static int tokenize_string(token_t *tokens, unsigned *token_count, char **ptr, unsigned line, unsigned *column, char *file_path, const char *source_code) {
+static int tokenize_string(token_t *tokens, unsigned *token_count, char **ptr, unsigned line, unsigned *column, char *file_path) {
   if (**ptr != '"') {
     return 0; // Not a string literal
   }
@@ -348,8 +415,10 @@ static int tokenize_string(token_t *tokens, unsigned *token_count, char **ptr, u
   }
 
   if (**ptr != '"') {
-    fprintf(stderr, "Error: Unterminated string literal at %s:%u:%u\n", file_path, line, string_column);
-    print_error_line(source_code, string_start, string_column);
+    unsigned err_line = get_line_number_from_ptr(string_start);
+    fprintf(stderr, "Error: Unterminated string literal at %s:%u:%u\n", file_path, err_line, string_column);
+    print_error_line(err_line, string_column);
+
     free(string_literal);
     return -1;
   }
@@ -370,7 +439,7 @@ static int tokenize_string(token_t *tokens, unsigned *token_count, char **ptr, u
  * If the current position does not start a valid number literal, the function returns 0.
  * If an error occurs while tokenizing the number (e.g., invalid format), the function returns -1 and prints an error message.
  */
-static int tokenize_number(token_t *tokens, unsigned *token_count, char **ptr, unsigned line, unsigned *column, char *file_path, const char *source_code) {
+static int tokenize_number(token_t *tokens, unsigned *token_count, char **ptr, unsigned line, unsigned *column, char *file_path) {
   const char *literal_start = *ptr;
   int base = 10;
 
@@ -399,17 +468,17 @@ static int tokenize_number(token_t *tokens, unsigned *token_count, char **ptr, u
     }
   }
 
-  if (end == literal_start) { // NOTE: Why is line + 1 here? Shouldn't it just be line? this outputs correct line numbers...
-    fprintf(stderr, "Error: Invalid number literal at %s:%u:%u\n", file_path, line + 1, *column);
-    print_error_line(source_code, *ptr, *column);
+  if (end == literal_start) {
+    fprintf(stderr, "Error: Invalid number literal at %s:%u:%u\n", file_path, line, *column);
+    print_error_line(line, *column);
     return -1;
   }
 
   char *endptr = NULL;
   long value = strtol(literal_start, &endptr, base);
-  if (endptr != (char *)end) { // NOTE: Why is line + 1 here? Shouldn't it just be line? this outputs correct line numbers...
-    fprintf(stderr, "Error: Invalid number literal at %s:%u:%u\n", file_path, line + 1, *column);
-    print_error_line(source_code, *ptr, *column);
+  if (endptr != (char *)end) {
+    fprintf(stderr, "Error: Invalid number literal at %s:%u:%u\n", file_path, line, *column);
+    print_error_line(line, *column);
     return -1;
   }
 
@@ -431,7 +500,7 @@ static int tokenize_number(token_t *tokens, unsigned *token_count, char **ptr, u
 
 token_t *tokenize(const char *file_path, const char *source_code, const long file_size, unsigned *num_tokens) {
   const unsigned max_tokens = (unsigned)(file_size); // lazy upper bound on number of tokens, can't be more than 1 token per character
-  char *ptr = (char *)source_code;
+  char *ptr = source = (char *)source_code;
   unsigned line = 1, column = 1, token_count = 0, error_count = 0;
 
   token_t *tokens = calloc(max_tokens, sizeof(*tokens));
@@ -450,21 +519,21 @@ token_t *tokenize(const char *file_path, const char *source_code, const long fil
       continue;
     }
 
-    int is_string_result = tokenize_string(tokens, &token_count, &ptr, line, &column, (char *)file_path, source_code);
+    int is_string_result = tokenize_string(tokens, &token_count, &ptr, line, &column, (char *)file_path);
     if (is_string_result < 0) {
       error_count++;
+      if (*ptr == '\n') { line++; column = 1; } else { column++; }
       ptr++;
-      column++;
       continue;
     } else if (is_string_result > 0) {
       continue; // Successfully tokenized a string
     }
 
-    int is_number_result = tokenize_number(tokens, &token_count, &ptr, line, &column, (char *)file_path, source_code);
+    int is_number_result = tokenize_number(tokens, &token_count, &ptr, line, &column, (char *)file_path);
     if (is_number_result < 0) {
       error_count++;
+      if (*ptr == '\n') { line++; column = 1; } else { column++; }
       ptr++;
-      column++;
       continue;
     } else if (is_number_result > 0) {
       continue;
@@ -473,22 +542,21 @@ token_t *tokenize(const char *file_path, const char *source_code, const long fil
     int is_keyword_or_id_result = tokenize_keyword_or_identifier(tokens, &token_count, &ptr, line, &column, (char *)file_path);
     if (is_keyword_or_id_result < 0) {
       error_count++;
+      if (*ptr == '\n') { line++; column = 1; } else { column++; }
       ptr++;
-      column++;
       continue;
     } else if (is_keyword_or_id_result > 0) {
       continue;
     }
 
     // If we reach here, it's an unrecognized token.
-    // NOTE: Why is line + 1 here? Shouldn't it just be line? this outputs correct line numbers...
     fprintf(stderr, "Error: unexpected character '%c' at %s:%u:%u\n",
-      *ptr, file_path, line + 1, column);
-    print_error_line(source_code, ptr, column);
+      *ptr, file_path, line, column);
+    print_error_line(line, column);
     error_count++;
 
+    if (*ptr == '\n') { line++; column = 1; } else { column++; }
     ptr++;
-    column++;
   }
 
   if (error_count > 0) {
