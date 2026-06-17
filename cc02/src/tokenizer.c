@@ -9,14 +9,15 @@
  * MATCH_KEYWORD(kw, tok)
  * Checks if the current position in the source code matches the given keyword `kw`.
  */
-#define MATCH_KEYWORD(kw, tok, val)                                         \
-  if (strncmp(*ptr, kw, sizeof(kw) - 1) == 0                                \
-      && !isalnum((unsigned char)(*ptr)[sizeof(kw) - 1])                    \
-      && (*ptr)[sizeof(kw) - 1] != '_') {                                   \
-    add_token(tokens, token_count, tok, line, *column, file_path, val);     \
-    *ptr += sizeof(kw) - 1;                                                 \
-    *column += sizeof(kw) - 1;                                              \
-    return 1;                                                               \
+#define MATCH_KEYWORD(kw, tok, val)                                            \
+  if (strncmp(*ptr, kw, sizeof(kw) - 1) == 0                                   \
+      && !isalnum((unsigned char)(*ptr)[sizeof(kw) - 1])                       \
+      && (*ptr)[sizeof(kw) - 1] != '_') {                                      \
+    add_token(tokens, token_count, tok, line, *column, sizeof(kw) - 1,         \
+              file_path, val);                                                 \
+    *ptr += sizeof(kw) - 1;                                                    \
+    *column += sizeof(kw) - 1;                                                 \
+    return 1;                                                                  \
   }
 
 /**
@@ -24,16 +25,16 @@
  * Helper macro to handle tokens that can be either a single character (tok1) or a
  * double character (tok2) depending on the next character in the source code (peek_ch).
  */
-#define DOUBLE_OR_SINGLE_CHAR_TOKEN_(peek_ch, tok2, tok1)                   \
-    if (*(*ptr + 1) == (peek_ch)) {                                         \
-      add_token(tokens, token_count, tok2, line, *column,                   \
-                file_path, NULL);                                           \
-      *ptr += 2; (*column) += 2;                                            \
-    } else {                                                                \
-      add_token(tokens, token_count, tok1, line, *column,                   \
-                file_path, NULL);                                           \
-      (*ptr)++; (*column)++;                                                \
-    }                                                                       \
+#define DOUBLE_OR_SINGLE_CHAR_TOKEN_(peek_ch, tok2, tok1)                      \
+    if (*(*ptr + 1) == (peek_ch)) {                                            \
+      add_token(tokens, token_count, tok2, line, *column, 2,                   \
+                file_path, NULL);                                              \
+      *ptr += 2; (*column) += 2;                                               \
+    } else {                                                                   \
+      add_token(tokens, token_count, tok1, line, *column, 1,                   \
+                file_path, NULL);                                              \
+      (*ptr)++; (*column)++;                                                   \
+    }                                                                          \
     return 1;
 
 /**
@@ -41,26 +42,27 @@
  * Macro to match a token that can be either a single character (tok1) or a
  * double character (tok2) based on the next character in the source code (peek_ch).
  */
-#define MATCH_DOUBLE_OR_SINGLE_TOKEN(ch, peek_ch, tok2, tok1)               \
-  case ch: {                                                                \
-    if (*(*ptr + 1) == (peek_ch)) {                                         \
-      add_token(tokens, token_count, tok2, line, *column, file_path, NULL); \
-      *ptr += 2; (*column) += 2;                                            \
-    } else if ((tok1) != t_invalid) {                                       \
-      add_token(tokens, token_count, tok1, line, *column, file_path, NULL); \
-      (*ptr)++; (*column)++;                                                \
-    } else {                                                                \
-      return 0;                                                             \
-    }                                                                       \
-    return 1;                                                               \
+#define MATCH_DOUBLE_OR_SINGLE_TOKEN(ch, peek_ch, tok2, tok1)                  \
+  case ch: {                                                                   \
+    if (*(*ptr + 1) == (peek_ch)) {                                            \
+      add_token(tokens, token_count, tok2, line, *column, 2, file_path, NULL); \
+      *ptr += 2; (*column) += 2;                                               \
+    } else if ((tok1) != t_invalid) {                                          \
+      add_token(tokens, token_count, tok1, line, *column, 1, file_path, NULL); \
+      (*ptr)++; (*column)++;                                                   \
+    } else {                                                                   \
+      return 0;                                                                \
+    }                                                                          \
+    return 1;                                                                  \
   }
 
 
-static void add_token(token_t *tokens, unsigned *token_count, token_type_t type, unsigned line, unsigned column, char *file_path, void *value) {
+static void add_token(token_t *tokens, unsigned *token_count, token_type_t type, unsigned line, unsigned column, unsigned length, char *file_path, void *value) {
   tokens[(*token_count)++] = (token_t){
     .type = type,
     .line = line,
     .column = column,
+    .length = length,
     .file_path = file_path,
     .value = value
   };
@@ -72,7 +74,7 @@ static void add_token(token_t *tokens, unsigned *token_count, token_type_t type,
  */
 #define MATCH_SINGLE_CHAR_SYMBOL(ch, tok)                                   \
   case ch:                                                                  \
-    add_token(tokens, token_count, tok, line, *column, file_path, NULL);    \
+    add_token(tokens, token_count, tok, line, *column, 1, file_path, NULL); \
     (*ptr)++; (*column)++;                                                  \
     return 1;
 
@@ -229,7 +231,7 @@ static int tokenize_symbol(token_t *tokens, unsigned *token_count, char **ptr, u
     MATCH_DOUBLE_OR_SINGLE_TOKEN('|', '|', s_or, 0) // '|' is not a valid single-character token in this language, only '||'
     case '-': // 3 possible cases: '-', '->', '-='
       if (*(*ptr + 1) == '>') {
-        add_token(tokens, token_count, s_arrow, line, *column, file_path, NULL);
+        add_token(tokens, token_count, s_arrow, line, *column, 2, file_path, NULL);
         *ptr += 2; (*column) += 2;
         return 1;
       }
@@ -268,11 +270,11 @@ static unsigned get_line_number_from_ptr(const char *ptr) {
 
 
 /**
- * print_error_line_(source, ptr, column)
+ * print_error_line_(source, ptr, column, error_length)
  * Helper function to print the line of source code where an error occurred, along with a caret
  * pointing to the column of the error.
  */
-static void print_error_line_(const char *ptr, unsigned line_number, unsigned column) {
+static void print_error_line_(const char *ptr, unsigned line_number, unsigned column, unsigned length) {
   if (!ptr) return;
   
   // walk back to start of line
@@ -287,21 +289,31 @@ static void print_error_line_(const char *ptr, unsigned line_number, unsigned co
       line_end++;
   }
 
-  // print the line
-  fprintf(stderr, "%u |  %.*s\n", line_number, (int)(line_end - line_start), line_start);
+  if (length == 0) length = 1;
 
-  // print the caret
-  fprintf(stderr, "%u |  %*s^\n\n", line_number, (int)(column - 1), "");
+  // print the line
+  fprintf(stderr, "%u | %.*s\n", line_number, (int)(line_end - line_start), line_start);
+
+  // print the caret + span
+  fprintf(stderr, "%*s | %*s", (int)( // align the pipe with the line number digits
+    (line_number >= 1000) ? 4 :
+    (line_number >= 100)  ? 3 :
+    (line_number >= 10)   ? 2 : 1
+  ), "", (int)(column - 1), "");
+  for (unsigned i = 0; i < length; i++) {
+    fputc(i == 0 ? '^' : '~', stderr);
+  }
+  fputc('\n', stderr);
 }
 
 
 /**
- * print_error_line(line_number, column)
+ * print_error_line(line_number, column, error_length)
  * Public facing helper function to print the line of source code where an error occurred, 
  * along with a caret pointing to the column of the error.
  * Used in parser, semantic analysis error reporting
 */
-void print_error_line(unsigned line_number, unsigned column) {
+void print_error_line(unsigned line_number, unsigned column, unsigned length) {
   if (!source) return;
 
   const char *ptr = source;
@@ -329,7 +341,7 @@ void print_error_line(unsigned line_number, unsigned column) {
     }
   }
 
-  print_error_line_(ptr, line_number, column);
+  print_error_line_(ptr, line_number, column, length);
 }
 
 
@@ -374,7 +386,7 @@ static int tokenize_keyword_or_identifier(token_t *tokens, unsigned *token_count
       return -1;
     }
    
-    add_token(tokens, token_count, l_identifier, line, *column - (unsigned)length, file_path, identifier);
+    add_token(tokens, token_count, l_identifier, line, *column - (unsigned)length, (unsigned)length, file_path, identifier);
     return 1;
   }
 
@@ -417,7 +429,7 @@ static int tokenize_string(token_t *tokens, unsigned *token_count, char **ptr, u
   if (**ptr != '"') {
     unsigned err_line = get_line_number_from_ptr(string_start);
     fprintf(stderr, "Error: Unterminated string literal at %s:%u:%u\n", file_path, err_line, string_column);
-    print_error_line(err_line, string_column);
+    print_error_line(err_line, string_column, 1);
 
     free(string_literal);
     return -1;
@@ -426,7 +438,7 @@ static int tokenize_string(token_t *tokens, unsigned *token_count, char **ptr, u
   (*ptr)++; // Skip closing quote
   (*column)++;
 
-  add_token(tokens, token_count, l_string, line, *column - length - 2, file_path, string_literal);
+  add_token(tokens, token_count, l_string, line, *column - length - 2, length + 2, file_path, string_literal);
   return 1;
 }
 
@@ -469,8 +481,9 @@ static int tokenize_number(token_t *tokens, unsigned *token_count, char **ptr, u
   }
 
   if (end == literal_start) {
+    unsigned prefix_len = (base != 10) ? 2 : 1;
     fprintf(stderr, "Error: Invalid number literal at %s:%u:%u\n", file_path, line, *column);
-    print_error_line(line, *column);
+    print_error_line(line, *column, prefix_len);
     return -1;
   }
 
@@ -478,7 +491,7 @@ static int tokenize_number(token_t *tokens, unsigned *token_count, char **ptr, u
   long value = strtol(literal_start, &endptr, base);
   if (endptr != (char *)end) {
     fprintf(stderr, "Error: Invalid number literal at %s:%u:%u\n", file_path, line, *column);
-    print_error_line(line, *column);
+    print_error_line(line, *column, (unsigned)(end - *ptr));
     return -1;
   }
 
@@ -489,9 +502,9 @@ static int tokenize_number(token_t *tokens, unsigned *token_count, char **ptr, u
   }
   *number_value = value;
 
-  add_token(tokens, token_count, l_num, line, *column, file_path, number_value);
-
   const unsigned literal_length = (unsigned)(end - *ptr);
+  add_token(tokens, token_count, l_num, line, *column, literal_length, file_path, number_value);
+
   *ptr = (char *)end;
   *column += literal_length;
   return 1;
@@ -552,7 +565,7 @@ token_t *tokenize(const char *file_path, const char *source_code, const long fil
     // If we reach here, it's an unrecognized token.
     fprintf(stderr, "Error: unexpected character '%c' at %s:%u:%u\n",
       *ptr, file_path, line, column);
-    print_error_line(line, column);
+    print_error_line(line, column, 1);
     error_count++;
 
     if (*ptr == '\n') { line++; column = 1; } else { column++; }
@@ -571,7 +584,7 @@ token_t *tokenize(const char *file_path, const char *source_code, const long fil
     return NULL;
   }
 
-  add_token(tokens, &token_count, t_eof, line, column, (char *)file_path, NULL);
+  add_token(tokens, &token_count, t_eof, line, column, 0, (char *)file_path, NULL);
 
   *num_tokens = token_count;
   return tokens;

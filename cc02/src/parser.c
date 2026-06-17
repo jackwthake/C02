@@ -107,22 +107,22 @@ typedef struct {
 } parser_t;
 
 
-#define GENERATE_ERROR(PARSER, TYPE, TOKEN, EXPECTED, CTX) \
-  do {                                                     \
-    PARSER->err = malloc(sizeof(error_t));                 \
-    PARSER->err->type = TYPE;                              \
-    PARSER->err->found = TOKEN;                            \
-    PARSER->err->expected = EXPECTED;                      \
-    PARSER->err->context = CTX;                            \
-    PARSER->has_errored = 1;                               \
-  } while(0)                                               \
+#define GENERATE_ERROR(TYPE, TOKEN, EXPECTED, CTX) \
+  do {                                             \
+    p->err = malloc(sizeof(error_t));              \
+    p->err->type = TYPE;                           \
+    p->err->found = TOKEN;                         \
+    p->err->expected = EXPECTED;                   \
+    p->err->context = CTX;                         \
+    p->has_errored = 1;                            \
+  } while(0)                                       \
 
 
-#define EXPECT_SYMBOL(PARSER, TOKEN, EXPECTED, ERR_EXPECTED, ERR_CTX)         \
-  do {                                                                        \
-    if (TOKEN.type != EXPECTED) {                                             \
-      GENERATE_ERROR(PARSER, UNEXPECTED_TOKEN, TOKEN, ERR_EXPECTED, ERR_CTX); \
-    }                                                                         \
+#define EXPECT_SYMBOL(EXPECTED, ERR_EXPECTED, ERR_CTX)                     \
+  do {                                                                     \
+    if (CUR_TOK.type != EXPECTED) {                                        \
+      GENERATE_ERROR(UNEXPECTED_TOKEN, CUR_TOK, ERR_EXPECTED, ERR_CTX);    \
+    }                                                                      \
   } while(0);
 
 
@@ -133,32 +133,37 @@ typedef struct {
 
 
 static void print_parse_error(error_t *e) {
+  const token_t *tok = &e->found;
+
   switch (e->type) {
     case UNEXPECTED_EOF:
-      fprintf(stderr, "%s:%u:%u: Unexpected end of file while %s: expected %s.\n", 
-               e->found.file_path, e->found.line, e->found.column, 
-               e->context, e->expected);
+      fprintf(stderr, "%s:%u:%u: error: unexpected end of file\n",
+              tok->file_path, tok->line, tok->column);
+      fprintf(stderr, "  = expected: %s\n", e->expected);
+      fprintf(stderr, "  = context:  %s\n", e->context);
+      print_error_line(tok->line, tok->column, 1);
       return;
-    case UNEXPECTED_TOKEN:
-      if (token_has_value(e->found.type)) {
-        unsigned should_free = 0;
-        char *val = token_val_to_string(e->found, &should_free);
 
-        fprintf(stderr,"%s:%u:%u: Unexpected token while %s:\n\texpected %s, got %s: %s.\n", 
-                 e->found.file_path, e->found.line, e->found.column, 
-                 e->context, e->expected, token_type_to_string(e->found.type), val);
-        
-        // if the token is a number literal, a buffer will be allocated that needs to freed.
-        // I could just hard check token type == number literal but it feels sloppy to make 
-        // the caller have to track which token vals need freeing when getting them as strings.
+    case UNEXPECTED_TOKEN: {
+      if (token_has_value(tok->type)) {
+        unsigned should_free = 0;
+        char *val = token_val_to_string(*tok, &should_free);
+        fprintf(stderr, "%s:%u:%u: error: unexpected token '%s'\n",
+                tok->file_path, tok->line, tok->column, val);
+        fprintf(stderr, "  = expected: %s\n", e->expected);
+        fprintf(stderr, "  = context:  %s\n", e->context);
+        print_error_line(tok->line, tok->column, tok->length);
         if (should_free) free(val);
       } else {
-        fprintf(stderr,"%s:%u:%u: Unexpected token while %s:\n\texpected %s, got %s.\n", 
-                 e->found.file_path, e->found.line, e->found.column, 
-                 e->context, e->expected, token_type_to_string(e->found.type));
+        fprintf(stderr, "%s:%u:%u: error: unexpected token '%s'\n",
+                tok->file_path, tok->line, tok->column,
+                token_type_to_string(tok->type));
+        fprintf(stderr, "  = expected: %s\n", e->expected);
+        fprintf(stderr, "  = context:  %s\n", e->context);
+        print_error_line(tok->line, tok->column, tok->length);
       }
-
       return;
+    }
   }
 }
 
@@ -321,7 +326,7 @@ static type_t parse_type(parser_t *p) {
 
   int type;
   if ((type = token_type_to_parser_type(CUR_TOK.type)) == -1) {
-    GENERATE_ERROR(p, UNEXPECTED_TOKEN, CUR_TOK, "Type name", "type parsing");
+    GENERATE_ERROR(UNEXPECTED_TOKEN, CUR_TOK, "Type name", "type parsing");
     return res;
   }
 
@@ -350,7 +355,7 @@ static node_t *parse_function_call_site(parser_t *p, char *name) {
   n->kind = NODE_CALL;
   n->call.name = name;
 
-  EXPECT_SYMBOL(p, CUR_TOK, s_lparen, "(", "function call");
+  EXPECT_SYMBOL(s_lparen, "(", "function call");
   GUARD(p);
   ++p->pos;
 
@@ -367,7 +372,7 @@ static node_t *parse_function_call_site(parser_t *p, char *name) {
   n->call.args = scratch_commit(&scratch, p->arena);
   free(scratch.items);
 
-  EXPECT_SYMBOL(p, CUR_TOK, s_rparen, ")", "function call");
+  EXPECT_SYMBOL(s_rparen, ")", "function call");
   GUARD(p);
   ++p->pos;
 
@@ -378,7 +383,7 @@ static node_t *parse_function_call_site(parser_t *p, char *name) {
 /* consumes token, returning next one -> throws error if EOF is encountered */
 static token_t consume(parser_t *p) {
   if (p->pos >= p->count || CUR_TOK.type == t_eof) {
-    GENERATE_ERROR(p, UNEXPECTED_EOF, CUR_TOK, "token", "expression");
+    GENERATE_ERROR(UNEXPECTED_EOF, CUR_TOK, "token", "expression");
     return CUR_TOK; // return whatever's there, caller checks p->err
   }
 
@@ -412,7 +417,7 @@ static node_t *primary(parser_t *p) {
         type_t t = parse_type(p);
         GUARD(p);
 
-        EXPECT_SYMBOL(p, CUR_TOK, s_rparen, ")", "cast expression");
+        EXPECT_SYMBOL(s_rparen, ")", "cast expression");
         GUARD(p);
         ++p->pos; // consume )
 
@@ -428,7 +433,7 @@ static node_t *primary(parser_t *p) {
       } else {
         node_t *expr = logical_or(p);
 
-        EXPECT_SYMBOL(p, CUR_TOK, s_rparen, ")", "grouped expression");
+        EXPECT_SYMBOL(s_rparen, ")", "grouped expression");
         GUARD(p);
         ++p->pos; // consume )
 
@@ -448,7 +453,7 @@ static node_t *primary(parser_t *p) {
     }
 
     default:
-      GENERATE_ERROR(p, UNEXPECTED_TOKEN, tok, "expression", "primary");
+      GENERATE_ERROR(UNEXPECTED_TOKEN, tok, "expression", "primary");
       return NULL;
   }
 }
@@ -707,7 +712,7 @@ static node_t *parse_expr(parser_t *p) {
 static param_list_t parse_function_params(parser_t *p) {
   param_list_t params = { 0 };
 
-  EXPECT_SYMBOL(p, CUR_TOK, s_lparen, "(", "function decl");
+  EXPECT_SYMBOL(s_lparen, "(", "function decl");
   if (p->err) return params;
   ++p->pos;
 
@@ -718,7 +723,7 @@ static param_list_t parse_function_params(parser_t *p) {
     type_t type = parse_type(p);
     if (p->err) { free(scratch.items); return params; }
 
-    EXPECT_SYMBOL(p, CUR_TOK, l_identifier, "identifier", "function params");
+    EXPECT_SYMBOL(l_identifier, "identifier", "function params");
     if (p->err) { free(scratch.items); return params; }
 
     param_t param = {
@@ -735,7 +740,7 @@ static param_list_t parse_function_params(parser_t *p) {
   params = param_scratch_commit(&scratch, p->arena);
   free(scratch.items);
 
-  EXPECT_SYMBOL(p, CUR_TOK, s_rparen, ")", "function decl");
+  EXPECT_SYMBOL(s_rparen, ")", "function decl");
   if (p->err) return params;
   ++p->pos;
 
@@ -749,7 +754,7 @@ static node_t *parse_stmt(parser_t *);
 static node_list_t parse_block(parser_t *p) {
   node_list_t block = { 0 };
   
-  EXPECT_SYMBOL(p, CUR_TOK, s_lbrace, "{", "function decl")
+  EXPECT_SYMBOL(s_lbrace, "{", "function decl")
   if (p->err) { return block; }
   ++p->pos; // consume {
     
@@ -766,7 +771,7 @@ static node_list_t parse_block(parser_t *p) {
   block = scratch_commit(&scratch, p->arena);
   free(scratch.items);
 
-  EXPECT_SYMBOL(p, CUR_TOK, s_rbrace, "}", "function decl")
+  EXPECT_SYMBOL(s_rbrace, "}", "function decl")
   if (p->err) return block;
   ++p->pos;
 
@@ -863,7 +868,7 @@ static node_t *parse_for_initializer_clause(parser_t *p) {
     n->var_decl.type = parse_type(p);
     GUARD(p);
 
-    EXPECT_SYMBOL(p, CUR_TOK, l_identifier, "identifier", "for clause");
+    EXPECT_SYMBOL(l_identifier, "identifier", "for clause");
     GUARD(p);
 
     n->var_decl.name = (char*)CUR_TOK.value;
@@ -899,7 +904,7 @@ static node_t *parse_stmt(parser_t *p) {
         GUARD(p);
       }
 
-      EXPECT_SYMBOL(p, CUR_TOK, s_semicolon, ";", "return statement");
+      EXPECT_SYMBOL(s_semicolon, ";", "return statement");
       GUARD(p);
       ++p->pos; // consume semicolon
 
@@ -912,14 +917,14 @@ static node_t *parse_stmt(parser_t *p) {
       ++p->pos; // consume while
       n->kind = NODE_WHILE;
 
-      EXPECT_SYMBOL(p, CUR_TOK, s_lparen, "(", "while statement");
+      EXPECT_SYMBOL(s_lparen, "(", "while statement");
       GUARD(p);
       ++p->pos;
 
       n->while_stmt.cond = parse_expr(p);
       GUARD(p);
 
-      EXPECT_SYMBOL(p, CUR_TOK, s_rparen, ")", "while statement");
+      EXPECT_SYMBOL(s_rparen, ")", "while statement");
       GUARD(p);
       ++p->pos;
 
@@ -935,7 +940,7 @@ static node_t *parse_stmt(parser_t *p) {
       ++p->pos; // consume for
       n->kind = NODE_FOR;
 
-      EXPECT_SYMBOL(p, CUR_TOK, s_lparen, "(", "for statement");
+      EXPECT_SYMBOL(s_lparen, "(", "for statement");
       GUARD(p);
       ++p->pos;
 
@@ -946,7 +951,7 @@ static node_t *parse_stmt(parser_t *p) {
         n->for_stmt.initialiser = parse_for_initializer_clause(p);
         GUARD(p);
 
-        EXPECT_SYMBOL(p, CUR_TOK, s_semicolon, ";", "for statement initialiser section");
+        EXPECT_SYMBOL(s_semicolon, ";", "for statement initialiser section");
         GUARD(p);
         ++p->pos; // consume semicolon
       }
@@ -958,7 +963,7 @@ static node_t *parse_stmt(parser_t *p) {
         n->for_stmt.cond = parse_expr(p);
         GUARD(p);
 
-        EXPECT_SYMBOL(p, CUR_TOK, s_semicolon, ";", "for statement conditional section");
+        EXPECT_SYMBOL(s_semicolon, ";", "for statement conditional section");
         GUARD(p);
         ++p->pos; // consume semicolon
       }
@@ -970,7 +975,7 @@ static node_t *parse_stmt(parser_t *p) {
         n->for_stmt.incrementer = parse_assignment(p);
         GUARD(p);
 
-        EXPECT_SYMBOL(p, CUR_TOK, s_rparen, ")", "for statement incrementer section terminator");
+        EXPECT_SYMBOL(s_rparen, ")", "for statement incrementer section terminator");
         GUARD(p);
         ++p->pos; // consume )
       }
@@ -987,14 +992,14 @@ static node_t *parse_stmt(parser_t *p) {
       ++p->pos; // consume if
       n->kind = NODE_IF;
 
-      EXPECT_SYMBOL(p, CUR_TOK, s_lparen, "(", "if statement");
+      EXPECT_SYMBOL(s_lparen, "(", "if statement");
       GUARD(p);
       ++p->pos;
 
       n->if_stmt.cond = parse_expr(p);
       GUARD(p);
 
-      EXPECT_SYMBOL(p, CUR_TOK, s_rparen, ")", "if statement");
+      EXPECT_SYMBOL(s_rparen, ")", "if statement");
       GUARD(p);
       ++p->pos;
 
@@ -1019,7 +1024,7 @@ static node_t *parse_stmt(parser_t *p) {
       n->var_decl.type = parse_type(p);
       GUARD(p);
 
-      EXPECT_SYMBOL(p, CUR_TOK, l_identifier, "identifier", "variable decl after typename")
+      EXPECT_SYMBOL(l_identifier, "identifier", "variable decl after typename")
       GUARD(p);
 
       n->var_decl.name = (char*)CUR_TOK.value;
@@ -1033,7 +1038,7 @@ static node_t *parse_stmt(parser_t *p) {
         n->var_decl.initialiser = NULL;
       }
 
-      EXPECT_SYMBOL(p, CUR_TOK, s_semicolon, ";", "variable declaration");
+      EXPECT_SYMBOL(s_semicolon, ";", "variable declaration");
       GUARD(p);
       ++p->pos; // consume semicolon
 
@@ -1049,14 +1054,14 @@ static node_t *parse_stmt(parser_t *p) {
       n->deref_assign.target = parse_expr(p);
       GUARD(p);
 
-      EXPECT_SYMBOL(p, CUR_TOK, s_equals, "=", "variable assignment");
+      EXPECT_SYMBOL(s_equals, "=", "variable assignment");
       GUARD(p);
       ++p->pos; // consume =
 
       n->deref_assign.value = parse_expr(p);
       GUARD(p);
 
-      EXPECT_SYMBOL(p, CUR_TOK, s_semicolon, ";", "deref assignment");
+      EXPECT_SYMBOL(s_semicolon, ";", "deref assignment");
       GUARD(p);
       ++p->pos; // consume semicolon
 
@@ -1066,7 +1071,7 @@ static node_t *parse_stmt(parser_t *p) {
     case l_identifier: {
       node_t *n = parse_assignment(p);
       if (n) {
-        EXPECT_SYMBOL(p, CUR_TOK, s_semicolon, ";", "compound assignment");
+        EXPECT_SYMBOL(s_semicolon, ";", "compound assignment");
         GUARD(p);
         ++p->pos;
 
@@ -1075,7 +1080,7 @@ static node_t *parse_stmt(parser_t *p) {
 
       // catch if parse_assignment returned NULL due to EOF token (error)
       if (CUR_TOK.type == t_eof) {
-        GENERATE_ERROR(p, UNEXPECTED_EOF, CUR_TOK, "token", "parse statement");
+        GENERATE_ERROR(UNEXPECTED_EOF, CUR_TOK, "token", "parse statement");
         return NULL;
       }
 
@@ -1086,7 +1091,7 @@ static node_t *parse_stmt(parser_t *p) {
       n = parse_function_call_site(p, name);
       GUARD(p);
 
-      EXPECT_SYMBOL(p, CUR_TOK, s_semicolon, ";", "function call");
+      EXPECT_SYMBOL(s_semicolon, ";", "function call");
       GUARD(p);
       ++p->pos;
 
@@ -1094,7 +1099,7 @@ static node_t *parse_stmt(parser_t *p) {
     }
 
     default: {
-      GENERATE_ERROR(p, UNEXPECTED_TOKEN, CUR_TOK, "statement", "statement parse");
+      GENERATE_ERROR(UNEXPECTED_TOKEN, CUR_TOK, "statement", "statement parse");
       return NULL;
     }
   }
@@ -1108,7 +1113,7 @@ static node_t *parse_function(parser_t *p) {
   func_decl->kind = NODE_FUNCTION;
 
 
-  EXPECT_SYMBOL(p, CUR_TOK, l_identifier, "Identifier", "function decl")
+  EXPECT_SYMBOL(l_identifier, "Identifier", "function decl")
   GUARD(p);
 
   // pull identifier from token array
@@ -1119,7 +1124,7 @@ static node_t *parse_function(parser_t *p) {
   func_decl->function.params = parse_function_params(p);
   GUARD(p);
 
-  EXPECT_SYMBOL(p, CUR_TOK, s_arrow, "->", "function decl")
+  EXPECT_SYMBOL(s_arrow, "->", "function decl")
   GUARD(p);
   ++p->pos; // consume ->
 
@@ -1145,25 +1150,25 @@ static node_t *parse_reg_decl(parser_t *p) {
 
   decl->reg_decl.type = type;
 
-  EXPECT_SYMBOL(p, CUR_TOK, l_identifier, "Identifier", "register decl")
+  EXPECT_SYMBOL(l_identifier, "Identifier", "register decl")
   GUARD(p);
 
   // pull identifier from token array
   decl->reg_decl.name = (char*)CUR_TOK.value;
   ++p->pos; // consume identifier
 
-  EXPECT_SYMBOL(p, CUR_TOK, s_mem_lookup, "@", "register decl")
+  EXPECT_SYMBOL(s_mem_lookup, "@", "register decl")
   GUARD(p);
   ++p->pos; // consume @
 
-  EXPECT_SYMBOL(p, CUR_TOK, l_num, "Memory address literal", "register decl")
+  EXPECT_SYMBOL(l_num, "Memory address literal", "register decl")
   GUARD(p);
 
   // pull integer literal (dereference void* to get the stored unsigned long)
   decl->reg_decl.addr = *(unsigned long*)CUR_TOK.value;
   ++p->pos; // consume integer literal
 
-  EXPECT_SYMBOL(p, CUR_TOK, s_semicolon, ";", "register decl")
+  EXPECT_SYMBOL(s_semicolon, ";", "register decl")
   GUARD(p);
   ++p->pos; // consume ;
 
@@ -1180,7 +1185,7 @@ static node_t *parse_global_var_decl(parser_t *p) {
 
   decl->global_var.type = type;
 
-  EXPECT_SYMBOL(p, CUR_TOK, l_identifier, "Identifier", "global var decl")
+  EXPECT_SYMBOL(l_identifier, "Identifier", "global var decl")
   GUARD(p);
 
   // pull identifier from token array
@@ -1193,7 +1198,7 @@ static node_t *parse_global_var_decl(parser_t *p) {
     GUARD(p);
   }
 
-  EXPECT_SYMBOL(p, CUR_TOK, s_semicolon, "; or initialiser expresion", "global var decl")
+  EXPECT_SYMBOL(s_semicolon, "; or initialiser expresion", "global var decl")
   GUARD(p);
   ++p->pos; // consume ;
 
@@ -1211,7 +1216,7 @@ static node_t *parse_toplevel(parser_t *p) {
       return parse_global_var_decl(p);
 
     default:
-      GENERATE_ERROR(p, UNEXPECTED_TOKEN, tok, "Top level declaration. (Variable/Register decl, Function decl)", "top level parse");
+      GENERATE_ERROR(UNEXPECTED_TOKEN, tok, "Top level declaration. (Variable/Register decl, Function decl)", "top level parse");
       return NULL;
   }
 }
