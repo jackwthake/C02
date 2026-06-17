@@ -1,10 +1,12 @@
 #include "parser.h"
 
 #include <string.h>
+#include <stdlib.h>
 #include <stdio.h>
 
 #define AST_PRINT_MAX_DEPTH 128
 
+void print_parse_error(error_t *e);
 static void print_ast_(node_t *node, int is_last, const char *prefix);
 
 
@@ -285,4 +287,40 @@ static void print_ast_(node_t *node, int is_last, const char *prefix) {
 void print_ast(node_t *node) {
   char prefix[AST_PRINT_MAX_DEPTH] = "";
   print_ast_(node, 1, prefix);
+}
+
+
+void print_parse_error(error_t *e) {
+  const token_t *tok = &e->found;
+
+  switch (e->type) {
+    case UNEXPECTED_EOF:
+      fprintf(stderr, "%s:%u:%u: error: unexpected end of file\n",
+              tok->file_path, tok->line, tok->column);
+      fprintf(stderr, "  = expected: %s\n", e->expected);
+      fprintf(stderr, "  = context:  %s\n", e->context);
+      print_error_line(tok->line, tok->column, 1);
+      return;
+
+    case UNEXPECTED_TOKEN: {
+      if (token_has_value(tok->type)) {
+        unsigned should_free = 0;
+        char *val = token_val_to_string(*tok, &should_free);
+        fprintf(stderr, "%s:%u:%u: error: unexpected token '%s'\n",
+                tok->file_path, tok->line, tok->column, val);
+        fprintf(stderr, "  = expected: %s\n", e->expected);
+        fprintf(stderr, "  = context:  %s\n", e->context);
+        print_error_line(tok->line, tok->column, tok->length);
+        if (should_free) free(val);
+      } else {
+        fprintf(stderr, "%s:%u:%u: error: unexpected token '%s'\n",
+                tok->file_path, tok->line, tok->column,
+                token_type_to_string(tok->type));
+        fprintf(stderr, "  = expected: %s\n", e->expected);
+        fprintf(stderr, "  = context:  %s\n", e->context);
+        print_error_line(tok->line, tok->column, tok->length);
+      }
+      return;
+    }
+  }
 }

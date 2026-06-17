@@ -198,12 +198,26 @@ typedef struct {
 
 #define PARSER_CHUNK_ALLOC_SIZE (sizeof(node_t) * 100)
 
-int parser_init(parser_arena_t *a, size_t size);
-void parser_free(parser_arena_t *a);
+/* error reporting types, internal to parsing code */
+typedef enum {
+  UNEXPECTED_EOF,
+  UNEXPECTED_TOKEN
+} error_type_t;
+
+typedef struct {
+  error_type_t type;
+  token_t found;
+
+  char *expected;
+  char *context;
+} error_t;
 
 // ----------------------------------------------------------------
 // General API
 // ----------------------------------------------------------------
+
+int parser_init(parser_arena_t *a, size_t size);
+void parser_free(parser_arena_t *a);
 
 void print_ast(node_t *node);
 
