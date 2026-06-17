@@ -33,7 +33,7 @@
  *   l_identifier -> NODE_ASSIGN (peek: next == s_equals)
  *                -> NODE_CALL   (peek: next == s_lparen)
  *
- * For loops use parse_for_clause() for the initialiser slot, which handles
+ * For loops use parse_for_initializer_clause() for the initialiser slot, which handles
  * both type-led declarations and plain expressions without consuming a
  * trailing semicolon (parse_stmt() would eat it). The cond and incrementer
  * slots use parse_expr() directly.
@@ -57,23 +57,6 @@
  * frees the error and returns NULL. Only the first error is reported.
  * EXPECT_SYMBOL sets the error but does NOT return — callers must GUARD(p)
  * immediately after every EXPECT_SYMBOL call.
- *
- * KNOWN TODOS
- * -----------
- *  - += and -= compound assignment: add to l_identifier branch in parse_stmt()
- *    (peek at pos+1 for s_plus_equals / s_minus_equals, desugar to NODE_ASSIGN
- *    with a NODE_BINOP as value). Also needed in parse_for_clause() for the
- *    incrementer slot.
- *  - parse_call() helper: call arg loop is duplicated between primary() and
- *    parse_stmt(). Extract into a shared helper that builds and returns the
- *    NODE_CALL node; each call site handles its own terminator (none vs ';').
- *  - primary() call loop (line ~348) is missing t_eof guard — will spin on
- *    malformed input. parse_stmt() version already has the guard.
- *  - parse_function() missing GUARD(p) after parse_block().
- *  - parse_global_var_decl() has "register decl" as context string — should
- *    be "global var decl".
- *  - GENERATE_ERROR uses bare {} instead of do {} while(0) — inconsistent
- *    with EXPECT_SYMBOL, could misbehave in a braceless if.
  */
 
 #include "parser.h"
@@ -81,6 +64,20 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+
+typedef struct {
+  node_t **items;
+  unsigned count;
+  unsigned capacity;
+} scratch_t;
+
+
+typedef struct {
+  param_t  *items;
+  unsigned  count;
+  unsigned  capacity;
+} param_scratch_t;
+
 
 typedef enum {
   UNEXPECTED_EOF,
@@ -110,27 +107,15 @@ typedef struct {
 } parser_t;
 
 
-typedef struct {
-  node_t **items;
-  unsigned count;
-  unsigned capacity;
-} scratch_t;
-
-
-typedef struct {
-  param_t  *items;
-  unsigned  count;
-  unsigned  capacity;
-} param_scratch_t;
-
-
 #define GENERATE_ERROR(PARSER, TYPE, TOKEN, EXPECTED, CTX) \
-  {PARSER->err = malloc(sizeof(error_t));                  \
-  PARSER->err->type = TYPE;                                \
-  PARSER->err->found = TOKEN;                              \
-  PARSER->err->expected = EXPECTED;                        \
-  PARSER->err->context = CTX;                              \
-  PARSER->has_errored = 1;}
+  do {                                                     \
+    PARSER->err = malloc(sizeof(error_t));                 \
+    PARSER->err->type = TYPE;                              \
+    PARSER->err->found = TOKEN;                            \
+    PARSER->err->expected = EXPECTED;                      \
+    PARSER->err->context = CTX;                            \
+    PARSER->has_errored = 1;                               \
+  } while(0)                                               \
 
 
 #define EXPECT_SYMBOL(PARSER, TOKEN, EXPECTED, ERR_EXPECTED, ERR_CTX)         \
@@ -345,13 +330,48 @@ static type_t parse_type(parser_t *p) {
   ++p->pos; // consume type
 
   // check for pointer
-  while (CUR_TOK.type == s_star) {
+  while (CUR_TOK.type == s_star && CUR_TOK.type != t_eof) {
     res.is_ptr = 1;
     ++res.ptr_depth;
     ++p->pos; // consume star
   }
 
   return res;
+}
+
+
+/* 
+ * used in both primary() and parse_stmt
+ * parses the call args, expects function identifier to already be consumed
+ * parses (arg1, arg2, ...) section of call site 
+*/
+static node_t *parse_function_call_site(parser_t *p, char *name) {
+  node_t *n = ALLOC_NODE(p);
+  n->kind = NODE_CALL;
+  n->call.name = name;
+
+  EXPECT_SYMBOL(p, CUR_TOK, s_lparen, "(", "function call");
+  GUARD(p);
+  ++p->pos;
+
+  scratch_t scratch = { 0 };
+
+  while (CUR_TOK.type != s_rparen && CUR_TOK.type != t_eof) {
+    node_t *arg = logical_or(p);
+    GUARD(p);
+
+    scratch_push(&scratch, arg);
+    if (CUR_TOK.type == s_comma) ++p->pos;
+  }
+
+  n->call.args = scratch_commit(&scratch, p->arena);
+  free(scratch.items);
+
+  EXPECT_SYMBOL(p, CUR_TOK, s_rparen, ")", "function call");
+  GUARD(p);
+  ++p->pos;
+
+  return n;
 }
 
 
@@ -417,30 +437,12 @@ static node_t *primary(parser_t *p) {
     }
 
     case l_identifier: {
-      char *name = (char*)tok.value;
-
       if (CUR_TOK.type == s_lparen) {
-        ++p->pos; // consume (
-        scratch_t args = {0};
-      
-        while (CUR_TOK.type != s_rparen) {
-          scratch_push(&args, logical_or(p));
-          if (p->err) { free(args.items); return NULL; }
-          if (CUR_TOK.type == s_comma) ++p->pos;
-        }
-      
-        ++p->pos; // consume )
-        node_t *call = ALLOC_NODE(p);
-        call->kind = NODE_CALL;
-        call->call.name = name;
-        call->call.args = scratch_commit(&args, p->arena);
-      
-        free(args.items);
-        return call;
+        return parse_function_call_site(p, (char*)tok.value); // error auto propogates, GUARD() return null on error, so will this as is
       } else {
         node_t *ident = ALLOC_NODE(p);
         ident->kind = NODE_IDENTIFIER;
-        ident->identifier = name;
+        ident->identifier = (char*)tok.value;;
         return ident;
       }
     }
@@ -772,7 +774,89 @@ static node_list_t parse_block(parser_t *p) {
 }
 
 
-static node_t *parse_for_clause(parser_t *p) {
+static node_t *parse_assignment(parser_t *p) {
+  if (p->pos + 1 < p->count) {
+    node_t *n;
+    op_t op = 0; // used for compound assignments
+
+    switch (p->tokens[p->pos + 1].type) {
+      case s_equals: { // normal assignment
+        n = ALLOC_NODE(p);
+        n->kind = NODE_ASSIGN;
+        n->assign.name = (char*)CUR_TOK.value;
+
+        p->pos += 2; // consume identifier, then =
+        n->assign.value = parse_expr(p);
+        GUARD(p);
+
+        return n;
+      }
+
+      // compound assignments
+      case s_plus_equals: {
+        n = ALLOC_NODE(p);
+        n->kind = NODE_ASSIGN;
+        
+        op = OP_PLUS;
+        break;
+      }
+
+      case s_minus_equals: {
+        n = ALLOC_NODE(p);
+        n->kind = NODE_ASSIGN;
+        
+        op = OP_MINUS;
+        break;
+      }
+
+      case s_star_equals: {
+        n = ALLOC_NODE(p);
+        n->kind = NODE_ASSIGN;
+        
+        op = OP_MULTIPLY;
+        break;
+      }
+
+      case s_divide_equals: {
+        n = ALLOC_NODE(p);
+        n->kind = NODE_ASSIGN;
+        
+        op = OP_DIVIDE;
+        break;
+      }
+
+      default: return NULL; // not assignment or compound assignment
+    }
+
+    // finish populating compound assignment
+    n->assign.name = (char*)CUR_TOK.value;
+    p->pos += 2; // consume identifier, then +=
+
+    node_t *lhs = ALLOC_NODE(p);
+    lhs->kind = NODE_IDENTIFIER;
+    lhs->identifier = n->assign.name;
+
+    node_t *rhs = parse_expr(p);
+    GUARD(p);
+
+    node_t *binop = ALLOC_NODE(p);
+    binop->kind = NODE_BINOP;
+
+    binop->binop.left = lhs;
+    binop->binop.op = op;
+    binop->binop.right = rhs;
+
+    n->assign.value = binop;
+
+    return n;
+  }
+
+  // EOF encountered
+  return NULL;
+}
+
+
+static node_t *parse_for_initializer_clause(parser_t *p) {
   if (is_token_type_name(p)) {
     node_t *n = ALLOC_NODE(p);
     n->kind = NODE_VAR_DECL;
@@ -859,7 +943,7 @@ static node_t *parse_stmt(parser_t *p) {
         n->for_stmt.initialiser = NULL;
         ++p->pos; // consume semicolon
       } else {
-        n->for_stmt.initialiser = parse_for_clause(p);
+        n->for_stmt.initialiser = parse_for_initializer_clause(p);
         GUARD(p);
 
         EXPECT_SYMBOL(p, CUR_TOK, s_semicolon, ";", "for statement initialiser section");
@@ -883,7 +967,7 @@ static node_t *parse_stmt(parser_t *p) {
         n->for_stmt.incrementer = NULL;
         ++p->pos; // consume )
       } else {
-        n->for_stmt.incrementer = parse_expr(p);
+        n->for_stmt.incrementer = parse_assignment(p);
         GUARD(p);
 
         EXPECT_SYMBOL(p, CUR_TOK, s_rparen, ")", "for statement incrementer section terminator");
@@ -980,47 +1064,21 @@ static node_t *parse_stmt(parser_t *p) {
     }
 
     case l_identifier: {
-      node_t *n = ALLOC_NODE(p);
-
-      if (p->pos + 1 < p->count && p->tokens[p->pos + 1].type == s_equals) {
-        n->kind = NODE_ASSIGN;
-        n->assign.name = (char*)CUR_TOK.value;
-
-        p->pos += 2; // consume identifier, then =
-        n->assign.value = parse_expr(p);
+      node_t *n = parse_assignment(p);
+      if (n) {
+        EXPECT_SYMBOL(p, CUR_TOK, s_semicolon, ";", "compound assignment");
         GUARD(p);
-
-        EXPECT_SYMBOL(p, CUR_TOK, s_semicolon, ";", "variable assignment");
-        GUARD(p);
-        ++p->pos; // consume semicolon
+        ++p->pos;
 
         return n;
       }
 
-      n->kind = NODE_CALL;
-      n->call.name = (char*)CUR_TOK.value;
-      ++p->pos;
+      // if we reach here it has to be a function call
+      char *name = (char*)CUR_TOK.value;
+      ++p->pos; // consume identifier
 
-      EXPECT_SYMBOL(p, CUR_TOK, s_lparen, "(", "function call");
+      n = parse_function_call_site(p, name);
       GUARD(p);
-      ++p->pos;
-
-      scratch_t scratch = { 0 };
-
-      while (CUR_TOK.type != s_rparen && CUR_TOK.type != t_eof) {
-        node_t *arg = parse_expr(p);
-        GUARD(p);
-
-        scratch_push(&scratch, arg);
-        if (CUR_TOK.type == s_comma) ++p->pos;
-      }
-
-      n->call.args = scratch_commit(&scratch, p->arena);
-      free(scratch.items);
-
-      EXPECT_SYMBOL(p, CUR_TOK, s_rparen, ")", "function call");
-      GUARD(p);
-      ++p->pos;
 
       EXPECT_SYMBOL(p, CUR_TOK, s_semicolon, ";", "function call");
       GUARD(p);
@@ -1064,6 +1122,7 @@ static node_t *parse_function(parser_t *p) {
 
   // parse block
   func_decl->function.body = parse_block(p);
+  GUARD(p);
 
   return func_decl;
 }
@@ -1115,7 +1174,7 @@ static node_t *parse_global_var_decl(parser_t *p) {
 
   decl->global_var.type = type;
 
-  EXPECT_SYMBOL(p, CUR_TOK, l_identifier, "Identifier", "register decl")
+  EXPECT_SYMBOL(p, CUR_TOK, l_identifier, "Identifier", "global var decl")
   GUARD(p);
 
   // pull identifier from token array
