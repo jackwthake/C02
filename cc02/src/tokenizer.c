@@ -5,6 +5,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "colors.h"
+
 /**
  * MATCH_KEYWORD(kw, tok)
  * Checks if the current position in the source code matches the given keyword `kw`.
@@ -56,6 +58,9 @@
     return 1;                                                                  \
   }
 
+#define PRINT_ERROR_HEADER(file_path, err_line, err_col)                       \
+  fprintf(stderr, BOLD_WHITE "%s" RESET ":" BOLD_WHITE "%u" RESET ":" BOLD_WHITE "%u" RESET ": " BOLD_RED "error: " RESET, \
+    file_path, err_line, err_col)
 
 static void add_token(token_t *tokens, unsigned *token_count, token_type_t type, unsigned line, unsigned column, unsigned length, char *file_path, void *value) {
   tokens[(*token_count)++] = (token_t){
@@ -292,10 +297,10 @@ static void print_error_line_(const char *ptr, unsigned line_number, unsigned co
   if (length == 0) length = 1;
 
   // print the line
-  fprintf(stderr, "%u | %.*s\n", line_number, (int)(line_end - line_start), line_start);
+  fprintf(stderr, BOLD_BLUE "%u |" RESET " %.*s\n", line_number, (int)(line_end - line_start), line_start);
 
   // print the caret + span
-  fprintf(stderr, "%*s | %*s", (int)( // align the pipe with the line number digits
+  fprintf(stderr, BOLD_BLUE "%*s |" BOLD_RED " %*s", (int)( // align the pipe with the line number digits
     (line_number >= 1000) ? 4 :
     (line_number >= 100)  ? 3 :
     (line_number >= 10)   ? 2 : 1
@@ -303,7 +308,7 @@ static void print_error_line_(const char *ptr, unsigned line_number, unsigned co
   for (unsigned i = 0; i < length; i++) {
     fputc(i == 0 ? '^' : '~', stderr);
   }
-  fputc('\n', stderr);
+  fprintf(stderr, RESET "\n");
 }
 
 
@@ -428,7 +433,8 @@ static int tokenize_string(token_t *tokens, unsigned *token_count, char **ptr, u
 
   if (**ptr != '"') {
     unsigned err_line = get_line_number_from_ptr(string_start);
-    fprintf(stderr, "Error: Unterminated string literal at %s:%u:%u\n", file_path, err_line, string_column);
+    PRINT_ERROR_HEADER(file_path, err_line, string_column);
+    fprintf(stderr, "Unterminated string literal\n");
     print_error_line(err_line, string_column, 1);
 
     free(string_literal);
@@ -482,7 +488,8 @@ static int tokenize_number(token_t *tokens, unsigned *token_count, char **ptr, u
 
   if (end == literal_start) {
     unsigned prefix_len = (base != 10) ? 2 : 1;
-    fprintf(stderr, "Error: Invalid number literal at %s:%u:%u\n", file_path, line, *column);
+    PRINT_ERROR_HEADER(file_path, line, *column);
+    fprintf(stderr, "Invalid number literal\n");
     print_error_line(line, *column, prefix_len);
     return -1;
   }
@@ -490,7 +497,8 @@ static int tokenize_number(token_t *tokens, unsigned *token_count, char **ptr, u
   char *endptr = NULL;
   long value = strtol(literal_start, &endptr, base);
   if (endptr != (char *)end) {
-    fprintf(stderr, "Error: Invalid number literal at %s:%u:%u\n", file_path, line, *column);
+    PRINT_ERROR_HEADER(file_path, line, *column);
+    fprintf(stderr, "Invalid number literal\n");
     print_error_line(line, *column, (unsigned)(end - *ptr));
     return -1;
   }
@@ -563,8 +571,8 @@ token_t *tokenize(const char *file_path, const char *source_code, const long fil
     }
 
     // If we reach here, it's an unrecognized token.
-    fprintf(stderr, "Error: unexpected character '%c' at %s:%u:%u\n",
-      *ptr, file_path, line, column);
+    PRINT_ERROR_HEADER(file_path, line, column);
+    fprintf(stderr, "Unexpected character '%c'\n", *ptr);
     print_error_line(line, column, 1);
     error_count++;
 
@@ -573,13 +581,13 @@ token_t *tokenize(const char *file_path, const char *source_code, const long fil
   }
 
   if (error_count > 0) {
-    fprintf(stderr, "Tokenization failed with %u error(s)\n", error_count);
+    fprintf(stderr, RED "Tokenization failed with " BOLD_RED "%u" RESET RED " error(s)\n" RESET, error_count);
     free_tokens(tokens, token_count);
     return NULL;
   }
 
   if (token_count >= max_tokens) {
-    fprintf(stderr, "Error: token array overflow while tokenizing %s\n", file_path);
+    fprintf(stderr, BOLD_RED "error:" RESET " token array overflow while tokenizing " BOLD_WHITE "%s\n" RESET, file_path);
     free_tokens(tokens, token_count);
     return NULL;
   }

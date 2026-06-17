@@ -113,6 +113,12 @@ For reference, see [memmap.md](memmap.md) for the Ben Eater 65C02 Kit Computer m
 ./C02 [OPTIONS] <FILE>
 ```
 
+#### Pretty error messages
+
+![Pretty error reporting](./docs/pretty-errors.png)
+
+All generated error messages are printed in an easy to read format, with nice colors.
+
 ## Options
 
 - `<FILE>`: The input source file (.c02) or binary file (.bin or .out when using -d).

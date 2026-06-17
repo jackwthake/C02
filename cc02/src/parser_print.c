@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+#include "colors.h"
+
 #define AST_PRINT_MAX_DEPTH 128
 
 void print_parse_error(error_t *e);
@@ -290,15 +292,25 @@ void print_ast(node_t *node) {
 }
 
 
+#define PRINT_ERROR_MESG_VAL(err_string, val)                                             \
+  do {                                                                                    \
+    fprintf(stderr, BOLD_WHITE "%s" RESET ":" BOLD_WHITE "%u" RESET ":" BOLD_WHITE "%u: " \
+              BOLD_RED "error: " RESET err_string "\n",                                   \
+              tok->file_path, tok->line, tok->column, val);                               \
+    fprintf(stderr, "  =" BOLD_BLUE " expected: " RESET BLUE "%s\n" RESET, e->expected);  \
+    fprintf(stderr, "  =" BOLD_BLUE " context:  " RESET BLUE "%s\n" RESET, e->context);   \
+  } while (0)
+
+#define PRINT_ERROR_MESG(err_string) \
+  PRINT_ERROR_MESG_VAL(err_string, "")
+
+
 void print_parse_error(error_t *e) {
   const token_t *tok = &e->found;
 
   switch (e->type) {
     case UNEXPECTED_EOF:
-      fprintf(stderr, "%s:%u:%u: error: unexpected end of file\n",
-              tok->file_path, tok->line, tok->column);
-      fprintf(stderr, "  = expected: %s\n", e->expected);
-      fprintf(stderr, "  = context:  %s\n", e->context);
+      PRINT_ERROR_MESG("unexpected end of file");
       print_error_line(tok->line, tok->column, 1);
       return;
 
@@ -306,18 +318,11 @@ void print_parse_error(error_t *e) {
       if (token_has_value(tok->type)) {
         unsigned should_free = 0;
         char *val = token_val_to_string(*tok, &should_free);
-        fprintf(stderr, "%s:%u:%u: error: unexpected token '%s'\n",
-                tok->file_path, tok->line, tok->column, val);
-        fprintf(stderr, "  = expected: %s\n", e->expected);
-        fprintf(stderr, "  = context:  %s\n", e->context);
+        PRINT_ERROR_MESG_VAL("unexpected token: %s", val);
         print_error_line(tok->line, tok->column, tok->length);
         if (should_free) free(val);
       } else {
-        fprintf(stderr, "%s:%u:%u: error: unexpected token '%s'\n",
-                tok->file_path, tok->line, tok->column,
-                token_type_to_string(tok->type));
-        fprintf(stderr, "  = expected: %s\n", e->expected);
-        fprintf(stderr, "  = context:  %s\n", e->context);
+        PRINT_ERROR_MESG("unexpected token");
         print_error_line(tok->line, tok->column, tok->length);
       }
       return;

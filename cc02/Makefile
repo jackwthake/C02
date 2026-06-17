@@ -7,7 +7,8 @@ CFLAGS = -Wall -Wextra -ggdb \
          -Wmissing-prototypes \
          -Wconversion \
          -Wno-sign-conversion \
-         -Werror
+         -Werror \
+				 -Wno-format-extra-args
 SRCS = $(wildcard src/*.c)
 OBJS = $(patsubst src/%.c,src/%.o,$(SRCS))
 

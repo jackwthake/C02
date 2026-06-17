@@ -4,6 +4,8 @@
 #include <unistd.h>
 #include <getopt.h>
 
+#include "colors.h"
+
 #include "tokenizer.h"
 #include "parser.h"
 
@@ -134,6 +136,8 @@ static long load_file(const char *file_path, char **out_content) {
 
 
 int main(int argc, char * const *argv) {
+  ENABLE_COLORS();
+  
   params_t params = {0};
 
   /* Read command-line parameters */
