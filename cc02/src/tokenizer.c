@@ -225,22 +225,38 @@ static int tokenize_symbol(token_t *tokens, unsigned *token_count, char **ptr, u
     MATCH_SINGLE_CHAR_SYMBOL('}', s_rbrace)
     MATCH_SINGLE_CHAR_SYMBOL('@', s_mem_lookup)
     MATCH_SINGLE_CHAR_SYMBOL(',', s_comma)
+    MATCH_DOUBLE_OR_SINGLE_TOKEN('%', '=', s_modulus_equals, s_modulus)
     MATCH_DOUBLE_OR_SINGLE_TOKEN('*', '=', s_star_equals, s_star)
-    MATCH_DOUBLE_OR_SINGLE_TOKEN('+', '=', s_plus_equals, s_plus)
     MATCH_DOUBLE_OR_SINGLE_TOKEN('/', '=', s_divide_equals, s_divide)
     MATCH_DOUBLE_OR_SINGLE_TOKEN('&', '&', s_and, s_ampersand)
-    MATCH_DOUBLE_OR_SINGLE_TOKEN('=', '=', s_equalsequals, s_equals)
+    MATCH_DOUBLE_OR_SINGLE_TOKEN('=', '=', s_equals_equals, s_equals)
     MATCH_DOUBLE_OR_SINGLE_TOKEN('!', '=', s_bang_equals, s_bang)
     MATCH_DOUBLE_OR_SINGLE_TOKEN('<', '=', s_lte, s_lt)
     MATCH_DOUBLE_OR_SINGLE_TOKEN('>', '=', s_gte, s_gt)
     MATCH_DOUBLE_OR_SINGLE_TOKEN('|', '|', s_or, 0) // '|' is not a valid single-character token in this language, only '||'
-    case '-': // 3 possible cases: '-', '->', '-='
+    
+    case '+': { // 3 possible cases: '+', '++', '+='
+      if (*(*ptr + 1) == '+') {
+        add_token(tokens, token_count, s_plus_plus, line, *column, 2, file_path, NULL);
+        *ptr += 2; (*column) += 2;
+        return 1;
+      }
+      DOUBLE_OR_SINGLE_CHAR_TOKEN_('=', s_plus_equals, s_plus)
+    }
+
+    case '-': { // 3 possible cases: '-', '--', '->', '-='
       if (*(*ptr + 1) == '>') {
         add_token(tokens, token_count, s_arrow, line, *column, 2, file_path, NULL);
         *ptr += 2; (*column) += 2;
         return 1;
+      } else if (*(*ptr + 1) == '-') {
+        add_token(tokens, token_count, s_minus_minus, line, *column, 2, file_path, NULL);
+        *ptr += 2; (*column) += 2;
+        return 1;
       }
       DOUBLE_OR_SINGLE_CHAR_TOKEN_('=', s_minus_equals, s_minus)
+    }
+
     default:
       return 0; // Not a recognized symbol
   }

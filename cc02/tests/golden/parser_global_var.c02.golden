@@ -9,7 +9,7 @@
    |     `- IntegerLiteral (67)
    |- GlobalVarDecl casted : u16
    |  `- CStyleCastExpr u16
-   |     `- DeclRefExpr signed_global
+   |     `- Identifier signed_global
    |- GlobalVarDecl grouped : i16
    |  `- BinaryOperator *
    |     |- BinaryOperator +
@@ -22,9 +22,9 @@
    |  `- StringLiteral "hello world"
    |- GlobalVarDecl global_ptr : u16*
    |  `- UnaryOperator &
-   |     `- DeclRefExpr casted
+   |     `- Identifier casted
    |- GlobalVarDecl signed_global_ptr : i16*
    |- GlobalVarDecl void_ptr : void*
    `- GlobalVarDecl dereffed : u16
-      `- UnaryOperator *
-         `- DeclRefExpr global_ptr
+      `- PtrDeref *
+         `- Identifier global_ptr

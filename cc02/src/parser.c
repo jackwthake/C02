@@ -398,7 +398,7 @@ static node_t *primary(parser_t *p) {
       } else {
         node_t *ident = ALLOC_NODE(p);
         ident->kind = NODE_IDENTIFIER;
-        ident->identifier = (char*)tok.value;;
+        ident->identifier = (char*)tok.value;
         return ident;
       }
     }
@@ -411,48 +411,13 @@ static node_t *primary(parser_t *p) {
 
 
 static node_t *unary(parser_t *p) {
+  op_t op;
   switch (CUR_TOK.type) {
-    case s_bang: {
-      ++p->pos;
-
-      node_t *operand = unary(p);
-      GUARD(p);
-
-      node_t *n = ALLOC_NODE(p);
-      n->kind = NODE_UNARY;
-      n->unary.op = OP_BANG;
-      n->unary.operand = operand;
-
-      return n;
-    }
-
-    case s_minus: {
-      ++p->pos;
-
-      node_t *operand = unary(p);
-      GUARD(p);
-
-      node_t *n = ALLOC_NODE(p);
-      n->kind = NODE_UNARY;
-      n->unary.op = OP_NEGATE;
-      n->unary.operand = operand;
-
-      return n;
-    }
-
-    case s_ampersand: {
-      ++p->pos;
-
-      node_t *operand = unary(p);
-      GUARD(p);
-
-      node_t *n = ALLOC_NODE(p);
-      n->kind = NODE_UNARY;
-      n->unary.op = OP_ADDRESSOF;
-      n->unary.operand = operand;
-
-      return n;
-    }
+    case s_bang:        op = OP_BANG; break;
+    case s_minus:       op = OP_NEGATE; break;
+    case s_ampersand:   op = OP_ADDRESSOF; break;
+    case s_plus_plus:   op = OP_INCREMENT; break;
+    case s_minus_minus: op = OP_DECREMENT; break;
 
     case s_star: case s_mem_lookup: {
       ++p->pos;
@@ -469,6 +434,18 @@ static node_t *unary(parser_t *p) {
 
     default: return primary(p);
   }
+
+  // reaching here means its a standard unary op, not a pecial case
+  ++p->pos; // consume unary op
+  node_t *operand = unary(p);
+  GUARD(p);
+
+  node_t *n = ALLOC_NODE(p);
+  n->kind = NODE_UNARY;
+  n->unary.op = op;
+  n->unary.operand = operand;
+
+  return n;
 }
 
 
@@ -480,8 +457,9 @@ static node_t *factor(parser_t *p) {
   for (;;) {
     op_t op;
     switch (CUR_TOK.type) {
-      case s_star:   op = OP_MULTIPLY; break;
-      case s_divide: op = OP_DIVIDE;   break;
+      case s_star:    op = OP_MULTIPLY; break;
+      case s_divide:  op = OP_DIVIDE;   break;
+      case s_modulus: op = OP_MODULUS;  break;
       default: return left;
     }
  
@@ -567,7 +545,7 @@ static node_t *equality(parser_t *p) {
   for (;;) {
     op_t op;
     switch (CUR_TOK.type) {
-      case s_equalsequals:  op = OP_EQUALSEQUALS; break;
+      case s_equals_equals:  op = OP_EQUALSEQUALS; break;
       case s_bang_equals:   op = OP_BANGEQUALS;   break;
       default: return left;
     }
@@ -615,13 +593,13 @@ static node_t *logical_and(parser_t *p) {
 
 
 // root of recursive descent
-// logical_or   looks for ||         calls logical_and
-// logical_and  looks for &&         calls equality
-// equality     looks for == !=      calls comparison
-// comparison   looks for < > <= >=  calls term
-// term         looks for + -        calls factor
-// factor       looks for * /        calls unary
-// unary        looks for * @ ! -    calls primary
+// logical_or   looks for ||            calls logical_and
+// logical_and  looks for &&            calls equality
+// equality     looks for == !=         calls comparison
+// comparison   looks for < > <= >=     calls term
+// term         looks for + -           calls factor
+// factor       looks for * / %         calls unary
+// unary        looks for * @ ! - ++ -- calls primary
 // primary      looks for literals, identifiers, (expr)   consumes tokens
 static node_t *logical_or(parser_t *p) {
   node_t *left = logical_and(p);
@@ -736,6 +714,13 @@ static node_t *parse_assignment(parser_t *p) {
     op_t op = 0; // used for compound assignments
 
     switch (p->tokens[p->pos + 1].type) {
+      // compound assignments
+      case s_plus_equals:    op = OP_PLUS;     break;
+      case s_minus_equals:   op = OP_MINUS;    break;
+      case s_star_equals:    op = OP_MULTIPLY; break;
+      case s_divide_equals:  op = OP_DIVIDE;   break;
+      case s_modulus_equals: op = OP_MODULUS;  break;
+
       case s_equals: { // normal assignment
         n = ALLOC_NODE(p);
         n->kind = NODE_ASSIGN;
@@ -748,43 +733,12 @@ static node_t *parse_assignment(parser_t *p) {
         return n;
       }
 
-      // compound assignments
-      case s_plus_equals: {
-        n = ALLOC_NODE(p);
-        n->kind = NODE_ASSIGN;
-        
-        op = OP_PLUS;
-        break;
-      }
-
-      case s_minus_equals: {
-        n = ALLOC_NODE(p);
-        n->kind = NODE_ASSIGN;
-        
-        op = OP_MINUS;
-        break;
-      }
-
-      case s_star_equals: {
-        n = ALLOC_NODE(p);
-        n->kind = NODE_ASSIGN;
-        
-        op = OP_MULTIPLY;
-        break;
-      }
-
-      case s_divide_equals: {
-        n = ALLOC_NODE(p);
-        n->kind = NODE_ASSIGN;
-        
-        op = OP_DIVIDE;
-        break;
-      }
-
-      default: return NULL; // not assignment or compound assignment
+      default: return parse_expr(p); // if error in parse_expr it will already return NULL and error will be set, no need for GUARD
     }
 
     // finish populating compound assignment
+    n = ALLOC_NODE(p);
+    n->kind = NODE_ASSIGN;
     n->assign.name = (char*)CUR_TOK.value;
     p->pos += 2; // consume identifier, then +=
 
@@ -1020,6 +974,18 @@ static node_t *parse_stmt(parser_t *p) {
       EXPECT_SYMBOL(s_semicolon, "';' after dereference assignment", "dereference assignment");
       GUARD(p);
       ++p->pos; // consume semicolon
+
+      return n;
+    }
+
+    case s_plus_plus:
+    case s_minus_minus: {
+      node_t *n = parse_expr(p);
+      GUARD(p);
+
+      EXPECT_SYMBOL(s_semicolon, "';' after expression", "expression statement");
+      GUARD(p);
+      ++p->pos; // consume ;
 
       return n;
     }

@@ -4,6 +4,11 @@ fn main() -> void {
       for(;;) {}
     }
   } else {
-    for (u8 x = 0; x < 69; x += 1);
+    for (u8 x = 0; x < 69; ++x);
+
+    if ((x % 3) == 0) {
+      x %= 3;
+      ++x;
+    }
   }
 }

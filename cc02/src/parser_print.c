@@ -26,8 +26,11 @@ static const char *type_name(type_kind_t kind) {
 
 static const char *op_name(op_t op) {
   switch (op) {
+    case OP_INCREMENT:     return "++";
+    case OP_DECREMENT:     return "--";
     case OP_PLUS:          return "+";
     case OP_MINUS:         return "-";
+    case OP_MODULUS:       return "%";
     case OP_MULTIPLY:      return "*";
     case OP_DIVIDE:        return "/";
     case OP_LT:            return "<";
@@ -48,11 +51,11 @@ static const char *node_kind_name(node_kind_t kind) {
   switch (kind) {
     case NODE_NUMBER:       return "IntegerLiteral";
     case NODE_STRING:       return "StringLiteral";
-    case NODE_IDENTIFIER:   return "DeclRefExpr";
+    case NODE_IDENTIFIER:   return "Identifier";
     case NODE_BINOP:        return "BinaryOperator";
     case NODE_UNARY:        return "UnaryOperator";
     case NODE_CALL:         return "CallExpr";
-    case NODE_DEREF:        return "UnaryOperator";
+    case NODE_DEREF:        return "PtrDeref";
     case NODE_CAST:         return "CStyleCastExpr";
     case NODE_VAR_DECL:     return "VarDecl";
     case NODE_ASSIGN:       return "AssignStmt";

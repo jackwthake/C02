@@ -1,52 +1,56 @@
 #ifndef __TOKENIZER_H__
 #define __TOKENIZER_H__
 
-#define TOKEN_TYPES                           \
-  /* token_t         printable     has_val */ \
-  X(t_invalid,       "INVALID"    , 0)        \
-  X(Kw_fn,           "fn"         , 0)        \
-  X(Kw_reg,          "reg"        , 0)        \
-  X(Kw_return,       "return"     , 0)        \
-  X(Kw_void,         "void"       , 0)        \
-  X(Kw_if,           "if"         , 0)        \
-  X(Kw_else,         "else"       , 0)        \
-  X(Kw_while,        "while"      , 0)        \
-  X(Kw_for,          "for"        , 0)        \
-  X(t_u8,            "u8"         , 0)        \
-  X(t_i8,            "i8"         , 0)        \
-  X(t_u16,           "u16"        , 0)        \
-  X(t_i16,           "i16"        , 0)        \
-  X(s_mem_lookup,    "@"          , 0)        \
-  X(s_arrow,         "->"         , 0)        \
-  X(s_divide,        "/"          , 0)        \
-  X(s_divide_equals, "/="         , 0)        \
-  X(s_lparen,        "("          , 0)        \
-  X(s_rparen,        ")"          , 0)        \
-  X(s_lbrace,        "{"          , 0)        \
-  X(s_rbrace,        "}"          , 0)        \
-  X(s_semicolon,     ";"          , 0)        \
-  X(s_ampersand,     "&"          , 0)        \
-  X(s_comma,         ","          , 0)        \
-  X(s_plus,          "+"          , 0)        \
-  X(s_minus,         "-"          , 0)        \
-  X(s_equals,        "="          , 0)        \
-  X(s_star,          "*"          , 0)        \
-  X(s_star_equals,   "*="         , 0)        \
-  X(s_equalsequals,  "=="         , 0)        \
-  X(s_plus_equals,   "+="         , 0)        \
-  X(s_minus_equals,  "-="         , 0)        \
-  X(s_bang,          "!"          , 0)        \
-  X(s_bang_equals,   "!="         , 0)        \
-  X(s_lt,            "<"          , 0)        \
-  X(s_gt,            ">"          , 0)        \
-  X(s_lte,           "<="         , 0)        \
-  X(s_gte,           ">="         , 0)        \
-  X(s_and,           "&&"         , 0)        \
-  X(s_or,            "||"         , 0)        \
-  X(l_num,           "NUMBER"     , 1)        \
-  X(l_string,        "STRING"     , 1)        \
-  X(l_identifier,    "IDENTIFIER" , 1)        \
-  X(t_eof,           "END_OF_FILE", 0)
+#define TOKEN_TYPES                            \
+  /* token_t          printable     has_val */ \
+  X(t_invalid,        "INVALID"    , 0)        \
+  X(Kw_fn,            "fn"         , 0)        \
+  X(Kw_reg,           "reg"        , 0)        \
+  X(Kw_return,        "return"     , 0)        \
+  X(Kw_void,          "void"       , 0)        \
+  X(Kw_if,            "if"         , 0)        \
+  X(Kw_else,          "else"       , 0)        \
+  X(Kw_while,         "while"      , 0)        \
+  X(Kw_for,           "for"        , 0)        \
+  X(t_u8,             "u8"         , 0)        \
+  X(t_i8,             "i8"         , 0)        \
+  X(t_u16,            "u16"        , 0)        \
+  X(t_i16,            "i16"        , 0)        \
+  X(s_mem_lookup,     "@"          , 0)        \
+  X(s_arrow,          "->"         , 0)        \
+  X(s_divide,         "/"          , 0)        \
+  X(s_divide_equals,  "/="         , 0)        \
+  X(s_lparen,         "("          , 0)        \
+  X(s_rparen,         ")"          , 0)        \
+  X(s_lbrace,         "{"          , 0)        \
+  X(s_rbrace,         "}"          , 0)        \
+  X(s_semicolon,      ";"          , 0)        \
+  X(s_ampersand,      "&"          , 0)        \
+  X(s_comma,          ","          , 0)        \
+  X(s_modulus,        "%"          , 0)        \
+  X(s_modulus_equals, "%="         , 0)        \
+  X(s_plus,           "+"          , 0)        \
+  X(s_plus_plus,      "++"         , 0)        \
+  X(s_minus,          "-"          , 0)        \
+  X(s_minus_minus,    "--"         , 0)        \
+  X(s_equals,         "="          , 0)        \
+  X(s_star,           "*"          , 0)        \
+  X(s_star_equals,    "*="         , 0)        \
+  X(s_equals_equals,  "=="         , 0)        \
+  X(s_plus_equals,    "+="         , 0)        \
+  X(s_minus_equals,   "-="         , 0)        \
+  X(s_bang,           "!"          , 0)        \
+  X(s_bang_equals,    "!="         , 0)        \
+  X(s_lt,             "<"          , 0)        \
+  X(s_gt,             ">"          , 0)        \
+  X(s_lte,            "<="         , 0)        \
+  X(s_gte,            ">="         , 0)        \
+  X(s_and,            "&&"         , 0)        \
+  X(s_or,             "||"         , 0)        \
+  X(l_num,            "NUMBER"     , 1)        \
+  X(l_string,         "STRING"     , 1)        \
+  X(l_identifier,     "IDENTIFIER" , 1)        \
+  X(t_eof,            "END_OF_FILE", 0)
 
 typedef enum {
   #define X(tok, str, has_val) tok,

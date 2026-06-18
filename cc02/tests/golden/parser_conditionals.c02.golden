@@ -10,16 +10,28 @@
          |     `- [body]
          |        `- ForStmt
          `- [else body]
-            `- ForStmt
-               |- [init]
-               |  `- VarDecl x : u8
-               |     `- IntegerLiteral (0)
+            |- ForStmt
+            |  |- [init]
+            |  |  `- VarDecl x : u8
+            |  |     `- IntegerLiteral (0)
+            |  |- [cond]
+            |  |  `- BinaryOperator <
+            |  |     |- Identifier x
+            |  |     `- IntegerLiteral (69)
+            |  `- [step]
+            |     `- UnaryOperator ++
+            |        `- Identifier x
+            `- IfStmt
                |- [cond]
-               |  `- BinaryOperator <
-               |     |- DeclRefExpr x
-               |     `- IntegerLiteral (69)
-               `- [step]
-                  `- AssignStmt x =
-                     `- BinaryOperator +
-                        |- DeclRefExpr x
-                        `- IntegerLiteral (1)
+               |  `- BinaryOperator ==
+               |     |- BinaryOperator %
+               |     |  |- Identifier x
+               |     |  `- IntegerLiteral (3)
+               |     `- IntegerLiteral (0)
+               `- [then body]
+                  |- AssignStmt x =
+                  |  `- BinaryOperator %
+                  |     |- Identifier x
+                  |     `- IntegerLiteral (3)
+                  `- UnaryOperator ++
+                     `- Identifier x
