@@ -1,6 +1,6 @@
 **/*/target
 **/*/*.o
 *.vsix
-.vscode/settings.json
+.vscode
 bin/
 *.out

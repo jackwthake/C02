@@ -54,6 +54,24 @@ def run_test(path):
 
     return True
 
+def run_valgrind(path):
+    filename = os.path.basename(path)
+    flags = ["--error-exitcode=69", "--leak-check=full", "--errors-for-leak-kinds=all"]
+    c02_flags = get_flags(filename)
+    result = subprocess.run(
+        ["valgrind"] + flags + [BIN] + c02_flags + [path],
+        capture_output=True, text=True
+    )
+
+    if result.returncode == 69: # Failed
+        print(f"    `- valgrind check: {FAIL} {filename}")
+        print(result.stderr)
+        return False
+    
+    print(f"    `- valgrind check: {PASS} {filename}\n")
+    return True
+        
+
 def update_golden(path):
     filename = os.path.basename(path)
     if should_fail(filename):
@@ -89,6 +107,11 @@ if __name__ == "__main__":
             update_golden(path)
         else:
             if run_test(path):
+                passed += 1
+            else:
+                failed += 1
+            
+            if run_valgrind(path):
                 passed += 1
             else:
                 failed += 1
