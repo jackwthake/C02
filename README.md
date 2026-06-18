@@ -1,9 +1,9 @@
 <div align="center">
  
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="./docs/logo-dark.svg">
-    <source media="(prefers-color-scheme: light)" srcset="./docs/logo-light.svg">
-    <img alt="C02 Logo" src="./docs/logo-light.svg">
+    <source media="(prefers-color-scheme: dark)" srcset="./docs/logo-dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="./docs/logo-light.png">
+    <img alt="C02 Logo" src="./docs/logo-light.svg" width="300">
   </picture>
 
   Strongly typed, C-like systems programming language built for resource-constrained 8-bit microprocessors.
