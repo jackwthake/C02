@@ -1,6 +1,6 @@
 fn main() -> void {
-  if (1) {
-    while (0) {
+  if (true) {
+    while (false) {
       for(;;) {}
     }
   } else {

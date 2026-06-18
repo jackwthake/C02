@@ -375,6 +375,8 @@ static int tokenize_keyword_or_identifier(token_t *tokens, unsigned *token_count
     MATCH_KEYWORD("u16",    t_u16, NULL)
     MATCH_KEYWORD("i16",    t_i16, NULL)
     MATCH_KEYWORD("null",   l_num, make_long(0)) // treat 'null' as a special numeric literal with value 0
+    MATCH_KEYWORD("false",  l_num, make_long(0)) // treat 'flase' as a special numeric literal with value 1
+    MATCH_KEYWORD("true",   l_num, make_long(1)) // treat 'true' as a special numeric literal with value 1
 
   if (isalpha((unsigned char)**ptr) || **ptr == '_') {
     // Handle identifiers (and potentially keywords that aren't reserved)
