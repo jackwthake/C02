@@ -931,8 +931,13 @@ static node_t *parse_stmt(parser_t *p) {
         ++p->pos; // consume )
       }
 
-      n->for_stmt.body = parse_block(p);
-      GUARD(p);
+      // check for empty body
+      if (CUR_TOK.type != s_semicolon) {
+        n->for_stmt.body = parse_block(p);
+        GUARD(p);
+      } else {
+        ++p->pos; // consume ;
+      }
 
       return n;
     }

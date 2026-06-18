@@ -1,0 +1,25 @@
+`- TranslationUnitDecl
+   `- FunctionDecl main() -> void
+      `- IfStmt
+         |- [cond]
+         |  `- IntegerLiteral (1)
+         |- [then body]
+         |  `- WhileStmt
+         |     |- [cond]
+         |     |  `- IntegerLiteral (0)
+         |     `- [body]
+         |        `- ForStmt
+         `- [else body]
+            `- ForStmt
+               |- [init]
+               |  `- VarDecl x : u8
+               |     `- IntegerLiteral (0)
+               |- [cond]
+               |  `- BinaryOperator <
+               |     |- DeclRefExpr x
+               |     `- IntegerLiteral (69)
+               `- [step]
+                  `- AssignStmt x =
+                     `- BinaryOperator +
+                        |- DeclRefExpr x
+                        `- IntegerLiteral (1)

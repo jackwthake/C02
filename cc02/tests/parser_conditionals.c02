@@ -1,0 +1,9 @@
+fn main() -> void {
+  if (1) {
+    while (0) {
+      for(;;) {}
+    }
+  } else {
+    for (u8 x = 0; x < 69; x += 1);
+  }
+}
