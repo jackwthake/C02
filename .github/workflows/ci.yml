@@ -26,3 +26,11 @@ jobs:
 
       - name: Test
         run: make test
+
+      - name: Compile Examples
+        run: |
+            set -e
+            for f in examples/*.c02; do
+              echo "compiling $f"
+              ./bin/cc02 --syntax-check-only "$f"
+            done

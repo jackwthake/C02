@@ -16,7 +16,7 @@ def should_fail(filename):
 
 def get_flags(filename):
     if should_fail(filename):
-        return ["--check-syntax-only"]
+        return ["--syntax-check-only"]
     return ["--ast-dump"]
 
 def run_test(path):
