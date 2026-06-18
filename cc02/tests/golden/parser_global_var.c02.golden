@@ -1,0 +1,30 @@
+`- TranslationUnitDecl
+   |- GlobalVarDecl global : u8
+   |  `- IntegerLiteral (10)
+   |- GlobalVarDecl signed_global : i8
+   |  `- BinaryOperator /
+   |     |- BinaryOperator *
+   |     |  |- IntegerLiteral (69)
+   |     |  `- IntegerLiteral (420)
+   |     `- IntegerLiteral (67)
+   |- GlobalVarDecl casted : u16
+   |  `- CStyleCastExpr u16
+   |     `- DeclRefExpr signed_global
+   |- GlobalVarDecl grouped : i16
+   |  `- BinaryOperator *
+   |     |- BinaryOperator +
+   |     |  |- IntegerLiteral (10)
+   |     |  `- IntegerLiteral (59)
+   |     `- BinaryOperator *
+   |        |- IntegerLiteral (42)
+   |        `- IntegerLiteral (10)
+   |- GlobalVarDecl string : u8*
+   |  `- StringLiteral "hello world"
+   |- GlobalVarDecl global_ptr : u16*
+   |  `- UnaryOperator &
+   |     `- DeclRefExpr casted
+   |- GlobalVarDecl signed_global_ptr : i16*
+   |- GlobalVarDecl void_ptr : void*
+   `- GlobalVarDecl dereffed : u16
+      `- UnaryOperator *
+         `- DeclRefExpr global_ptr
