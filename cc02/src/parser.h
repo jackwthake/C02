@@ -58,7 +58,7 @@ typedef enum {
   NODE_IF,
   NODE_WHILE,
   NODE_FOR,
-  NODE_EXPR_STMT,
+  NODE_BLOCK,
   // top-level
   NODE_FUNCTION,
   NODE_REG_DECL,
@@ -136,30 +136,31 @@ struct node_t {
 
     struct {
       node_t     *cond;
-      node_list_t then_block;
-      node_list_t else_block;             // .count == 0 if no else
+
+      // blocks[0] == then block, after that else if's are if nodes in the list, a bare block node is an else block with no if
+      node_list_t blocks;
     } if_stmt;                            // NODE_IF
 
     struct {
-      node_t     *cond;
-      node_list_t body;
+      node_t *cond;
+      node_t *body;
     } while_stmt;                         // NODE_WHILE
 
     struct {
       node_t     *initialiser;
       node_t     *cond;
       node_t     *incrementer;
-      node_list_t body;
+      node_t     *body;
     } for_stmt;                           // NODE_FOR
 
-    node_t *expr_stmt;                    // NODE_EXPR_STMT
+    node_list_t block;                    // NODE_BLOCK
 
     // --- top-level ---
     struct {
       char        *name;
       param_list_t params;
       type_t       return_type;
-      node_list_t  body;
+      node_t      *body;
     } function;                           // NODE_FUNCTION
 
     struct {

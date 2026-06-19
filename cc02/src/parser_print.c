@@ -64,7 +64,7 @@ static const char *node_kind_name(node_kind_t kind) {
     case NODE_IF:           return "IfStmt";
     case NODE_WHILE:        return "WhileStmt";
     case NODE_FOR:          return "ForStmt";
-    case NODE_EXPR_STMT:    return "ExprStmt";
+    case NODE_BLOCK:        return "CompoundStmt";
     case NODE_FUNCTION:     return "FunctionDecl";
     case NODE_REG_DECL:     return "RegDecl";
     case NODE_GLOBAL_VAR:   return "GlobalVarDecl";
@@ -133,7 +133,7 @@ static void print_ast_label(node_t *node) {
     case NODE_FOR:
       printf("%s", node_kind_name(node->kind));
       break;
-    case NODE_EXPR_STMT:
+    case NODE_BLOCK:
       printf("%s", node_kind_name(node->kind));
       break;
     case NODE_FUNCTION:
@@ -251,41 +251,51 @@ static void print_ast_(node_t *node, int is_last, const char *prefix) {
       break;
 
     case NODE_IF: {
-      int has_else = node->if_stmt.else_block.count > 0;
       print_ast_labeled("[cond]", node->if_stmt.cond, 0, child_prefix);
 
+      unsigned has_else = node->if_stmt.blocks.count > 1;
       printf("%s%s[then body]\n", child_prefix, has_else ? "|- " : "`- ");
+
       char body_prefix[AST_PRINT_MAX_DEPTH];
       strcpy(body_prefix, child_prefix);
       strcat(body_prefix, has_else ? "|  " : "   ");
-      print_ast_list(node->if_stmt.then_block, body_prefix);
+      print_ast_(node->if_stmt.blocks.items[0], !has_else, body_prefix);
 
-      if (has_else) {
-        printf("%s`- [else body]\n", child_prefix);
+      for (unsigned i = 1; i < node->if_stmt.blocks.count; ++i) {
+        node_t *block = node->if_stmt.blocks.items[i];
+        unsigned has_more_blocks = i < node->if_stmt.blocks.count - 1;
+
+        if (block->kind == NODE_IF) {
+          printf("%s%s[else if body]\n", child_prefix, has_more_blocks ? "|- " : "`- ");
+        } else {
+          printf("%s%s[else body]\n", child_prefix, has_more_blocks ? "|- " : "`- ");
+        }
+
         char else_prefix[AST_PRINT_MAX_DEPTH];
         strcpy(else_prefix, child_prefix);
         strcat(else_prefix, "   ");
-        print_ast_list(node->if_stmt.else_block, else_prefix);
+        print_ast_(block, !has_more_blocks, else_prefix);
       }
+
       break;
     }
 
     case NODE_WHILE: {
       print_ast_labeled("[cond]", node->while_stmt.cond, 0, child_prefix);
 
-      if (node->while_stmt.body.count > 0) {
+      if (node->while_stmt.body) {
         printf("%s`- [body]\n", child_prefix);
         char body_prefix[AST_PRINT_MAX_DEPTH];
         strcpy(body_prefix, child_prefix);
         strcat(body_prefix, "   ");
-        print_ast_list(node->while_stmt.body, body_prefix);
+        print_ast_(node->while_stmt.body, 1, body_prefix);
       }
 
       break;
     }
 
     case NODE_FOR: {
-      int has_body = node->for_stmt.body.count > 0;
+      int has_body = node->for_stmt.body != NULL;
       if (node->for_stmt.initialiser)
         print_ast_labeled("[init]", node->for_stmt.initialiser, 0, child_prefix);
       if (node->for_stmt.cond)
@@ -297,19 +307,17 @@ static void print_ast_(node_t *node, int is_last, const char *prefix) {
         char body_prefix[AST_PRINT_MAX_DEPTH];
         strcpy(body_prefix, child_prefix);
         strcat(body_prefix, "   ");
-        print_ast_list(node->for_stmt.body, body_prefix);
+        print_ast_(node->for_stmt.body, 1, body_prefix);
       }
       break;
     }
 
-    case NODE_EXPR_STMT:
-      if (node->expr_stmt) {
-        print_ast_(node->expr_stmt, 1, child_prefix);
-      }
+    case NODE_BLOCK:
+      print_ast_list(node->block, child_prefix);
       break;
 
     case NODE_FUNCTION:
-      print_ast_list(node->function.body, child_prefix);
+      print_ast_(node->function.body, 1, child_prefix);
       break;
 
     case NODE_REG_DECL:

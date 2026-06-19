@@ -724,6 +724,17 @@ static node_list_t parse_block(parser_t *p) {
 }
 
 
+static node_t *parse_block_node(parser_t *p) {
+  node_t *block = ALLOC_NODE(p);
+  block->kind = NODE_BLOCK;
+
+  block->block = parse_block(p);
+  GUARD(p);
+
+  return block;
+}
+
+
 static node_t *parse_assignment(parser_t *p) {
   if (p->pos + 1 < p->count) {
     node_t *n;
@@ -849,7 +860,7 @@ static node_t *parse_stmt(parser_t *p) {
       GUARD(p);
       ++p->pos;
 
-      n->while_stmt.body = parse_block(p);
+      n->while_stmt.body = parse_block_node(p);
       GUARD(p);
 
       return n;
@@ -903,7 +914,7 @@ static node_t *parse_stmt(parser_t *p) {
 
       // check for empty body
       if (CUR_TOK.type != s_semicolon) {
-        n->for_stmt.body = parse_block(p);
+        n->for_stmt.body = parse_block_node(p);
         GUARD(p);
       } else {
         ++p->pos; // consume ;
@@ -929,16 +940,24 @@ static node_t *parse_stmt(parser_t *p) {
       GUARD(p);
       ++p->pos;
 
-      n->if_stmt.then_block = parse_block(p);
+      scratch_t scratch = { 0 };
+      scratch_push(&scratch, parse_block_node(p), p); // parse then block
       GUARD(p);
 
-      if (CUR_TOK.type == Kw_else) {
+      while (CUR_TOK.type == Kw_else) {
         ++p->pos; // consume else
-        n->if_stmt.else_block = parse_block(p);
-        GUARD(p);
-      } else {
-        n->if_stmt.else_block.count = 0;
+
+        if (CUR_TOK.type == Kw_if) {
+          scratch_push(&scratch, parse_stmt(p), p);
+          GUARD(p);
+        } else {
+          scratch_push(&scratch, parse_block_node(p), p);
+          GUARD(p);
+        }
       }
+
+      n->if_stmt.blocks = scratch_commit(&scratch, p->arena);
+      free(scratch.items);
 
       return n;
     }
@@ -1070,7 +1089,7 @@ static node_t *parse_function(parser_t *p) {
   GUARD(p);
 
   // parse block
-  func_decl->function.body = parse_block(p);
+  func_decl->function.body = parse_block_node(p);
   GUARD(p);
 
   return func_decl;

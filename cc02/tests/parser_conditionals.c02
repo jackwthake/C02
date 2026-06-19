@@ -3,12 +3,22 @@ fn main() -> void {
     while (false) {
       for(;;) {}
     }
+  } else if (false) {
+    u8 x = 10 * 42;
   } else {
-    for (u8 x = 0; x < 69; ++x);
+    for (u8 x = 0; x < 69; ++x) {
+      x %= 2;
+    }
 
     if ((x % 3) == 0) {
       x %= 3;
       ++x;
+    } else if (true) {
+      --x;
+    } else {
+      x += 10;
     }
+
+    --x;
   }
 }
