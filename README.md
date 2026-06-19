@@ -56,6 +56,7 @@ cc02 [OPTIONS] <FILE>
 - `--token-dump`:         Dump the token list after tokenization
 - `--ast-dump`:           Dump the AST using print_ast after parsing
 - `--syntax-check-only`:  Stop after syntax and semantic checks
+- `--time-report`:        Prints a report showing how long each stage of compilation took
 - `-o, --output`:         Specify output file
 
 ### Compilation Example

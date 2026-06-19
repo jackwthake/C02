@@ -1,8 +1,10 @@
+#define _POSIX_C_SOURCE 199309L
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <getopt.h>
+#include <time.h> 
 
 #include "colors.h"
 
@@ -15,6 +17,7 @@ typedef struct params_t {
   int dump_tokens;
   int dump_ast;
   int syntax_only;
+  int time_report;
   char *output;
   char *input;
 } params_t;
@@ -27,6 +30,7 @@ static void print_help(const char *prog_name) {
   fprintf(stderr, "  --token-dump         Dump the token list after tokenization\n");
   fprintf(stderr, "  --ast-dump           Dump the AST using print_ast after parsing\n");
   fprintf(stderr, "  --syntax-check-only  Stop after syntax and semantic checks\n");
+  fprintf(stderr, "  --time-report        Prints a report showing how long each stage of compilation took\n");
   fprintf(stderr, "  -o, --output         Specify output file (not implemented yet)\n");
 }
 
@@ -37,6 +41,7 @@ static int read_params(int argc, char * const *argv, params_t *params) {
     {"token-dump", no_argument, 0, 1},
     {"ast-dump", no_argument, 0, 2},
     {"syntax-check-only", no_argument, 0, 3},
+    {"time-report", no_argument, 0, 4},
     {"output", required_argument, 0, 'o'},
     {0, 0, 0, 0},
   };
@@ -60,6 +65,9 @@ static int read_params(int argc, char * const *argv, params_t *params) {
         break;
       case 3:
         params->syntax_only = 1;
+        break;
+      case 4:
+        params->time_report = 1;
         break;
       default:
         fprintf(stderr, "Bad options: use %s -h to display help message\n", argv[0]);
@@ -134,6 +142,15 @@ static long load_file(const char *file_path, char **out_content) {
   return fsize + 1;
 }
 
+/* * Helper function to get the current time in milliseconds.
+ * Uses CLOCK_MONOTONIC to protect against system clock changes.
+ */
+static double get_time_ms(void) {
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (double)ts.tv_sec * 1000.0 + (double)ts.tv_nsec / 1000000.0;
+}
+
 
 int main(int argc, char * const *argv) {
   ENABLE_COLORS();
@@ -146,16 +163,26 @@ int main(int argc, char * const *argv) {
     return parse_status == 2 ? 0 : 1;
   }
 
+  /* Timing variables */
+  double t_total_start = get_time_ms();
+  double t_step_start;
+  double t_load = 0.0, t_lex = 0.0, t_parse = 0.0, t_sema = 0.0, t_codegen = 0.0;
+
   /* Load the input file */
+  t_step_start = get_time_ms();
   char *source_code;
   long fsize;
   if ((fsize = load_file(params.input, &source_code)) < 0) {
     return 1;
   }
+  t_load = get_time_ms() - t_step_start;
   
   /* tokenize the source code */
+  t_step_start = get_time_ms();
   unsigned num_tokens;
   token_t *tokens = tokenize(params.input, source_code, fsize, &num_tokens);
+  t_lex = get_time_ms() - t_step_start; /* Exclude I/O dump time */
+  
   if (!tokens) {
     free(source_code);
     return 1;
@@ -166,6 +193,7 @@ int main(int argc, char * const *argv) {
   }
 
   /* parse the tokens into an AST */
+  t_step_start = get_time_ms();
   parser_arena_t parser_area;
   if (!parser_init(&parser_area, PARSER_CHUNK_ALLOC_SIZE)) {
     fprintf(stderr, "Parser allocation failed.");
@@ -175,6 +203,8 @@ int main(int argc, char * const *argv) {
   }
 
   node_t *ast = parse(tokens, num_tokens, &parser_area);
+  t_parse = get_time_ms() - t_step_start; /* Exclude I/O dump time */
+
   if (!ast) {
     free(source_code);
     free_tokens(tokens, num_tokens);
@@ -185,20 +215,42 @@ int main(int argc, char * const *argv) {
   if (params.dump_ast) {
     print_ast(ast);
   }
-
   
   /* Semantic analysis */
-  
+  t_step_start = get_time_ms();
   /* After analysis, source code is no longer needed */
   free(source_code);
+  t_sema = get_time_ms() - t_step_start;
   
   if (params.syntax_only) {
     goto finish;
   }
 
   /* Code generation */
+  t_step_start = get_time_ms();
+
+  t_codegen = get_time_ms() - t_step_start;
 
 finish:
+  /* Print Timing Report if flag was passed */
+  if (params.time_report) {
+    double t_total = get_time_ms() - t_total_start;
+    printf("\n=== Compilation Time Report ===\n");
+    printf("File Load:      %8.3f ms\n", t_load);
+    printf("Tokenization:   %8.3f ms\n", t_lex);
+    printf("Parsing:        %8.3f ms\n", t_parse);
+    printf("Sem. Analysis:  %8.3f ms\n", t_sema);
+    
+    if (params.syntax_only) {
+      printf("Code Gen:       %8s\n", "Skipped");
+    } else {
+      printf("Code Gen:       %8.3f ms\n", t_codegen);
+    }
+    printf("-------------------------------\n");
+    printf("Total Time:     %8.3f ms\n", t_total);
+    printf("===============================\n\n");
+  }
+
   free_tokens(tokens, num_tokens);
   parser_free(&parser_area);
 
