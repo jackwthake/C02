@@ -102,6 +102,13 @@ typedef struct {
   } while(0)                                       \
 
 
+#define GENERATE_ALLOCATOR_ERROR()                                                                        \
+  do {                                                                                                    \
+    token_t err = { .type = t_eof, .line = __LINE__, .column = 0, .length = 0, .file_path = "parser.c" }; \
+    GENERATE_ERROR(ALLOCATION_FAILED, err, "", "");                                                       \
+  } while(0);
+
+
 #define EXPECT_SYMBOL(EXPECTED, ERR_EXPECTED, ERR_CTX)                     \
   do {                                                                     \
     if (CUR_TOK.type != EXPECTED) {                                        \
@@ -190,11 +197,14 @@ void parser_free(parser_arena_t *a) {
 }
 
 
-static void scratch_push(scratch_t *s, node_t *node) {
+static void scratch_push(scratch_t *s, node_t *node, parser_t *p) {
   if (s->count == s->capacity) {
     s->capacity = s->capacity ? s->capacity * 2 : 8;
     node_t **grown = realloc(s->items, sizeof(node_t*) * s->capacity);
-    if (!grown) { /* handle */ return; }
+    if (!grown) {
+      GENERATE_ALLOCATOR_ERROR();
+      return;
+    }
     s->items = grown;
   }
   s->items[s->count++] = node;
@@ -214,11 +224,14 @@ static node_list_t scratch_commit(scratch_t *s, parser_arena_t *arena) {
 }
 
 
-static void param_scratch_push(param_scratch_t *s, param_t param) {
+static void param_scratch_push(param_scratch_t *s, param_t param, parser_t *p) {
   if (s->count == s->capacity) {
     s->capacity = s->capacity ? s->capacity * 2 : 8;
     param_t *grown = realloc(s->items, sizeof(param_t) * s->capacity);
-    if (!grown) return;
+    if (!grown) {
+      GENERATE_ALLOCATOR_ERROR();
+      return;
+    }
     s->items = grown;
   }
   s->items[s->count++] = param;
@@ -316,7 +329,8 @@ static node_t *parse_function_call_site(parser_t *p, char *name) {
     node_t *arg = logical_or(p);
     GUARD(p);
 
-    scratch_push(&scratch, arg);
+    scratch_push(&scratch, arg, p);
+    GUARD(p);
     if (CUR_TOK.type == s_comma) ++p->pos;
   }
 
@@ -662,7 +676,8 @@ static param_list_t parse_function_params(parser_t *p) {
 
     ++p->pos; // consume identifier
 
-    param_scratch_push(&scratch, param);
+    param_scratch_push(&scratch, param, p);
+    if (p->err) { free(scratch.items); return params; }
     if (CUR_TOK.type == s_comma) ++p->pos;
   }
 
@@ -694,7 +709,8 @@ static node_list_t parse_block(parser_t *p) {
     node_t *statement = parse_stmt(p);
     if (p->err) { free(scratch.items); return block; }
 
-    scratch_push(&scratch, statement);
+    scratch_push(&scratch, statement, p);
+    if (p->err) { free(scratch.items); return block; }
   }
 
   block = scratch_commit(&scratch, p->arena);
@@ -1149,7 +1165,7 @@ node_t *parse(token_t *tokens, unsigned num_tokens, parser_arena_t *mem_area) {
 
   scratch_t scratch = {0};
   while (p.pos < p.count && p.tokens[p.pos].type != t_eof) {
-    scratch_push(&scratch, parse_toplevel(&p));
+    scratch_push(&scratch, parse_toplevel(&p), &p);
 
     if (p.has_errored) {
       print_parse_error(p.err);

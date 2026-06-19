@@ -333,18 +333,25 @@ void print_ast(node_t *node) {
 }
 
 
-#define PRINT_ERROR_MESG_VAL(err_string, val)                                             \
+#define PRINT_ERR_HEADER_(err_string, val)                                                \
   do {                                                                                    \
-    fprintf(stderr, BOLD_WHITE "%s" RESET ":" BOLD_WHITE "%u" RESET ":" BOLD_WHITE "%u: " \
+  fprintf(stderr, BOLD_WHITE "%s" RESET ":" BOLD_WHITE "%u" RESET ":" BOLD_WHITE "%u: "   \
               BOLD_RED "error: " RESET err_string "\n",                                   \
               tok->file_path, tok->line, tok->column, val);                               \
+  } while (0);
+
+#define PRINT_ERR_HEADER(err_string) \
+    PRINT_ERR_HEADER_(err_string, "")
+
+#define PRINT_ERROR_MESG_VAL(err_string, val)                                             \
+  do {                                                                                    \
+    PRINT_ERR_HEADER_(err_string, val);                                                   \
     fprintf(stderr, "  =" BOLD_BLUE " expected: " RESET BLUE "%s\n" RESET, e->expected);  \
     fprintf(stderr, "  =" BOLD_BLUE " context:  " RESET BLUE "%s\n" RESET, e->context);   \
   } while (0)
 
 #define PRINT_ERROR_MESG(err_string) \
   PRINT_ERROR_MESG_VAL(err_string, "")
-
 
 void print_parse_error(error_t *e) {
   const token_t *tok = &e->found;
@@ -354,6 +361,12 @@ void print_parse_error(error_t *e) {
       PRINT_ERROR_MESG("unexpected end of file");
       print_error_line(tok->line, tok->column, 1);
       return;
+    
+    case ALLOCATION_FAILED: {
+      fprintf(stderr, BOLD_BLUE "[c02 Internal] " RESET );
+      PRINT_ERR_HEADER("Internal parsing allocation failed - this is a bug, please report it."); // will print c02 internal file name and not user's c02 code
+      return;
+    }
 
     case UNEXPECTED_TOKEN: {
       if (token_has_value(tok->type)) {

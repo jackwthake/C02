@@ -201,7 +201,8 @@ typedef struct {
 /* error reporting types, internal to parsing code */
 typedef enum {
   UNEXPECTED_EOF,
-  UNEXPECTED_TOKEN
+  UNEXPECTED_TOKEN,
+  ALLOCATION_FAILED
 } error_type_t;
 
 typedef struct {
