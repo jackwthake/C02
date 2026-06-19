@@ -58,6 +58,23 @@
     return 1;                                                                  \
   }
 
+#define TRIPPLE_TOKEN_CHAR_(ch, DOUBLE_TYPE, EQ_TYPE, SINGLE_TYPE)        \
+  do {                                                                            \
+    if (*(*ptr + 1) == (ch)) {                                          \
+      add_token(tokens, token_count, (DOUBLE_TYPE), line, *column, 2, file_path, NULL); \
+      *ptr += 2; (*column) += 2;                                                 \
+      return 1;                                                                  \
+    }                                                                            \
+    DOUBLE_OR_SINGLE_CHAR_TOKEN_('=', (EQ_TYPE), (SINGLE_TYPE))                  \
+  } while (0)
+
+
+#define TRIPPLE_TOKEN_CHAR(ch, DOUBLE_TYPE, EQ_TYPE, SINGLE_TYPE) \
+  case ch: { \
+    TRIPPLE_TOKEN_CHAR_(ch, DOUBLE_TYPE, EQ_TYPE, SINGLE_TYPE); \
+  }
+
+
 #define PRINT_ERROR_HEADER(file_path, err_line, err_col)                       \
   fprintf(stderr, BOLD_WHITE "%s" RESET ":" BOLD_WHITE "%u" RESET ":" BOLD_WHITE "%u" RESET ": " BOLD_RED "error: " RESET, \
     file_path, err_line, err_col)
@@ -218,33 +235,29 @@ static int skip_whitespace_and_comments(char **ptr, unsigned *line, unsigned *co
 static int tokenize_symbol(token_t *tokens, unsigned *token_count, char **ptr, unsigned line, unsigned *column, char *file_path) {
   char c = **ptr;
   switch (c) {
-    MATCH_SINGLE_CHAR_SYMBOL(';', s_semicolon)
-    MATCH_SINGLE_CHAR_SYMBOL('(', s_lparen)
-    MATCH_SINGLE_CHAR_SYMBOL(')', s_rparen)
-    MATCH_SINGLE_CHAR_SYMBOL('{', s_lbrace)
-    MATCH_SINGLE_CHAR_SYMBOL('}', s_rbrace)
-    MATCH_SINGLE_CHAR_SYMBOL('@', s_mem_lookup)
-    MATCH_SINGLE_CHAR_SYMBOL(',', s_comma)
-    MATCH_DOUBLE_OR_SINGLE_TOKEN('%', '=', s_modulus_equals, s_modulus)
-    MATCH_DOUBLE_OR_SINGLE_TOKEN('*', '=', s_star_equals, s_star)
-    MATCH_DOUBLE_OR_SINGLE_TOKEN('/', '=', s_divide_equals, s_divide)
-    MATCH_DOUBLE_OR_SINGLE_TOKEN('&', '&', s_and, s_ampersand)
-    MATCH_DOUBLE_OR_SINGLE_TOKEN('=', '=', s_equals_equals, s_equals)
-    MATCH_DOUBLE_OR_SINGLE_TOKEN('!', '=', s_bang_equals, s_bang)
-    MATCH_DOUBLE_OR_SINGLE_TOKEN('<', '=', s_lte, s_lt)
-    MATCH_DOUBLE_OR_SINGLE_TOKEN('>', '=', s_gte, s_gt)
-    MATCH_DOUBLE_OR_SINGLE_TOKEN('|', '|', s_or, 0) // '|' is not a valid single-character token in this language, only '||'
-    
-    case '+': { // 3 possible cases: '+', '++', '+='
-      if (*(*ptr + 1) == '+') {
-        add_token(tokens, token_count, s_plus_plus, line, *column, 2, file_path, NULL);
-        *ptr += 2; (*column) += 2;
-        return 1;
-      }
-      DOUBLE_OR_SINGLE_CHAR_TOKEN_('=', s_plus_equals, s_plus)
-    }
+    MATCH_SINGLE_CHAR_SYMBOL(';', s_semicolon);
+    MATCH_SINGLE_CHAR_SYMBOL('(', s_lparen);
+    MATCH_SINGLE_CHAR_SYMBOL(')', s_rparen);
+    MATCH_SINGLE_CHAR_SYMBOL('{', s_lbrace);
+    MATCH_SINGLE_CHAR_SYMBOL('}', s_rbrace);
+    MATCH_SINGLE_CHAR_SYMBOL('@', s_mem_lookup);
+    MATCH_SINGLE_CHAR_SYMBOL(',', s_comma);
+    MATCH_SINGLE_CHAR_SYMBOL('^', s_caret);
+    MATCH_SINGLE_CHAR_SYMBOL('~', s_not);
 
-    case '-': { // 3 possible cases: '-', '--', '->', '-='
+    MATCH_DOUBLE_OR_SINGLE_TOKEN('%', '=', s_modulus_equals, s_modulus);
+    MATCH_DOUBLE_OR_SINGLE_TOKEN('*', '=', s_star_equals, s_star);
+    MATCH_DOUBLE_OR_SINGLE_TOKEN('/', '=', s_divide_equals, s_divide);
+    MATCH_DOUBLE_OR_SINGLE_TOKEN('&', '&', s_and, s_ampersand);
+    MATCH_DOUBLE_OR_SINGLE_TOKEN('=', '=', s_equals_equals, s_equals);
+    MATCH_DOUBLE_OR_SINGLE_TOKEN('!', '=', s_bang_equals, s_bang);
+    MATCH_DOUBLE_OR_SINGLE_TOKEN('|', '|', s_or, s_pipe);
+
+    TRIPPLE_TOKEN_CHAR('+', s_plus_plus, s_plus_equals, s_plus);
+    TRIPPLE_TOKEN_CHAR('<', s_l_shift, s_lte, s_lt);
+    TRIPPLE_TOKEN_CHAR('>', s_r_shift, s_gte, s_gt);
+
+    case '-': { // 4 possible cases: '-', '--', '->', '-='
       if (*(*ptr + 1) == '>') {
         add_token(tokens, token_count, s_arrow, line, *column, 2, file_path, NULL);
         *ptr += 2; (*column) += 2;

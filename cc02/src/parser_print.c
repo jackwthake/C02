@@ -42,6 +42,14 @@ static const char *op_name(op_t op) {
     case OP_BANG:          return "!";
     case OP_NEGATE:        return "-";
     case OP_ADDRESSOF:     return "&";
+    case OP_LEFT_SHIFT:    return "<<";
+    case OP_RIGHT_SHIFT:   return ">>";
+    case OP_AND:           return "&&";
+    case OP_OR:            return "||";
+    case OP_BAND:          return "&";
+    case OP_BXOR:          return "^";
+    case OP_BOR:           return "|";
+    case OP_BNOT:          return "~";
     default:               return "<op>";
   }
 }
@@ -107,36 +115,23 @@ static void print_ast_label(node_t *node) {
     case NODE_DEREF:
       printf("%s *", node_kind_name(node->kind));
       break;
-    case NODE_CAST:
-      printf("%s ", node_kind_name(node->kind));
-      print_type_suffix(node->cast.cast_type);
-      break;
-    case NODE_VAR_DECL:
-      printf("%s %s : ", node_kind_name(node->kind), node->var_decl.name ? node->var_decl.name : "<anon>");
-      print_type_suffix(node->var_decl.type);
-      break;
     case NODE_ASSIGN:
       printf("%s %s =", node_kind_name(node->kind), node->assign.name ? node->assign.name : "<anon>");
       break;
-    case NODE_DEREF_ASSIGN:
-      printf("%s", node_kind_name(node->kind));
+    
+    case NODE_CAST: {
+      printf("%s ", node_kind_name(node->kind));
+      print_type_suffix(node->cast.cast_type);
       break;
-    case NODE_RETURN:
-      printf("%s", node_kind_name(node->kind));
+    }
+    
+    case NODE_VAR_DECL: {
+      printf("%s %s : ", node_kind_name(node->kind), node->var_decl.name ? node->var_decl.name : "<anon>");
+      print_type_suffix(node->var_decl.type);
       break;
-    case NODE_IF:
-      printf("%s", node_kind_name(node->kind));
-      break;
-    case NODE_WHILE:
-      printf("%s", node_kind_name(node->kind));
-      break;
-    case NODE_FOR:
-      printf("%s", node_kind_name(node->kind));
-      break;
-    case NODE_BLOCK:
-      printf("%s", node_kind_name(node->kind));
-      break;
-    case NODE_FUNCTION:
+    }
+
+    case NODE_FUNCTION: {
       printf("%s %s(", node_kind_name(node->kind), node->function.name ? node->function.name : "<anon>");
       for (unsigned i = 0; i < node->function.params.count; ++i) {
         param_t *param = &node->function.params.items[i];
@@ -146,19 +141,23 @@ static void print_ast_label(node_t *node) {
       printf(") -> ");
       print_type_suffix(node->function.return_type);
       break;
-    case NODE_REG_DECL:
+    }
+
+    case NODE_REG_DECL: {
       printf("%s %s : ", node_kind_name(node->kind), node->reg_decl.name ? node->reg_decl.name : "<anon>");
       print_type_suffix(node->reg_decl.type);
       printf(" @ %3lx", node->reg_decl.addr);
       break;
-    case NODE_GLOBAL_VAR:
+    }
+
+    case NODE_GLOBAL_VAR: {
       printf("%s %s : ", node_kind_name(node->kind), node->global_var.name ? node->global_var.name : "<anon>");
       print_type_suffix(node->global_var.type);
       break;
-    case NODE_PROGRAM:
-      printf("%s", node_kind_name(node->kind));
-      break;
-    default:
+    }
+    
+    case NODE_RETURN: case NODE_IF: case NODE_WHILE: case NODE_FOR: case NODE_BLOCK:
+    case NODE_DEREF_ASSIGN: case NODE_PROGRAM: default:
       printf("%s", node_kind_name(node->kind));
       break;
   }

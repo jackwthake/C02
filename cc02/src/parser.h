@@ -26,9 +26,13 @@ typedef struct {
 
 typedef enum {
   OP_INCREMENT, OP_DECREMENT, OP_PLUS, OP_MINUS, OP_MULTIPLY, OP_DIVIDE, OP_MODULUS,
+  
   OP_LT, OP_GT, OP_LTE, OP_GTE,
   OP_EQUALSEQUALS, OP_BANGEQUALS,
-  OP_BANG, OP_NEGATE, OP_ADDRESSOF, OP_AND, OP_OR
+  OP_BANG, OP_NEGATE, OP_ADDRESSOF, OP_AND, OP_OR,
+
+  OP_LEFT_SHIFT, OP_RIGHT_SHIFT,
+  OP_BAND, OP_BXOR, OP_BOR, OP_BNOT
 } op_t;
 
 // ----------------------------------------------------------------

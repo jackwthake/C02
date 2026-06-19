@@ -47,6 +47,11 @@
   X(s_gte,            ">="         , 0)        \
   X(s_and,            "&&"         , 0)        \
   X(s_or,             "||"         , 0)        \
+  X(s_pipe,           "|"          , 0)        \
+  X(s_not,            "~"          , 0)        \
+  X(s_caret,          "^"          , 0)        \
+  X(s_l_shift,        "<<"         , 0)        \
+  X(s_r_shift,        ">>"         , 0)        \
   X(l_num,            "NUMBER"     , 1)        \
   X(l_string,         "STRING"     , 1)        \
   X(l_identifier,     "IDENTIFIER" , 1)        \

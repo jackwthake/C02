@@ -117,10 +117,32 @@ typedef struct {
   } while(0);
 
 
-// dirty panic, debug only, memory leak central
-#define UNIMPLEMENTED_PANIC()                                        \
-    fprintf(stderr, "Unimplemented at %s:%d\n", __FILE__, __LINE__); \
-    exit(1);
+
+#define BINOP_LEVEL(NAME, NEXT, ...)                       \
+static node_t *NAME(parser_t *p) {                         \
+  node_t *left = NEXT(p);                                  \
+  GUARD(p);                                                \
+  for (;;) {                                               \
+    op_t op;                                               \
+    switch (CUR_TOK.type) {                                \
+      __VA_ARGS__                                          \
+      default: return left;                                \
+    }                                                      \
+                                                           \
+    ++p->pos; /* consume operator */                       \
+                                                           \
+    node_t *right = NEXT(p);                               \
+    GUARD(p);                                              \
+                                                           \
+    node_t *n = ALLOC_NODE(p);                             \
+    n->kind = NODE_BINOP;                                  \
+    n->binop.left  = left;                                 \
+    n->binop.op    = op;                                   \
+    n->binop.right = right;                                \
+                                                           \
+    left = n;                                              \
+  }                                                        \
+}
 
 
 extern void print_parse_error(error_t *e);
@@ -432,6 +454,7 @@ static node_t *unary(parser_t *p) {
     case s_ampersand:   op = OP_ADDRESSOF; break;
     case s_plus_plus:   op = OP_INCREMENT; break;
     case s_minus_minus: op = OP_DECREMENT; break;
+    case s_not:         op = OP_BNOT; break;
 
     case s_star: case s_mem_lookup: {
       ++p->pos;
@@ -463,182 +486,66 @@ static node_t *unary(parser_t *p) {
 }
 
 
-static node_t *factor(parser_t *p) {
-  node_t *left = unary(p);
-  GUARD(p);
+BINOP_LEVEL(factor, unary,
+  case s_star:    op = OP_MULTIPLY; break;
+  case s_divide:  op = OP_DIVIDE;   break;
+  case s_modulus: op = OP_MODULUS;  break;
+)
 
-  // collect terms in a compount multiplication / division
-  for (;;) {
-    op_t op;
-    switch (CUR_TOK.type) {
-      case s_star:    op = OP_MULTIPLY; break;
-      case s_divide:  op = OP_DIVIDE;   break;
-      case s_modulus: op = OP_MODULUS;  break;
-      default: return left;
-    }
- 
-    ++p->pos; // consume operator
- 
-    node_t *right = unary(p);
-    GUARD(p);
- 
-    node_t *n = ALLOC_NODE(p);
-    n->kind = NODE_BINOP;
-    n->binop.left  = left;
-    n->binop.op    = op;
-    n->binop.right = right;
-  
-    left = n; // setup next iteration
-  }
-}
+BINOP_LEVEL(term, factor,
+  case s_plus:  op = OP_PLUS;  break;
+  case s_minus: op = OP_MINUS; break;
+)
 
+BINOP_LEVEL(shift, term,
+  case s_l_shift: op = OP_LEFT_SHIFT; break;
+  case s_r_shift: op = OP_RIGHT_SHIFT; break;
+)
 
-static node_t *term(parser_t *p) {
-  node_t *left = factor(p);
-  GUARD(p);
+BINOP_LEVEL(comparison, shift,
+  case s_lt:  op = OP_LT;  break;
+  case s_lte: op = OP_LTE; break;
+  case s_gt:  op = OP_GT;  break;
+  case s_gte: op = OP_GTE; break;
+)
 
-  // collect terms in a compount summation / addition
-  for (;;) {
-    op_t op;
-    switch (CUR_TOK.type) {
-      case s_plus:   op = OP_PLUS; break;
-      case s_minus:  op = OP_MINUS;   break;
-      default: return left;
-    }
- 
-    ++p->pos; // consume operator
- 
-    node_t *right = factor(p);
-    GUARD(p);
- 
-    node_t *n = ALLOC_NODE(p);
-    n->kind = NODE_BINOP;
-    n->binop.left  = left;
-    n->binop.op    = op;
-    n->binop.right = right;
-  
-    left = n; // setup next iteration
-  }
-}
+BINOP_LEVEL(equality, comparison,
+  case s_equals_equals: op = OP_EQUALSEQUALS; break;
+  case s_bang_equals:   op = OP_BANGEQUALS;   break;
+)
 
+BINOP_LEVEL(bitwise_and, equality,
+  case s_ampersand: op = OP_BAND; break;
+)
 
-static node_t *comparison(parser_t *p) {
-  node_t *left = term(p);
-  GUARD(p);
+BINOP_LEVEL(bitwise_xor, bitwise_and,
+  case s_caret: op = OP_BXOR; break;
+)
 
-  for (;;) {
-    op_t op;
-    switch (CUR_TOK.type) {
-      case s_lt:   op = OP_LT; break;
-      case s_lte:  op = OP_LTE; break;
-      case s_gt:   op = OP_GT; break;
-      case s_gte:  op = OP_GTE; break;
-      default: return left;
-    }
- 
-    ++p->pos; // consume operator
- 
-    node_t *right = term(p);
-    GUARD(p);
- 
-    node_t *n = ALLOC_NODE(p);
-    n->kind = NODE_BINOP;
-    n->binop.left  = left;
-    n->binop.op    = op;
-    n->binop.right = right;
-  
-    left = n; // setup next iteration
-  }
-}
+BINOP_LEVEL(bitwise_or, bitwise_xor,
+  case s_pipe: op = OP_BOR; break;
+)
 
-
-static node_t *equality(parser_t *p) {
-  node_t *left = comparison(p);
-  GUARD(p);
-
-  for (;;) {
-    op_t op;
-    switch (CUR_TOK.type) {
-      case s_equals_equals:  op = OP_EQUALSEQUALS; break;
-      case s_bang_equals:   op = OP_BANGEQUALS;   break;
-      default: return left;
-    }
- 
-    ++p->pos; // consume operator
- 
-    node_t *right = comparison(p);
-    GUARD(p);
- 
-    node_t *n = ALLOC_NODE(p);
-    n->kind = NODE_BINOP;
-    n->binop.left  = left;
-    n->binop.op    = op;
-    n->binop.right = right;
-  
-    left = n; // setup next iteration
-  }
-}
-
-
-static node_t *logical_and(parser_t *p) {
-  node_t *left = equality(p);
-  GUARD(p);
-  for (;;) {
-    switch (CUR_TOK.type) {
-      case s_and: {
-        ++p->pos;
-        node_t *right = equality(p);
-        GUARD(p);
- 
-        node_t *n = ALLOC_NODE(p);
-        n->kind = NODE_BINOP;
-        n->binop.left  = left;
-        n->binop.op    = OP_AND;
-        n->binop.right = right;
- 
-        left = n;
-        break;
-      }
- 
-      default: return left;
-    }
-  }
-}
-
+BINOP_LEVEL(logical_and, bitwise_or,
+  case s_and: op = OP_AND; break;
+)
 
 // root of recursive descent
 // logical_or   looks for ||            calls logical_and
 // logical_and  looks for &&            calls equality
+// bitwise_or   looks for |             calls bitwise_xor
+// bitwise_xor  looks for ^             calls bitwise_and
+// bitwise_and  looks for &             calls equality
 // equality     looks for == !=         calls comparison
-// comparison   looks for < > <= >=     calls term
+// comparison   looks for < > <= >=     calls shift
+// shift        looks for << >>         calls term
 // term         looks for + -           calls factor
 // factor       looks for * / %         calls unary
 // unary        looks for * @ ! - ++ -- calls primary
 // primary      looks for literals, identifiers, (expr)   consumes tokens
-static node_t *logical_or(parser_t *p) {
-  node_t *left = logical_and(p);
-  GUARD(p);
-  for (;;) {
-    switch (CUR_TOK.type) {
-      case s_or: {
-        ++p->pos;
-        node_t *right = logical_and(p);
-        GUARD(p);
- 
-        node_t *n = ALLOC_NODE(p);
-        n->kind = NODE_BINOP;
-        n->binop.left  = left;
-        n->binop.op    = OP_OR;
-        n->binop.right = right;
- 
-        left = n;
-        break;
-      }
- 
-      default: return left;
-    }
-  }
-}
+BINOP_LEVEL(logical_or, logical_and,
+  case s_or: op = OP_OR; break;
+)
 
 
 // wrapper to make code more readable in higher level parsing functions
@@ -860,8 +767,13 @@ static node_t *parse_stmt(parser_t *p) {
       GUARD(p);
       ++p->pos;
 
-      n->while_stmt.body = parse_block_node(p);
-      GUARD(p);
+      // check for empty body
+      if (CUR_TOK.type != s_semicolon) {
+        n->while_stmt.body = parse_block_node(p);
+        GUARD(p);
+      } else {
+        ++p->pos; // consume ;
+      }
 
       return n;
     }
