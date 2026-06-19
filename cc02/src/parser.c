@@ -170,29 +170,27 @@ static void *parser_alloc(parser_arena_t *a, size_t size) {
   size = (size + sizeof(void*) - 1) & ~(sizeof(void*) - 1);
 
   if (a->current->used + size > a->current->capacity) {
-    // if size exceeds standard chunk size, allocate a dedicated chunk
-    // just for this allocation, otherwise allocate a standard chunk
-    size_t alloc_size = size > a->chunk_size ? size : a->chunk_size;
-
-    arena_chunk_t *chunk = malloc(sizeof(arena_chunk_t) + alloc_size);
-    if (!chunk) {
-      fprintf(stderr, "fatal: arena allocation failed\n");
-      exit(1);
+    if (size > a->chunk_size) {
+      // Oversized allocation: insert after current, don't advance current
+      arena_chunk_t *chunk = malloc(sizeof(arena_chunk_t) + size);
+      if (!chunk) exit(1);
+      chunk->used = size;
+      chunk->capacity = size;
+      chunk->next = a->current->next;
+      a->current->next = chunk;
+      return chunk->data;
+    } else {
+      // Standard allocation: create a new chunk and advance current
+      arena_chunk_t *chunk = malloc(sizeof(arena_chunk_t) + a->chunk_size);
+      if (!chunk) exit(1);
+      chunk->used = size;
+      chunk->capacity = a->chunk_size;
+      chunk->next = NULL; // Assuming it goes at the end
+      
+      a->current->next = chunk;
+      a->current = chunk;
+      return chunk->data;
     }
-
-    chunk->next = NULL;
-    chunk->used = size;  // immediately consume the space we need
-    chunk->capacity = alloc_size;
-
-    // insert BEFORE current so current can still serve future small allocs
-    // current: [/////|       ]   <-- still has room
-    // new:     [XXXXX]           <-- oversized, dedicated
-    //
-    // without this, current gets replaced and its remaining space is wasted
-    chunk->next = a->current->next;
-    a->current->next = chunk;
-
-    return chunk->data;
   }
 
   void *ptr = a->current->data + a->current->used;
@@ -386,14 +384,14 @@ static node_t *primary(parser_t *p) {
     case l_num: { // literal
       node_t *node = ALLOC_NODE(p);
       node->kind = NODE_NUMBER;
-      node->number = *(long*)tok.value;
+      node->number = tok.num_val;
       return node;
     }
 
     case l_string: {
       node_t *node = ALLOC_NODE(p);
       node->kind = NODE_STRING;
-      node->value = (char*)tok.value;
+      node->value = tok.string_val;
       return node;
     }
 
@@ -430,11 +428,11 @@ static node_t *primary(parser_t *p) {
 
     case l_identifier: {
       if (CUR_TOK.type == s_lparen) {
-        return parse_function_call_site(p, (char*)tok.value); // error auto propogates, GUARD() return null on error, so will this as is
+        return parse_function_call_site(p, tok.string_val); // error auto propogates, GUARD() return null on error, so will this as is
       } else {
         node_t *ident = ALLOC_NODE(p);
         ident->kind = NODE_IDENTIFIER;
-        ident->identifier = (char*)tok.value;
+        ident->identifier = tok.string_val;
         return ident;
       }
     }
@@ -578,7 +576,7 @@ static param_list_t parse_function_params(parser_t *p) {
 
     param_t param = {
       .type = type,
-      .name = (char*)CUR_TOK.value
+      .name = CUR_TOK.string_val
     };
 
     ++p->pos; // consume identifier
@@ -658,7 +656,7 @@ static node_t *parse_assignment(parser_t *p) {
       case s_equals: { // normal assignment
         n = ALLOC_NODE(p);
         n->kind = NODE_ASSIGN;
-        n->assign.name = (char*)CUR_TOK.value;
+        n->assign.name = CUR_TOK.string_val;
 
         p->pos += 2; // consume identifier, then =
         n->assign.value = parse_expr(p);
@@ -673,7 +671,7 @@ static node_t *parse_assignment(parser_t *p) {
     // finish populating compound assignment
     n = ALLOC_NODE(p);
     n->kind = NODE_ASSIGN;
-    n->assign.name = (char*)CUR_TOK.value;
+    n->assign.name = CUR_TOK.string_val;
     p->pos += 2; // consume identifier, then +=
 
     node_t *lhs = ALLOC_NODE(p);
@@ -710,7 +708,7 @@ static node_t *parse_for_initializer_clause(parser_t *p) {
     EXPECT_SYMBOL(l_identifier, "variable name", "for loop initialiser");
     GUARD(p);
 
-    n->var_decl.name = (char*)CUR_TOK.value;
+    n->var_decl.name = CUR_TOK.string_val;
     ++p->pos; // consume identifier
 
     if (CUR_TOK.type == s_equals) {
@@ -884,7 +882,7 @@ static node_t *parse_stmt(parser_t *p) {
       EXPECT_SYMBOL(l_identifier, "variable name", "variable declaration after type")
       GUARD(p);
 
-      n->var_decl.name = (char*)CUR_TOK.value;
+      n->var_decl.name = CUR_TOK.string_val;
       ++p->pos; // consume identifier
 
       if (CUR_TOK.type == s_equals) {
@@ -954,7 +952,7 @@ static node_t *parse_stmt(parser_t *p) {
       }
 
       // if we reach here it has to be a function call
-      char *name = (char*)CUR_TOK.value;
+      char *name = CUR_TOK.string_val;
       ++p->pos; // consume identifier
 
       n = parse_function_call_site(p, name);
@@ -986,7 +984,7 @@ static node_t *parse_function(parser_t *p) {
   GUARD(p);
 
   // pull identifier from token array
-  func_decl->function.name = (char*)CUR_TOK.value;
+  func_decl->function.name = CUR_TOK.string_val;
   ++p->pos; // consume identifier
 
   // parse args
@@ -1023,7 +1021,7 @@ static node_t *parse_reg_decl(parser_t *p) {
   GUARD(p);
 
   // pull identifier from token array
-  decl->reg_decl.name = (char*)CUR_TOK.value;
+  decl->reg_decl.name = CUR_TOK.string_val;
   ++p->pos; // consume identifier
 
   EXPECT_SYMBOL(s_mem_lookup, "'@' before memory address", "register declaration")
@@ -1034,7 +1032,7 @@ static node_t *parse_reg_decl(parser_t *p) {
   GUARD(p);
 
   // pull integer literal (dereference void* to get the stored unsigned long)
-  decl->reg_decl.addr = *(unsigned long*)CUR_TOK.value;
+  decl->reg_decl.addr = CUR_TOK.num_val;
   ++p->pos; // consume integer literal
 
   EXPECT_SYMBOL(s_semicolon, "';' after register declaration", "register declaration")
@@ -1058,7 +1056,7 @@ static node_t *parse_global_var_decl(parser_t *p) {
   GUARD(p);
 
   // pull identifier from token array
-  decl->global_var.name = (char*)CUR_TOK.value;
+  decl->global_var.name = CUR_TOK.string_val;
   ++p->pos; // consume identifier
 
   if (CUR_TOK.type == s_equals) { // has initialiser, parse it

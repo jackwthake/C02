@@ -11,12 +11,24 @@
  * MATCH_KEYWORD(kw, tok)
  * Checks if the current position in the source code matches the given keyword `kw`.
  */
-#define MATCH_KEYWORD(kw, tok, val)                                            \
+#define MATCH_KEYWORD(kw, tok)                                                 \
   if (strncmp(*ptr, kw, sizeof(kw) - 1) == 0                                   \
       && !isalnum((unsigned char)(*ptr)[sizeof(kw) - 1])                       \
       && (*ptr)[sizeof(kw) - 1] != '_') {                                      \
     add_token(tokens, token_count, tok, line, *column, sizeof(kw) - 1,         \
-              file_path, val);                                                 \
+              file_path);                                                      \
+    *ptr += sizeof(kw) - 1;                                                    \
+    *column += sizeof(kw) - 1;                                                 \
+    return 1;                                                                  \
+  }
+
+#define MATCH_KEYWORD_NUM_VAL(kw, tok, val)                                    \
+  if (strncmp(*ptr, kw, sizeof(kw) - 1) == 0                                   \
+      && !isalnum((unsigned char)(*ptr)[sizeof(kw) - 1])                       \
+      && (*ptr)[sizeof(kw) - 1] != '_') {                                      \
+    token_t *new_tok = add_token(tokens, token_count, tok, line, *column,      \
+                                 sizeof(kw) - 1, file_path);                   \
+    new_tok->num_val = val;                                                    \
     *ptr += sizeof(kw) - 1;                                                    \
     *column += sizeof(kw) - 1;                                                 \
     return 1;                                                                  \
@@ -30,11 +42,11 @@
 #define DOUBLE_OR_SINGLE_CHAR_TOKEN_(peek_ch, tok2, tok1)                      \
     if (*(*ptr + 1) == (peek_ch)) {                                            \
       add_token(tokens, token_count, tok2, line, *column, 2,                   \
-                file_path, NULL);                                              \
+                file_path);                                                    \
       *ptr += 2; (*column) += 2;                                               \
     } else {                                                                   \
       add_token(tokens, token_count, tok1, line, *column, 1,                   \
-                file_path, NULL);                                              \
+                file_path);                                                    \
       (*ptr)++; (*column)++;                                                   \
     }                                                                          \
     return 1;
@@ -47,10 +59,10 @@
 #define MATCH_DOUBLE_OR_SINGLE_TOKEN(ch, peek_ch, tok2, tok1)                  \
   case ch: {                                                                   \
     if (*(*ptr + 1) == (peek_ch)) {                                            \
-      add_token(tokens, token_count, tok2, line, *column, 2, file_path, NULL); \
+      add_token(tokens, token_count, tok2, line, *column, 2, file_path);       \
       *ptr += 2; (*column) += 2;                                               \
     } else if ((tok1) != t_invalid) {                                          \
-      add_token(tokens, token_count, tok1, line, *column, 1, file_path, NULL); \
+      add_token(tokens, token_count, tok1, line, *column, 1, file_path);       \
       (*ptr)++; (*column)++;                                                   \
     } else {                                                                   \
       return 0;                                                                \
@@ -58,36 +70,36 @@
     return 1;                                                                  \
   }
 
-#define TRIPPLE_TOKEN_CHAR_(ch, DOUBLE_TYPE, EQ_TYPE, SINGLE_TYPE)        \
+#define TRIPPLE_TOKEN_CHAR_(ch, DOUBLE_TYPE, EQ_TYPE, SINGLE_TYPE)                \
   do {                                                                            \
-    if (*(*ptr + 1) == (ch)) {                                          \
-      add_token(tokens, token_count, (DOUBLE_TYPE), line, *column, 2, file_path, NULL); \
-      *ptr += 2; (*column) += 2;                                                 \
-      return 1;                                                                  \
-    }                                                                            \
-    DOUBLE_OR_SINGLE_CHAR_TOKEN_('=', (EQ_TYPE), (SINGLE_TYPE))                  \
+    if (*(*ptr + 1) == (ch)) {                                                    \
+      add_token(tokens, token_count, (DOUBLE_TYPE), line, *column, 2, file_path); \
+      *ptr += 2; (*column) += 2;                                                  \
+      return 1;                                                                   \
+    }                                                                             \
+    DOUBLE_OR_SINGLE_CHAR_TOKEN_('=', (EQ_TYPE), (SINGLE_TYPE))                   \
   } while (0)
 
 
 #define TRIPPLE_TOKEN_CHAR(ch, DOUBLE_TYPE, EQ_TYPE, SINGLE_TYPE) \
-  case ch: { \
-    TRIPPLE_TOKEN_CHAR_(ch, DOUBLE_TYPE, EQ_TYPE, SINGLE_TYPE); \
+  case ch: {                                                      \
+    TRIPPLE_TOKEN_CHAR_(ch, DOUBLE_TYPE, EQ_TYPE, SINGLE_TYPE);   \
   }
 
 
-#define PRINT_ERROR_HEADER(file_path, err_line, err_col)                       \
+#define PRINT_ERROR_HEADER(file_path, err_line, err_col)                                                                   \
   fprintf(stderr, BOLD_WHITE "%s" RESET ":" BOLD_WHITE "%u" RESET ":" BOLD_WHITE "%u" RESET ": " BOLD_RED "error: " RESET, \
     file_path, err_line, err_col)
 
-static void add_token(token_t *tokens, unsigned *token_count, token_type_t type, unsigned line, unsigned column, unsigned length, char *file_path, void *value) {
-  tokens[(*token_count)++] = (token_t){
-    .type = type,
-    .line = line,
-    .column = column,
-    .length = length,
-    .file_path = file_path,
-    .value = value
-  };
+static token_t* add_token(token_t *tokens, unsigned *token_count, token_type_t type, unsigned line, unsigned column, unsigned length, char *file_path) {
+  token_t *tok = &tokens[(*token_count)++];
+  tok->type = type;
+  tok->line = line;
+  tok->column = column;
+  tok->length = length;
+  tok->file_path = file_path;
+  tok->num_val = 0; // zero out the union just to be safe
+  return tok;
 }
 
 /**
@@ -96,7 +108,7 @@ static void add_token(token_t *tokens, unsigned *token_count, token_type_t type,
  */
 #define MATCH_SINGLE_CHAR_SYMBOL(ch, tok)                                   \
   case ch:                                                                  \
-    add_token(tokens, token_count, tok, line, *column, 1, file_path, NULL); \
+    add_token(tokens, token_count, tok, line, *column, 1, file_path);       \
     (*ptr)++; (*column)++;                                                  \
     return 1;
 
@@ -128,7 +140,7 @@ char *token_val_to_string(const token_t tok, unsigned *should_free) {
 
   if (tok.type == l_identifier || tok.type == l_string) {
     should_free = 0;
-    return (char *)tok.value;
+    return (char *)tok.string_val;
   }
 
   if (tok.type == l_num) {
@@ -137,7 +149,7 @@ char *token_val_to_string(const token_t tok, unsigned *should_free) {
       return NULL;
     }
 
-    snprintf(str, 32, "%ld", *(long *)tok.value);
+    snprintf(str, 32, "%ld", *(long *)tok.string_val);
     *should_free = 1;
     return str;
   }
@@ -151,9 +163,9 @@ void print_tokens(const token_t *tokens, unsigned count) {
     const token_t token = tokens[i];
 
     if (token.type == l_identifier || token.type == l_string) {
-      printf("Token: %s(%s), %s:%u:%u\n", token_type_to_string(token.type), (char *)token.value, token.file_path, token.line, token.column);
+      printf("Token: %s(%s), %s:%u:%u\n", token_type_to_string(token.type), (char *)token.string_val, token.file_path, token.line, token.column);
     } else if (token.type == l_num) {
-      printf("Token: %s(%ld), %s:%u:%u\n", token_type_to_string(token.type), *(long *)token.value, token.file_path, token.line, token.column);
+      printf("Token: %s(%ld), %s:%u:%u\n", token_type_to_string(token.type), token.num_val, token.file_path, token.line, token.column);
     } else {
       printf("Token: %s, %s:%u:%u\n", token_type_to_string(token.type), token.file_path, token.line, token.column);
     }
@@ -167,8 +179,8 @@ void print_tokens(const token_t *tokens, unsigned count) {
 
 void free_tokens(token_t *tokens, unsigned count) {
   for (unsigned i = 0; i < count; i++) {
-    if (tokens[i].type == l_identifier || tokens[i].type == l_string || tokens[i].type == l_num) {
-      free(tokens[i].value);
+    if (tokens[i].type == l_identifier || tokens[i].type == l_string) {
+      free(tokens[i].string_val);
     }
   }
   free(tokens);
@@ -259,11 +271,11 @@ static int tokenize_symbol(token_t *tokens, unsigned *token_count, char **ptr, u
 
     case '-': { // 4 possible cases: '-', '--', '->', '-='
       if (*(*ptr + 1) == '>') {
-        add_token(tokens, token_count, s_arrow, line, *column, 2, file_path, NULL);
+        add_token(tokens, token_count, s_arrow, line, *column, 2, file_path);
         *ptr += 2; (*column) += 2;
         return 1;
       } else if (*(*ptr + 1) == '-') {
-        add_token(tokens, token_count, s_minus_minus, line, *column, 2, file_path, NULL);
+        add_token(tokens, token_count, s_minus_minus, line, *column, 2, file_path);
         *ptr += 2; (*column) += 2;
         return 1;
       }
@@ -379,33 +391,23 @@ void print_error_line(unsigned line_number, unsigned column, unsigned length) {
 }
 
 
-static inline long *make_long(long value) {
-  long *ptr = malloc(sizeof(*ptr));
-  if (ptr) *ptr = value;
-  else {
-    perror("Failed to allocate memory for long value");
-    exit(EXIT_FAILURE);
-  }
-  return ptr;
-}
-
-
 static int tokenize_keyword_or_identifier(token_t *tokens, unsigned *token_count, char **ptr, unsigned line, unsigned *column, char *file_path) {
-    MATCH_KEYWORD("fn",     Kw_fn, NULL)
-    MATCH_KEYWORD("reg",    Kw_reg, NULL)
-    MATCH_KEYWORD("return", Kw_return, NULL)
-    MATCH_KEYWORD("void",   Kw_void, NULL)
-    MATCH_KEYWORD("if",     Kw_if, NULL)
-    MATCH_KEYWORD("else",   Kw_else, NULL)
-    MATCH_KEYWORD("while",  Kw_while, NULL)
-    MATCH_KEYWORD("for",    Kw_for, NULL)
-    MATCH_KEYWORD("u8",     t_u8, NULL)
-    MATCH_KEYWORD("i8",     t_i8, NULL)
-    MATCH_KEYWORD("u16",    t_u16, NULL)
-    MATCH_KEYWORD("i16",    t_i16, NULL)
-    MATCH_KEYWORD("null",   l_num, make_long(0)) // treat 'null' as a special numeric literal with value 0
-    MATCH_KEYWORD("false",  l_num, make_long(0)) // treat 'flase' as a special numeric literal with value 1
-    MATCH_KEYWORD("true",   l_num, make_long(1)) // treat 'true' as a special numeric literal with value 1
+  MATCH_KEYWORD("fn",     Kw_fn)
+  MATCH_KEYWORD("reg",    Kw_reg)
+  MATCH_KEYWORD("return", Kw_return)
+  MATCH_KEYWORD("void",   Kw_void)
+  MATCH_KEYWORD("if",     Kw_if)
+  MATCH_KEYWORD("else",   Kw_else)
+  MATCH_KEYWORD("while",  Kw_while)
+  MATCH_KEYWORD("for",    Kw_for)
+  MATCH_KEYWORD("u8",     t_u8)
+  MATCH_KEYWORD("i8",     t_i8)
+  MATCH_KEYWORD("u16",    t_u16)
+  MATCH_KEYWORD("i16",    t_i16)
+
+  MATCH_KEYWORD_NUM_VAL("null", l_num, 0) // treat 'null' as a special numeric literal with value 0
+  MATCH_KEYWORD_NUM_VAL("false", l_num, 0) // treat 'false' as a special numeric literal with value 0
+  MATCH_KEYWORD_NUM_VAL("true", l_num, 1) // treat 'true' as a special numeric literal with value 1
 
   if (isalpha((unsigned char)**ptr) || **ptr == '_') {
     // Handle identifiers (and potentially keywords that aren't reserved)
@@ -422,7 +424,8 @@ static int tokenize_keyword_or_identifier(token_t *tokens, unsigned *token_count
       return -1;
     }
    
-    add_token(tokens, token_count, l_identifier, line, *column - (unsigned)length, (unsigned)length, file_path, identifier);
+    token_t *tok = add_token(tokens, token_count, l_identifier, line, *column - (unsigned)length, (unsigned)length, file_path);
+    tok->string_val = identifier;
     return 1;
   }
 
@@ -475,7 +478,8 @@ static int tokenize_string(token_t *tokens, unsigned *token_count, char **ptr, u
   (*ptr)++; // Skip closing quote
   (*column)++;
 
-  add_token(tokens, token_count, l_string, line, *column - length - 2, length + 2, file_path, string_literal);
+  token_t *tok = add_token(tokens, token_count, l_string, line, *column - length - 2, length + 2, file_path);
+  tok->string_val = string_literal;
   return 1;
 }
 
@@ -534,15 +538,9 @@ static int tokenize_number(token_t *tokens, unsigned *token_count, char **ptr, u
     return -1;
   }
 
-  long *number_value = malloc(sizeof(*number_value));
-  if (!number_value) {
-    perror("Failed to allocate memory for number literal");
-    return -1;
-  }
-  *number_value = value;
-
   const unsigned literal_length = (unsigned)(end - *ptr);
-  add_token(tokens, token_count, l_num, line, *column, literal_length, file_path, number_value);
+  token_t *tok = add_token(tokens, token_count, l_num, line, *column, literal_length, file_path);
+  tok->num_val = value;
 
   *ptr = (char *)end;
   *column += literal_length;
@@ -623,7 +621,7 @@ token_t *tokenize(const char *file_path, const char *source_code, const long fil
     return NULL;
   }
 
-  add_token(tokens, &token_count, t_eof, line, column, 0, (char *)file_path, NULL);
+  add_token(tokens, &token_count, t_eof, line, column, 0, (char *)file_path);
 
   *num_tokens = token_count;
   return tokens;

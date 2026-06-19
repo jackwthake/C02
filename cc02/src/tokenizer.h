@@ -67,7 +67,10 @@ typedef struct {
   token_type_t type;
   unsigned line, column, length;
   char *file_path;
-  void *value;
+  union {
+    char *string_val; // For identifiers and strings
+    long num_val;     // For l_num
+  };
 } token_t;
 
 const char *token_type_to_string(token_type_t type);
