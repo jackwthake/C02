@@ -5,9 +5,9 @@
  * --------
  * Converts a flat token array (from tokenizer.c) into an AST rooted at a
  * NODE_PROGRAM node. All AST nodes are allocated from a chunked arena
- * (parser_arena_t) — call parser_init() before parse() and parser_free()
- * when done. String fields in nodes (names, identifiers) point directly into
- * the token array; the token array must outlive the AST.
+ * (arena_t, see arena.h) — call parser_init() before parse() and
+ * parser_free() when done. String fields in nodes (names, identifiers)
+ * point directly into the token array; the token array must outlive the AST.
  *
  * RECURSIVE DESCENT CHAIN
  * -----------------------
@@ -72,70 +72,16 @@ extern void print_parse_error(error_t *e);
 
 int parser_init(parser_t *p) {
   size_t chunk_size = (PARSER_CHUNK_ALLOC_SIZE + sizeof(void*) - 1) & ~(sizeof(void*) - 1);
-
-  p->arena.chunk_size = chunk_size;
-  p->arena.first = malloc(sizeof(arena_chunk_t) + chunk_size);
-  if (!p->arena.first) {
-    return 0;
-  }
-
-  p->arena.first->next = NULL;
-  p->arena.first->used = 0;
-  p->arena.first->capacity = chunk_size;
-  p->arena.current = p->arena.first;
-
-  return 1;
+  return arena_init(&p->arena, chunk_size);
 }
 
 
-static void *parser_alloc(parser_arena_t *a, size_t size) {
-  size = (size + sizeof(void*) - 1) & ~(sizeof(void*) - 1);
-
-  if (a->current->used + size > a->current->capacity) {
-    if (size > a->chunk_size) {
-      // Oversized allocation: insert after current, don't advance current
-      arena_chunk_t *chunk = malloc(sizeof(arena_chunk_t) + size);
-      if (!chunk) exit(1);
-      chunk->used = size;
-      chunk->capacity = size;
-      chunk->next = a->current->next;
-      a->current->next = chunk;
-      return chunk->data;
-    } else {
-      // Standard allocation: create a new chunk and advance current
-      arena_chunk_t *chunk = malloc(sizeof(arena_chunk_t) + a->chunk_size);
-      if (!chunk) exit(1);
-      chunk->used = size;
-      chunk->capacity = a->chunk_size;
-      chunk->next = NULL; // Assuming it goes at the end
-      
-      a->current->next = chunk;
-      a->current = chunk;
-      return chunk->data;
-    }
-  }
-
-  void *ptr = a->current->data + a->current->used;
-  a->current->used += size;
-  return ptr;
-}
-
-
-#define ALLOC_NODE(p) (memset(parser_alloc(&(p)->arena, sizeof(node_t)), 0, sizeof(node_t)))
+#define ALLOC_NODE(p) ARENA_ALLOC(&(p)->arena, node_t)
 
 
 void parser_free(parser_t *p) {
-  parser_arena_t *a = &p->arena;
   if (p) {
-    arena_chunk_t *curr = a->first;
-    while (curr) {
-      arena_chunk_t *tmp = curr;
-      curr = curr->next;
-      free(tmp);
-    }
-
-    a->chunk_size = 0;
-    a->current = a->first = NULL;
+    arena_free(&p->arena);
   }
 }
 

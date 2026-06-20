@@ -82,10 +82,10 @@ static void NAME##_push(NAME##_t *s, node_t *val, parser_t *p) {            \
   s->items[s->count++] = val;                                               \
 }                                                                           \
                                                                             \
-static node_list_t NAME##_commit(NAME##_t *s, parser_arena_t *arena) {      \
+static node_list_t NAME##_commit(NAME##_t *s, arena_t *arena) {             \
   node_list_t list = { NULL, 0 };                                           \
   if (s->count > 0) {                                                       \
-    node_t **items = parser_alloc(arena, sizeof(node_t*) * s->count);       \
+    node_t **items = arena_alloc(arena, sizeof(node_t*) * s->count);        \
     memcpy(items, s->items, sizeof(node_t*) * s->count);                    \
     list.items = items;                                                     \
     list.count = s->count;                                                  \
@@ -115,10 +115,10 @@ static void NAME##_push(NAME##_t *s, ELEM_TYPE val, parser_t *p) {          \
   s->items[s->count++] = val;                                               \
 }                                                                           \
                                                                             \
-static LIST_TYPE NAME##_commit(NAME##_t *s, parser_arena_t *arena) {        \
+static LIST_TYPE NAME##_commit(NAME##_t *s, arena_t *arena) {               \
   LIST_TYPE list = { NULL, 0 };                                             \
   if (s->count > 0) {                                                       \
-    ELEM_TYPE *items = parser_alloc(arena, sizeof(ELEM_TYPE) * s->count);   \
+    ELEM_TYPE *items = arena_alloc(arena, sizeof(ELEM_TYPE) * s->count);    \
     memcpy(items, s->items, sizeof(ELEM_TYPE) * s->count);                  \
     list.items = items;                                                     \
     list.count = s->count;                                                  \

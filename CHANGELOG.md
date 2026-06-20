@@ -9,6 +9,12 @@ releases are reserved for bug fixes only.
 
 ## [Unreleased]
 
+### Changed
+
+- Generalized the arena allocator out of `parser.c` into shared
+  infrastructure, so semantic analysis can reuse it for its own
+  allocations.
+
 ## [0.1.1] - 2026-06-20
 
 No code changes - this release formalizes the project's licensing and

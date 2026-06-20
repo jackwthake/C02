@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#include "arena.h"
 #include "tokenizer.h"
 
 // ----------------------------------------------------------------
@@ -236,19 +237,6 @@ typedef node_t * ast_t;
 // Memory Management
 // ----------------------------------------------------------------
 
-typedef struct arena_chunk_t {
-  struct arena_chunk_t *next;
-  size_t used;
-  size_t capacity;
-  char data[];  // flexible array member
-} arena_chunk_t;
-
-typedef struct {
-  arena_chunk_t *first;
-  arena_chunk_t *current;
-  size_t chunk_size;
-} parser_arena_t;
-
 #define PARSER_CHUNK_ALLOC_SIZE (sizeof(node_t) * 100)
 
 
@@ -272,7 +260,7 @@ typedef struct {
 
 
 typedef struct {
-  parser_arena_t arena;
+  arena_t arena;
 
   token_t *tokens;
   unsigned count;
