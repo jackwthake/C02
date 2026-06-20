@@ -9,7 +9,21 @@ releases are reserved for bug fixes only.
 
 ## [Unreleased]
 
-Semantic analysis is the next major area of work.
+## [0.1.1] - 2026-06-20
+
+No code changes - this release formalizes the project's licensing and
+contribution process.
+
+### Added
+
+- `LICENSE`: GPLv3, with a compiler-output exception so programs compiled
+  *with* C02 are not themselves subject to GPL terms.
+- `CONTRIBUTING.md` documenting the branch naming, PR, and changelog
+  conventions for the project.
+- "Current Status & Limitations" section in the README, consolidating what's
+  implemented vs. not in one place.
+- Third-party license attribution for `c02-objdump`'s `clap` dependency
+  (dual-licensed MIT/Apache-2.0).
 
 ## [0.1.0] - 2026-06-20
 

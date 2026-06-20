@@ -213,3 +213,10 @@ The disassembler automatically generates labels for jump targets:
 
 - **STP** - Stop/Sleep Mode (opcode 0xDB)
 - **WAI** - Wait for Interrupt (opcode 0xCB)
+
+---
+
+## Third-Party Licenses
+
+This tool depends on [clap](https://github.com/clap-rs/clap) for
+command-line argument parsing, dual-licensed under MIT or Apache-2.0.
