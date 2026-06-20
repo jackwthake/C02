@@ -166,7 +166,7 @@ int main(int argc, char * const *argv) {
   /* Timing variables */
   double t_total_start = get_time_ms();
   double t_step_start;
-  double t_load = 0.0, t_lex = 0.0, t_parse = 0.0, t_sema = 0.0, t_codegen = 0.0;
+  double t_load = 0.0, t_lex = 0.0, t_parse = 0.0, t_sema = 0.0, t_codegen = 0.0, t_cleanup = 0.0;
 
   /* Load the input file */
   t_step_start = get_time_ms();
@@ -232,6 +232,12 @@ int main(int argc, char * const *argv) {
   t_codegen = get_time_ms() - t_step_start;
 
 finish:
+
+  t_step_start = get_time_ms();
+  free_tokens(tokens, num_tokens);
+  parser_free(&parser_area);
+  t_cleanup = get_time_ms() - t_step_start;
+
   /* Print Timing Report if flag was passed */
   if (params.time_report) {
     double t_total = get_time_ms() - t_total_start;
@@ -246,13 +252,11 @@ finish:
     } else {
       printf("Code Gen:       %8.3f ms\n", t_codegen);
     }
+    printf("Cleanup:        %8.3f ms\n", t_cleanup);
     printf("-------------------------------\n");
     printf("Total Time:     %8.3f ms\n", t_total);
     printf("===============================\n\n");
   }
-
-  free_tokens(tokens, num_tokens);
-  parser_free(&parser_area);
 
   return 0;
 }

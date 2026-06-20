@@ -1,4 +1,4 @@
-// test_conditionals.c02
+// parser_conditionals.c02
 // Exercises if / else if / else chains, while, and for at every shape:
 // no-else, single-else, multi-level else-if, nested ifs, empty bodies,
 // and the dangling-else case where else binds to the nearest open if.

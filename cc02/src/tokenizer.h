@@ -7,6 +7,7 @@
   X(Kw_fn,            "fn"         , 0)        \
   X(Kw_reg,           "reg"        , 0)        \
   X(Kw_return,        "return"     , 0)        \
+  X(Kw_struct,        "struct"     , 0)        \
   X(Kw_void,          "void"       , 0)        \
   X(Kw_if,            "if"         , 0)        \
   X(Kw_else,          "else"       , 0)        \
@@ -27,6 +28,7 @@
   X(s_semicolon,      ";"          , 0)        \
   X(s_ampersand,      "&"          , 0)        \
   X(s_comma,          ","          , 0)        \
+  X(s_dot,            "."          , 0)        \
   X(s_modulus,        "%"          , 0)        \
   X(s_modulus_equals, "%="         , 0)        \
   X(s_plus,           "+"          , 0)        \

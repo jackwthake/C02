@@ -11,13 +11,14 @@
 // ----------------------------------------------------------------
 
 typedef enum {
-  TYPE_U8, TYPE_I8, TYPE_U16, TYPE_I16, TYPE_VOID,
+  TYPE_U8, TYPE_I8, TYPE_U16, TYPE_I16, TYPE_VOID, TYPE_STRUCT
 } type_kind_t;
 
 typedef struct {
-  type_kind_t kind;
-  int is_ptr;
+  type_kind_t kind;     // existing: TYPE_U8, TYPE_I8, ..., now also TYPE_STRUCT
+  unsigned is_ptr;
   unsigned ptr_depth;
+  char *struct_name;    // only valid when kind == TYPE_STRUCT; resolved to a decl in analysis
 } type_t;
 
 // ----------------------------------------------------------------
@@ -57,7 +58,6 @@ typedef enum {
   // statements
   NODE_VAR_DECL,
   NODE_ASSIGN,
-  NODE_DEREF_ASSIGN,
   NODE_RETURN,
   NODE_IF,
   NODE_WHILE,
@@ -67,6 +67,9 @@ typedef enum {
   NODE_FUNCTION,
   NODE_REG_DECL,
   NODE_GLOBAL_VAR,
+
+  NODE_STRUCT_DECL,
+  NODE_FIELD_ACCESS,
   // root
   NODE_PROGRAM,
 } node_kind_t;
@@ -81,12 +84,12 @@ typedef struct {
 typedef struct {
   type_t  type;
   char   *name;
-} param_t;
+} field_t;
 
 typedef struct {
-  param_t  *items;
+  field_t  *items;
   unsigned  count;
-} param_list_t;
+} field_list_t;
 
 struct node_t {
   node_kind_t kind;
@@ -127,14 +130,9 @@ struct node_t {
     } var_decl;                           // NODE_VAR_DECL
 
     struct {
-      char   *name;
-      node_t *value;
-    } assign;                             // NODE_ASSIGN
-
-    struct {
       node_t *target;
       node_t *value;
-    } deref_assign;                       // NODE_DEREF_ASSIGN
+    } assign;                             // NODE_ASSIGN
 
     node_t *return_val;                   // NODE_RETURN (NULL for bare return)
 
@@ -162,7 +160,7 @@ struct node_t {
     // --- top-level ---
     struct {
       char        *name;
-      param_list_t params;
+      field_list_t params;
       type_t       return_type;
       node_t      *body;
     } function;                           // NODE_FUNCTION
@@ -178,6 +176,16 @@ struct node_t {
       char   *name;
       node_t *initialiser;                // NULL if absent
     } global_var;                         // NODE_GLOBAL_VAR
+
+    struct {
+      char *name;
+      field_list_t fields;
+    } struct_decl;                        // NODE_STRUCT_DECL
+
+    struct {
+      node_t *base;     // the expression being accessed (identifier, call result, another field access, etc.)
+      char   *field;    // field name token text
+    } field_access;
 
     // --- root ---
     node_list_t program;                  // NODE_PROGRAM

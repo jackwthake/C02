@@ -29,7 +29,7 @@
  *   Kw_for       -> NODE_FOR     (init + cond + incr + block)
  *   Kw_if        -> NODE_IF      (cond + then block + optional else block)
  *   type keyword -> NODE_VAR_DECL
- *   s_star       -> NODE_DEREF_ASSIGN
+ *   s_star       -> NODE_ASSIGN
  *   l_identifier -> NODE_ASSIGN (peek: next == s_equals)
  *                -> NODE_CALL   (peek: next == s_lparen)
  *
@@ -40,7 +40,7 @@
  *
  * parse_block() accumulates statements into a scratch buffer and commits them
  * to the arena as a node_list_t. parse_function_params() does the same for
- * param_t using a parallel param_scratch_t.
+ * field_t using a parallel field_scratch_t.
  *
  * TOP-LEVEL PARSING
  * -----------------
@@ -73,10 +73,10 @@ typedef struct {
 
 
 typedef struct {
-  param_t  *items;
+  field_t  *items;
   unsigned  count;
   unsigned  capacity;
-} param_scratch_t;
+} field_scratch_t;
 
 
 typedef struct {
@@ -244,10 +244,10 @@ static node_list_t scratch_commit(scratch_t *s, parser_arena_t *arena) {
 }
 
 
-static void param_scratch_push(param_scratch_t *s, param_t param, parser_t *p) {
+static void field_scratch_push(field_scratch_t *s, field_t param, parser_t *p) {
   if (s->count == s->capacity) {
     s->capacity = s->capacity ? s->capacity * 2 : 8;
-    param_t *grown = realloc(s->items, sizeof(param_t) * s->capacity);
+    field_t *grown = realloc(s->items, sizeof(field_t) * s->capacity);
     if (!grown) {
       GENERATE_ALLOCATOR_ERROR();
       return;
@@ -258,11 +258,11 @@ static void param_scratch_push(param_scratch_t *s, param_t param, parser_t *p) {
 }
 
 
-static param_list_t param_scratch_commit(param_scratch_t *s, parser_arena_t *arena) {
-  param_list_t list = { NULL, 0 };
+static field_list_t field_scratch_commit(field_scratch_t *s, parser_arena_t *arena) {
+  field_list_t list = { NULL, 0 };
   if (s->count > 0) {
-    param_t *items = parser_alloc(arena, sizeof(param_t) * s->count);
-    memcpy(items, s->items, sizeof(param_t) * s->count);
+    field_t *items = parser_alloc(arena, sizeof(field_t) * s->count);
+    memcpy(items, s->items, sizeof(field_t) * s->count);
     list.items = items;
     list.count = s->count;
   }
@@ -310,19 +310,23 @@ static type_t parse_type(parser_t *p) {
 
   int type;
   if ((type = token_type_to_parser_type(CUR_TOK.type)) == -1) {
-    GENERATE_ERROR(UNEXPECTED_TOKEN, CUR_TOK, "type name (u8, i8, u16, i16, or void)", "type annotation");
-    return res;
+    if (CUR_TOK.type == l_identifier) {
+      res.kind = TYPE_STRUCT;
+      res.struct_name = CUR_TOK.string_val;
+      ++p->pos; // consume identifier
+    } else {
+      GENERATE_ERROR(UNEXPECTED_TOKEN, CUR_TOK, "type name (u8, i8, u16, i16, void, or struct name)", "type annotation");
+      return res;
+    }
+  } else {
+    res.kind = (type_kind_t)type;
+    ++p->pos; // consume type
   }
 
-  res.kind = (type_kind_t)type;
-
-  ++p->pos; // consume type
-
-  // check for pointer
   while (CUR_TOK.type == s_star && CUR_TOK.type != t_eof) {
     res.is_ptr = 1;
     ++res.ptr_depth;
-    ++p->pos; // consume star
+    ++p->pos;
   }
 
   return res;
@@ -380,19 +384,21 @@ static node_t *primary(parser_t *p) {
   token_t tok = consume(p);
   GUARD(p);
 
+  node_t *expr;
+
   switch (tok.type) {
     case l_num: { // literal
-      node_t *node = ALLOC_NODE(p);
-      node->kind = NODE_NUMBER;
-      node->number = tok.num_val;
-      return node;
+      expr = ALLOC_NODE(p);
+      expr->kind = NODE_NUMBER;
+      expr->number = tok.num_val;
+      break;
     }
 
     case l_string: {
-      node_t *node = ALLOC_NODE(p);
-      node->kind = NODE_STRING;
-      node->value = tok.string_val;
-      return node;
+      expr = ALLOC_NODE(p);
+      expr->kind = NODE_STRING;
+      expr->value = tok.string_val;
+      break;
     }
 
     case s_lparen: { // cast or grouped expression
@@ -409,20 +415,20 @@ static node_t *primary(parser_t *p) {
         node_t *rhs = logical_or(p);
         GUARD(p);
 
-        node_t *cast = ALLOC_NODE(p);
-        cast->kind = NODE_CAST;
-        cast->cast.cast_type = t;
-        cast->cast.operand = rhs;
+        expr = ALLOC_NODE(p);
+        expr->kind = NODE_CAST;
+        expr->cast.cast_type = t;
+        expr->cast.operand = rhs;
 
-        return cast;
+        break;
       } else {
-        node_t *expr = logical_or(p);
+        expr = logical_or(p);
 
         EXPECT_SYMBOL(s_rparen, "')' to close grouped expression", "grouped expression");
         GUARD(p);
         ++p->pos; // consume )
 
-        return expr;
+        break;
       }
     }
 
@@ -430,10 +436,10 @@ static node_t *primary(parser_t *p) {
       if (CUR_TOK.type == s_lparen) {
         return parse_function_call_site(p, tok.string_val); // error auto propogates, GUARD() return null on error, so will this as is
       } else {
-        node_t *ident = ALLOC_NODE(p);
-        ident->kind = NODE_IDENTIFIER;
-        ident->identifier = tok.string_val;
-        return ident;
+        expr = ALLOC_NODE(p);
+        expr->kind = NODE_IDENTIFIER;
+        expr->identifier = tok.string_val;
+        break;
       }
     }
 
@@ -441,6 +447,25 @@ static node_t *primary(parser_t *p) {
       GENERATE_ERROR(UNEXPECTED_TOKEN, tok, "expression (literal, identifier, function call, or '(' expr ')')", "expression parsing");
       return NULL;
   }
+
+  GUARD(p);
+
+  // postfix field access, applies to whatever expr came out above
+  while (CUR_TOK.type == s_dot) {
+    ++p->pos;
+    EXPECT_SYMBOL(l_identifier, "field name", "field access");
+    GUARD(p);
+
+    node_t *access = ALLOC_NODE(p);
+    access->kind = NODE_FIELD_ACCESS;
+    access->field_access.base = expr;
+    access->field_access.field = CUR_TOK.string_val;
+    ++p->pos;
+
+    expr = access;
+  }
+
+  return expr;
 }
 
 
@@ -557,14 +582,14 @@ static node_t *parse_expr(parser_t *p) {
 // ----------------------------------------------------------------
 
 
-static param_list_t parse_function_params(parser_t *p) {
-  param_list_t params = { 0 };
+static field_list_t parse_function_params(parser_t *p) {
+  field_list_t params = { 0 };
 
   EXPECT_SYMBOL(s_lparen, "'(' to open parameter list", "function declaration");
   if (p->err) return params;
   ++p->pos;
 
-  param_scratch_t scratch = { 0 };
+  field_scratch_t scratch = { 0 };
 
   while (CUR_TOK.type != s_rparen && CUR_TOK.type != t_eof) {
     // parse each param: type + identifier
@@ -574,19 +599,19 @@ static param_list_t parse_function_params(parser_t *p) {
     EXPECT_SYMBOL(l_identifier, "parameter name", "function parameter list");
     if (p->err) { free(scratch.items); return params; }
 
-    param_t param = {
+    field_t param = {
       .type = type,
       .name = CUR_TOK.string_val
     };
 
     ++p->pos; // consume identifier
 
-    param_scratch_push(&scratch, param, p);
+    field_scratch_push(&scratch, param, p);
     if (p->err) { free(scratch.items); return params; }
     if (CUR_TOK.type == s_comma) ++p->pos;
   }
 
-  params = param_scratch_commit(&scratch, p->arena);
+  params = field_scratch_commit(&scratch, p->arena);
   free(scratch.items);
 
   EXPECT_SYMBOL(s_rparen, "')' to close parameter list", "function declaration");
@@ -641,62 +666,45 @@ static node_t *parse_block_node(parser_t *p) {
 
 
 static node_t *parse_assignment(parser_t *p) {
-  if (p->pos + 1 < p->count) {
-    node_t *n;
-    op_t op = 0; // used for compound assignments
+  node_t *target = parse_expr(p);  // handles identifier, field access, chains
+  GUARD(p);
 
-    switch (p->tokens[p->pos + 1].type) {
-      // compound assignments
-      case s_plus_equals:    op = OP_PLUS;     break;
-      case s_minus_equals:   op = OP_MINUS;    break;
-      case s_star_equals:    op = OP_MULTIPLY; break;
-      case s_divide_equals:  op = OP_DIVIDE;   break;
-      case s_modulus_equals: op = OP_MODULUS;  break;
-
-      case s_equals: { // normal assignment
-        n = ALLOC_NODE(p);
-        n->kind = NODE_ASSIGN;
-        n->assign.name = CUR_TOK.string_val;
-
-        p->pos += 2; // consume identifier, then =
-        n->assign.value = parse_expr(p);
-        GUARD(p);
-
-        return n;
-      }
-
-      default: return parse_expr(p); // if error in parse_expr it will already return NULL and error will be set, no need for GUARD
+  op_t op = 0;
+  switch (CUR_TOK.type) {
+    case s_equals: {
+      ++p->pos;
+      node_t *n = ALLOC_NODE(p);
+      n->kind = NODE_ASSIGN;
+      n->assign.target = target;   // was .name (char*), now a node_t* lvalue
+      n->assign.value = parse_expr(p);
+      GUARD(p);
+      return n;
     }
-
-    // finish populating compound assignment
-    n = ALLOC_NODE(p);
-    n->kind = NODE_ASSIGN;
-    n->assign.name = CUR_TOK.string_val;
-    p->pos += 2; // consume identifier, then +=
-
-    node_t *lhs = ALLOC_NODE(p);
-    lhs->kind = NODE_IDENTIFIER;
-    lhs->identifier = n->assign.name;
-
-    node_t *rhs = parse_expr(p);
-    GUARD(p);
-
-    node_t *binop = ALLOC_NODE(p);
-    binop->kind = NODE_BINOP;
-
-    binop->binop.left = lhs;
-    binop->binop.op = op;
-    binop->binop.right = rhs;
-
-    n->assign.value = binop;
-
-    return n;
+    case s_plus_equals:    op = OP_PLUS;     break;
+    case s_minus_equals:   op = OP_MINUS;    break;
+    case s_star_equals:    op = OP_MULTIPLY; break;
+    case s_divide_equals:  op = OP_DIVIDE;   break;
+    case s_modulus_equals: op = OP_MODULUS;  break;
+    default: return target; // not an assignment, just an expression statement
   }
 
-  // EOF encountered
-  return NULL;
-}
+  ++p->pos; // consume compound-assign operator
+  node_t *n = ALLOC_NODE(p);
+  n->kind = NODE_ASSIGN;
+  n->assign.target = target;
 
+  node_t *rhs = parse_expr(p);
+  GUARD(p);
+
+  node_t *binop = ALLOC_NODE(p);
+  binop->kind = NODE_BINOP;
+  binop->binop.left = target;   // reuse target as lhs of the binop too
+  binop->binop.op = op;
+  binop->binop.right = rhs;
+
+  n->assign.value = binop;
+  return n;
+}
 
 static node_t *parse_for_initializer_clause(parser_t *p) {
   if (is_token_type_name(p)) {
@@ -726,8 +734,60 @@ static node_t *parse_for_initializer_clause(parser_t *p) {
 }
 
 
+static node_t *parse_struct_decl(parser_t *p) {
+  ++p->pos; // consume struct keyword
+
+  node_t *decl = ALLOC_NODE(p);
+  decl->kind = NODE_STRUCT_DECL;
+
+  EXPECT_SYMBOL(l_identifier, "struct name", "struct declaration");
+  GUARD(p);
+
+  decl->struct_decl.name = CUR_TOK.string_val;
+  ++p->pos; // consume identifier
+
+  EXPECT_SYMBOL(s_lbrace, "'{' to open struct body", "struct declaration");
+  GUARD(p);
+  ++p->pos; // consume {
+
+  field_scratch_t scratch = { 0 };
+
+  while (CUR_TOK.type != s_rbrace && CUR_TOK.type != t_eof) {
+    type_t type = parse_type(p);
+    if (p->err) { free(scratch.items); return NULL; }
+
+    EXPECT_SYMBOL(l_identifier, "field name", "struct field");
+    if (p->err) { free(scratch.items); return NULL; }
+
+    field_t field = {
+      .type = type,
+      .name = CUR_TOK.string_val
+    };
+    ++p->pos; // consume identifier
+
+    field_scratch_push(&scratch, field, p);
+    if (p->err) { free(scratch.items); return NULL; }
+
+    EXPECT_SYMBOL(s_semicolon, "';' after struct field", "struct field");
+    if (p->err) { free(scratch.items); return NULL; }
+    ++p->pos; // consume ;
+  }
+
+  decl->struct_decl.fields = field_scratch_commit(&scratch, p->arena);
+  free(scratch.items);
+
+  EXPECT_SYMBOL(s_rbrace, "'}' to close struct body", "struct declaration");
+  GUARD(p);
+  ++p->pos; // consume }
+
+  return decl;
+}
+
+
 static node_t *parse_stmt(parser_t *p) {
   switch (CUR_TOK.type) {
+    case Kw_struct: return parse_struct_decl(p);
+
     case Kw_return: {
       node_t *n = ALLOC_NODE(p);
 
@@ -900,29 +960,6 @@ static node_t *parse_stmt(parser_t *p) {
       return n;
     }
 
-    case s_star: {
-      node_t *n = ALLOC_NODE(p);
-
-      ++p->pos; // consume *
-      n->kind = NODE_DEREF_ASSIGN;
-
-      n->deref_assign.target = parse_expr(p);
-      GUARD(p);
-
-      EXPECT_SYMBOL(s_equals, "'=' after dereference target", "dereference assignment");
-      GUARD(p);
-      ++p->pos; // consume =
-
-      n->deref_assign.value = parse_expr(p);
-      GUARD(p);
-
-      EXPECT_SYMBOL(s_semicolon, "';' after dereference assignment", "dereference assignment");
-      GUARD(p);
-      ++p->pos; // consume semicolon
-
-      return n;
-    }
-
     case s_plus_plus:
     case s_minus_minus: {
       node_t *n = parse_expr(p);
@@ -935,36 +972,56 @@ static node_t *parse_stmt(parser_t *p) {
       return n;
     }
 
-    case l_identifier: {
+    case s_star: {
       node_t *n = parse_assignment(p);
-      if (n) {
-        EXPECT_SYMBOL(s_semicolon, "';' after assignment", "assignment statement");
-        GUARD(p);
-        ++p->pos;
-
-        return n;
-      }
-
-      // catch if parse_assignment returned NULL due to EOF token (error)
-      if (CUR_TOK.type == t_eof) {
-        GENERATE_ERROR(UNEXPECTED_EOF, CUR_TOK, "'=', compound assignment operator, or '(' for a function call", "statement");
-        return NULL;
-      }
-
-      // if we reach here it has to be a function call
-      char *name = CUR_TOK.string_val;
-      ++p->pos; // consume identifier
-
-      n = parse_function_call_site(p, name);
       GUARD(p);
 
-      EXPECT_SYMBOL(s_semicolon, "';' after function call", "function call statement");
+      EXPECT_SYMBOL(s_semicolon, "';' after statement", "expression statement");
       GUARD(p);
       ++p->pos;
 
       return n;
     }
 
+    case l_identifier: {
+      // disambiguate struct-typed var decl ("Point p;") from assignment/call ("p = ...", "p();")
+      if (p->pos + 1 < p->count && p->tokens[p->pos + 1].type == l_identifier) {
+        node_t *n = ALLOC_NODE(p);
+        n->kind = NODE_VAR_DECL;
+        n->var_decl.type = parse_type(p);
+        GUARD(p);
+
+        EXPECT_SYMBOL(l_identifier, "variable name", "variable declaration after type");
+        GUARD(p);
+
+        n->var_decl.name = CUR_TOK.string_val;
+        ++p->pos;
+
+        if (CUR_TOK.type == s_equals) {
+          ++p->pos;
+          n->var_decl.initialiser = parse_expr(p);
+          GUARD(p);
+        } else {
+          n->var_decl.initialiser = NULL;
+        }
+
+        EXPECT_SYMBOL(s_semicolon, "';' after variable declaration", "variable declaration");
+        GUARD(p);
+        ++p->pos;
+
+        return n;
+      }
+
+      // otherwise: assignment or function call statement
+      node_t *n = parse_assignment(p);
+      GUARD(p);
+
+      EXPECT_SYMBOL(s_semicolon, "';' after statement", "expression statement");
+      GUARD(p);
+      ++p->pos;
+
+      return n;
+    }
     default: {
       GENERATE_ERROR(UNEXPECTED_TOKEN, CUR_TOK, "statement (return, if, while, for, variable declaration, assignment, or function call)", "statement");
       return NULL;
@@ -1077,8 +1134,9 @@ static node_t *parse_toplevel(parser_t *p) {
   token_t tok = CUR_TOK; 
 
   switch (tok.type) {
-    case Kw_fn:  return parse_function(p);
-    case Kw_reg: return parse_reg_decl(p);
+    case Kw_fn:     return parse_function(p);
+    case Kw_reg:    return parse_reg_decl(p);
+    case Kw_struct: return parse_struct_decl(p);
     case t_u8: case t_i8: case t_u16: case t_i16: case Kw_void:
       return parse_global_var_decl(p);
 

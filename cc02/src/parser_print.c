@@ -42,14 +42,14 @@ static const char *op_name(op_t op) {
     case OP_BANG:          return "!";
     case OP_NEGATE:        return "-";
     case OP_ADDRESSOF:     return "&";
+    case OP_BAND:          return "&";
+    case OP_BOR:           return "|";
+    case OP_BXOR:          return "^";
+    case OP_BNOT:          return "~";
     case OP_LEFT_SHIFT:    return "<<";
     case OP_RIGHT_SHIFT:   return ">>";
     case OP_AND:           return "&&";
     case OP_OR:            return "||";
-    case OP_BAND:          return "&";
-    case OP_BXOR:          return "^";
-    case OP_BOR:           return "|";
-    case OP_BNOT:          return "~";
     default:               return "<op>";
   }
 }
@@ -67,7 +67,6 @@ static const char *node_kind_name(node_kind_t kind) {
     case NODE_CAST:         return "CStyleCastExpr";
     case NODE_VAR_DECL:     return "VarDecl";
     case NODE_ASSIGN:       return "AssignStmt";
-    case NODE_DEREF_ASSIGN: return "CompoundAssignOperator";
     case NODE_RETURN:       return "ReturnStmt";
     case NODE_IF:           return "IfStmt";
     case NODE_WHILE:        return "WhileStmt";
@@ -76,6 +75,8 @@ static const char *node_kind_name(node_kind_t kind) {
     case NODE_FUNCTION:     return "FunctionDecl";
     case NODE_REG_DECL:     return "RegDecl";
     case NODE_GLOBAL_VAR:   return "GlobalVarDecl";
+    case NODE_STRUCT_DECL:  return "StructDecl";
+    case NODE_FIELD_ACCESS: return "FieldAccess";
     case NODE_PROGRAM:      return "TranslationUnitDecl";
     default:                return "Unknown";
   }
@@ -83,7 +84,11 @@ static const char *node_kind_name(node_kind_t kind) {
 
 
 static void print_type_suffix(type_t type) {
-  printf("%s%s", type_name(type.kind), type.is_ptr ? "*" : "");
+  if (type.kind == TYPE_STRUCT) {
+    printf("%s%s", type.struct_name ? type.struct_name : "<anon struct>", type.is_ptr ? "*" : "");
+  } else {
+    printf("%s%s", type_name(type.kind), type.is_ptr ? "*" : "");
+  }
 }
 
 
@@ -115,49 +120,69 @@ static void print_ast_label(node_t *node) {
     case NODE_DEREF:
       printf("%s *", node_kind_name(node->kind));
       break;
-    case NODE_ASSIGN:
-      printf("%s %s =", node_kind_name(node->kind), node->assign.name ? node->assign.name : "<anon>");
+    case NODE_FIELD_ACCESS:
+      printf("%s .%s", node_kind_name(node->kind), node->field_access.field ? node->field_access.field : "<anon>");
       break;
-    
-    case NODE_CAST: {
+    case NODE_CAST:
       printf("%s ", node_kind_name(node->kind));
       print_type_suffix(node->cast.cast_type);
       break;
-    }
-    
-    case NODE_VAR_DECL: {
+    case NODE_VAR_DECL:
       printf("%s %s : ", node_kind_name(node->kind), node->var_decl.name ? node->var_decl.name : "<anon>");
       print_type_suffix(node->var_decl.type);
       break;
-    }
-
-    case NODE_FUNCTION: {
+    case NODE_ASSIGN:
+      printf("%s", node_kind_name(node->kind));
+      break;
+    case NODE_RETURN:
+      printf("%s", node_kind_name(node->kind));
+      break;
+    case NODE_IF:
+      printf("%s", node_kind_name(node->kind));
+      break;
+    case NODE_WHILE:
+      printf("%s", node_kind_name(node->kind));
+      break;
+    case NODE_FOR:
+      printf("%s", node_kind_name(node->kind));
+      break;
+    case NODE_BLOCK:
+      printf("%s", node_kind_name(node->kind));
+      break;
+    case NODE_FUNCTION:
       printf("%s %s(", node_kind_name(node->kind), node->function.name ? node->function.name : "<anon>");
       for (unsigned i = 0; i < node->function.params.count; ++i) {
-        param_t *param = &node->function.params.items[i];
+        field_t *param = &node->function.params.items[i];
         if (i > 0) printf(", ");
-        printf("%s%s %s", type_name(param->type.kind), param->type.is_ptr ? "*" : "", param->name ? param->name : "<anon>");
+        print_type_suffix(param->type);
+        printf(" %s", param->name ? param->name : "<anon>");
       }
       printf(") -> ");
       print_type_suffix(node->function.return_type);
       break;
-    }
-
-    case NODE_REG_DECL: {
+    case NODE_REG_DECL:
       printf("%s %s : ", node_kind_name(node->kind), node->reg_decl.name ? node->reg_decl.name : "<anon>");
       print_type_suffix(node->reg_decl.type);
       printf(" @ %3lx", node->reg_decl.addr);
       break;
-    }
-
-    case NODE_GLOBAL_VAR: {
+    case NODE_GLOBAL_VAR:
       printf("%s %s : ", node_kind_name(node->kind), node->global_var.name ? node->global_var.name : "<anon>");
       print_type_suffix(node->global_var.type);
       break;
-    }
-    
-    case NODE_RETURN: case NODE_IF: case NODE_WHILE: case NODE_FOR: case NODE_BLOCK:
-    case NODE_DEREF_ASSIGN: case NODE_PROGRAM: default:
+    case NODE_STRUCT_DECL:
+      printf("%s %s {", node_kind_name(node->kind), node->struct_decl.name ? node->struct_decl.name : "<anon>");
+      for (unsigned i = 0; i < node->struct_decl.fields.count; ++i) {
+        field_t *field = &node->struct_decl.fields.items[i];
+        if (i > 0) printf(", ");
+        print_type_suffix(field->type);
+        printf(" %s", field->name ? field->name : "<anon>");
+      }
+      printf("}");
+      break;
+    case NODE_PROGRAM:
+      printf("%s", node_kind_name(node->kind));
+      break;
+    default:
       printf("%s", node_kind_name(node->kind));
       break;
   }
@@ -224,6 +249,10 @@ static void print_ast_(node_t *node, int is_last, const char *prefix) {
       print_ast_(node->deref_target, 1, child_prefix);
       break;
 
+    case NODE_FIELD_ACCESS:
+      print_ast_(node->field_access.base, 1, child_prefix);
+      break;
+
     case NODE_CAST:
       print_ast_(node->cast.operand, 1, child_prefix);
       break;
@@ -235,12 +264,8 @@ static void print_ast_(node_t *node, int is_last, const char *prefix) {
       break;
 
     case NODE_ASSIGN:
-      print_ast_(node->assign.value, 1, child_prefix);
-      break;
-
-    case NODE_DEREF_ASSIGN:
-      print_ast_(node->deref_assign.target, 0, child_prefix);
-      print_ast_(node->deref_assign.value, 1, child_prefix);
+      print_ast_labeled("[target]", node->assign.target, 0, child_prefix);
+      print_ast_labeled("[value]", node->assign.value, 1, child_prefix);
       break;
 
     case NODE_RETURN:
@@ -258,17 +283,11 @@ static void print_ast_(node_t *node, int is_last, const char *prefix) {
       char body_prefix[AST_PRINT_MAX_DEPTH];
       strcpy(body_prefix, child_prefix);
       strcat(body_prefix, has_else ? "|  " : "   ");
-      print_ast_(node->if_stmt.blocks.items[0], !has_else, body_prefix);
+      print_ast_(node->if_stmt.blocks.items[0], has_else, body_prefix);
 
       for (unsigned i = 1; i < node->if_stmt.blocks.count; ++i) {
         node_t *block = node->if_stmt.blocks.items[i];
-        unsigned has_more_blocks = i < node->if_stmt.blocks.count - 1;
-
-        if (block->kind == NODE_IF) {
-          printf("%s%s[else if body]\n", child_prefix, has_more_blocks ? "|- " : "`- ");
-        } else {
-          printf("%s%s[else body]\n", child_prefix, has_more_blocks ? "|- " : "`- ");
-        }
+        unsigned has_more_blocks = i < node->if_stmt.blocks.count  - 1;
 
         char else_prefix[AST_PRINT_MAX_DEPTH];
         strcpy(else_prefix, child_prefix);
@@ -320,6 +339,8 @@ static void print_ast_(node_t *node, int is_last, const char *prefix) {
       break;
 
     case NODE_REG_DECL:
+      break;
+    case NODE_STRUCT_DECL:
       break;
     case NODE_GLOBAL_VAR:
       if (node->global_var.initialiser) {

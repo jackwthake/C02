@@ -254,6 +254,7 @@ static int tokenize_symbol(token_t *tokens, unsigned *token_count, char **ptr, u
     MATCH_SINGLE_CHAR_SYMBOL('}', s_rbrace);
     MATCH_SINGLE_CHAR_SYMBOL('@', s_mem_lookup);
     MATCH_SINGLE_CHAR_SYMBOL(',', s_comma);
+    MATCH_SINGLE_CHAR_SYMBOL('.', s_dot);
     MATCH_SINGLE_CHAR_SYMBOL('^', s_caret);
     MATCH_SINGLE_CHAR_SYMBOL('~', s_not);
 
@@ -395,6 +396,7 @@ static int tokenize_keyword_or_identifier(token_t *tokens, unsigned *token_count
   MATCH_KEYWORD("fn",     Kw_fn)
   MATCH_KEYWORD("reg",    Kw_reg)
   MATCH_KEYWORD("return", Kw_return)
+  MATCH_KEYWORD("struct", Kw_struct)
   MATCH_KEYWORD("void",   Kw_void)
   MATCH_KEYWORD("if",     Kw_if)
   MATCH_KEYWORD("else",   Kw_else)

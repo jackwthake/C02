@@ -1,4 +1,4 @@
-// test_bitwise.c02
+// parser_bitwise.c02
 // Exercises &, |, ^, ~, <<, >> at every level: basic, precedence, chaining, mixed with logical ops.
 
 fn main() -> void {
