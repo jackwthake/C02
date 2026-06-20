@@ -124,7 +124,56 @@ def update_golden(path):
         f.write(result.stdout)
     print(f"  updated {filename}")
 
+REPO_ROOT = os.path.join(SCRIPT_DIR, "../..")
+
+EXTENSION_LABELS = {
+    ".c": "C",
+    ".h": "C Header",
+    ".c02": "C02",
+    ".py": "Python",
+    ".md": "Markdown",
+    ".mk": "Makefile",
+}
+
+IGNORED_DIRS = {".git", "bin", "build", "node_modules", "__pycache__"}
+
+def count_lines():
+    counts = {}
+    for dirpath, dirnames, filenames in os.walk(REPO_ROOT):
+        dirnames[:] = [d for d in dirnames if d not in IGNORED_DIRS]
+        for f in filenames:
+            ext = os.path.splitext(f)[1]
+            if f == "Makefile" and not ext:
+                ext = ".mk"
+            if ext not in EXTENSION_LABELS:
+                continue
+            filepath = os.path.join(dirpath, f)
+            try:
+                with open(filepath) as fh:
+                    counts[ext] = counts.get(ext, 0) + sum(1 for _ in fh)
+            except (OSError, UnicodeDecodeError):
+                pass
+
+    if not counts:
+        print("no recognized source files found")
+        return
+
+    total = sum(counts.values())
+    max_label = max(len(EXTENSION_LABELS[e]) for e in counts)
+    max_digits = len(str(max(counts.values())))
+    for ext in sorted(counts, key=lambda e: counts[e], reverse=True):
+        label = (EXTENSION_LABELS[ext] + ":").ljust(max_label + 1)
+        pct = counts[ext] / total * 100
+        print(f"  {label} {counts[ext]:<{max_digits}} lines ({pct:.1f}%)")
+
+    print(f"\n  Total: {total} lines")
+
 if __name__ == "__main__":
+    if "--cloc" in sys.argv:
+        print("--- Lines of Code ---")
+        count_lines()
+        sys.exit(0)
+
     updating = "--update" in sys.argv
     tests = sorted(f for f in os.listdir(TESTS_DIR) if f.endswith(".c02"))
 
