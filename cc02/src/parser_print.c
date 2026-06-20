@@ -76,6 +76,7 @@ static const char *node_kind_name(node_kind_t kind) {
     case NODE_REG_DECL:     return "RegDecl";
     case NODE_GLOBAL_VAR:   return "GlobalVarDecl";
     case NODE_STRUCT_DECL:  return "StructDecl";
+    case NODE_STRUCT_INIT:  return "StructInitExpr";
     case NODE_FIELD_ACCESS: return "FieldAccess";
     case NODE_PROGRAM:      return "TranslationUnitDecl";
     default:                return "Unknown";
@@ -122,6 +123,9 @@ static void print_ast_label(node_t *node) {
       break;
     case NODE_FIELD_ACCESS:
       printf("%s .%s", node_kind_name(node->kind), node->field_access.field ? node->field_access.field : "<anon>");
+      break;
+    case NODE_STRUCT_INIT:
+      printf("%s %s", node_kind_name(node->kind), node->struct_init.struct_name ? node->struct_init.struct_name : "<anon>");
       break;
     case NODE_CAST:
       printf("%s ", node_kind_name(node->kind));
@@ -340,8 +344,22 @@ static void print_ast_(node_t *node, int is_last, const char *prefix) {
 
     case NODE_REG_DECL:
       break;
+
     case NODE_STRUCT_DECL:
       break;
+
+    case NODE_STRUCT_INIT: {
+      for (unsigned i = 0; i < node->struct_init.inits.count; ++i) {
+        field_init_t *init = &node->struct_init.inits.items[i];
+        unsigned is_last_init = (i + 1 == node->struct_init.inits.count);
+ 
+        char label[64];
+        snprintf(label, sizeof(label), "[.%s]", init->field_name ? init->field_name : "<anon>");
+        print_ast_labeled(label, init->value, is_last_init, child_prefix);
+      }
+      break;
+    }
+
     case NODE_GLOBAL_VAR:
       if (node->global_var.initialiser) {
         print_ast_(node->global_var.initialiser, 1, child_prefix);

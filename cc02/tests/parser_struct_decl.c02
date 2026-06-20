@@ -31,9 +31,12 @@ fn main() -> void {
   a /= 4;
   a %= 3;
 
+  // empty initializer;
+  Point p = Point{};
+
   // --- single-level field access as rvalue ---
-  Point p;
-  u8 px = p.x;
+  Point p1 = Point{ .x = a, .y = 0 };
+  u8 px = p1.x;
 
   // --- single-level field access as assignment target ---
   p.x = 10;
@@ -50,6 +53,9 @@ fn main() -> void {
   c.engine.cylinders = 6;
   c.position.x = 1;
   c.position.y = 2;
+
+  Car *car_ptr;
+  Car *c2 = &c;
 
   // chained field access as rvalue
   u16 rpm = c.engine.rpm;

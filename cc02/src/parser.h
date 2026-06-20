@@ -57,14 +57,17 @@ typedef enum {
   NODE_CALL,
   NODE_DEREF,
   NODE_CAST,
+
   // statements
   NODE_VAR_DECL,
+  NODE_STRUCT_INIT,
   NODE_ASSIGN,
   NODE_RETURN,
   NODE_IF,
   NODE_WHILE,
   NODE_FOR,
   NODE_BLOCK,
+
   // top-level
   NODE_FUNCTION,
   NODE_REG_DECL,
@@ -104,8 +107,15 @@ typedef scratch_buffer_list_t field_list_t;
 typedef scratch_buffer_item_t param_t;
 typedef scratch_buffer_list_t param_list_t;
 
-typedef scratch_buffer_item_t field_init_t;
-typedef scratch_buffer_list_t field_init_list_t;
+typedef struct {
+  char *field_name;
+  node_t *value;
+} field_init_t;
+
+typedef struct {
+  field_init_t *items;
+  unsigned count;
+} field_init_list_t;
 
 
 // ----------------------------------------------------------------
@@ -149,6 +159,11 @@ struct node_t {
       char   *name;
       node_t *initialiser;                // NULL if absent
     } var_decl;                           // NODE_VAR_DECL
+
+    struct {
+      char *struct_name;
+      field_init_list_t inits;
+    } struct_init;                        // NODE_STRUCT_INIT
 
     struct {
       node_t *target;

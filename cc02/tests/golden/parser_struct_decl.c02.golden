@@ -48,9 +48,16 @@
    |     |        |- Identifier a
    |     |        `- IntegerLiteral (3)
    |     |- VarDecl p : Point
+   |     |  `- StructInitExpr Point
+   |     |- VarDecl p1 : Point
+   |     |  `- StructInitExpr Point
+   |     |     |- [.x]
+   |     |     |  `- Identifier a
+   |     |     `- [.y]
+   |     |        `- IntegerLiteral (0)
    |     |- VarDecl px : u8
    |     |  `- FieldAccess .x
-   |     |     `- Identifier p
+   |     |     `- Identifier p1
    |     |- AssignStmt
    |     |  |- [target]
    |     |  |  `- FieldAccess .x
@@ -119,6 +126,10 @@
    |     |  |        `- Identifier c
    |     |  `- [value]
    |     |     `- IntegerLiteral (2)
+   |     |- VarDecl car_ptr : Car*
+   |     |- VarDecl c2 : Car*
+   |     |  `- UnaryOperator &
+   |     |     `- Identifier c
    |     |- VarDecl rpm : u16
    |     |  `- FieldAccess .rpm
    |     |     `- FieldAccess .engine
@@ -193,14 +204,9 @@
    |     |        |- PtrDeref *
    |     |        |  `- Identifier ptr
    |     |        `- IntegerLiteral (1)
-   |     |- AssignStmt
-   |     |  |- [target]
-   |     |  |  `- BinaryOperator *
-   |     |  |     |- Identifier Car
-   |     |  |     `- Identifier cptr
-   |     |  `- [value]
-   |     |     `- UnaryOperator &
-   |     |        `- Identifier c
+   |     |- VarDecl cptr : Car*
+   |     |  `- UnaryOperator &
+   |     |     `- Identifier c
    |     |- VarDecl tagval : u8
    |     |  `- PtrDeref *
    |     |     `- FieldAccess .tag

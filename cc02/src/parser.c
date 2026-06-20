@@ -147,7 +147,7 @@ void parser_free(parser_arena_t *a) {
 DEFINE_NODE_SCRATCH(scratch)                                              // node_t* — statement lists, call args, etc.
 DEFINE_VALUE_SCRATCH(field_scratch, field_t, field_list_t)                // struct decl fields
 DEFINE_VALUE_SCRATCH(param_scratch, param_t, param_list_t)                // function params
-// DEFINE_VALUE_SCRATCH(field_init_scratch, field_init_t, field_init_list_t) // struct initializer { .field = val }
+DEFINE_VALUE_SCRATCH(field_init_scratch, field_init_t, field_init_list_t) // struct initializer { .field = val }
 
 
 static inline int token_type_to_parser_type(token_type_t t) {
@@ -171,6 +171,7 @@ static inline int token_type_to_parser_type(token_type_t t) {
 #define CUR_TOK p->tokens[p->pos]
 
 
+static node_t *parse_struct_init(parser_t *p, char *struct_name);
 static node_t *logical_or(parser_t *p); // recursive descent entry point
 
 
@@ -313,11 +314,16 @@ static node_t *primary(parser_t *p) {
 
     case l_identifier: {
       if (CUR_TOK.type == s_lparen) {
-        return parse_function_call_site(p, tok.string_val); // error auto propogates, GUARD() return null on error, so will this as is
+        expr = parse_function_call_site(p, tok.string_val);
+        break;
+      } else if (CUR_TOK.type == s_lbrace) {
+        expr = parse_struct_init(p, tok.string_val);
+        break;
       } else {
-        expr = ALLOC_NODE(p);
-        expr->kind = NODE_IDENTIFIER;
-        expr->identifier = tok.string_val;
+        node_t *ident = ALLOC_NODE(p);
+        ident->kind = NODE_IDENTIFIER;
+        ident->identifier = tok.string_val;
+        expr = ident;
         break;
       }
     }
@@ -663,6 +669,53 @@ static node_t *parse_struct_decl(parser_t *p) {
 }
 
 
+static node_t *parse_struct_init(parser_t *p, char *struct_name) {
+  node_t *n = ALLOC_NODE(p);
+  n->kind = NODE_STRUCT_INIT;
+  n->struct_init.struct_name = struct_name;
+
+  EXPECT_SYMBOL(s_lbrace, "'{' to open struct initializer", "struct initializer");
+  GUARD(p);
+  ++p->pos; // consume {
+
+  field_init_scratch_t scratch = { 0 };
+
+  while (CUR_TOK.type != s_rbrace && CUR_TOK.type != t_eof) {
+    EXPECT_SYMBOL(s_dot, "'.' before field name", "struct initializer field");
+    if (p->err) { free(scratch.items); return NULL; }
+    ++p->pos; // consume .
+
+    EXPECT_SYMBOL(l_identifier, "field name", "struct initializer field");
+    if (p->err) { free(scratch.items); return NULL; }
+
+    char *field_name = CUR_TOK.string_val;
+    ++p->pos; // consume field name
+
+    EXPECT_SYMBOL(s_equals, "'=' after field name", "struct initializer field");
+    if (p->err) { free(scratch.items); return NULL; }
+    ++p->pos; // consume =
+
+    node_t *value = parse_expr(p);
+    if (p->err) { free(scratch.items); return NULL; }
+
+    field_init_t init = { .field_name = field_name, .value = value };
+    field_init_scratch_push(&scratch, init, p);
+    if (p->err) { free(scratch.items); return NULL; }
+
+    if (CUR_TOK.type == s_comma) ++p->pos;
+  }
+
+  n->struct_init.inits = field_init_scratch_commit(&scratch, p->arena);
+  free(scratch.items);
+
+  EXPECT_SYMBOL(s_rbrace, "'}' to close struct initializer", "struct initializer");
+  GUARD(p);
+  ++p->pos; // consume }
+
+  return n;
+}
+
+
 static node_t *parse_stmt(parser_t *p) {
   switch (CUR_TOK.type) {
     case Kw_struct: return parse_struct_decl(p);
@@ -863,8 +916,16 @@ static node_t *parse_stmt(parser_t *p) {
     }
 
     case l_identifier: {
-      // disambiguate struct-typed var decl ("Point p;") from assignment/call ("p = ...", "p();")
-      if (p->pos + 1 < p->count && p->tokens[p->pos + 1].type == l_identifier) {
+      // disambiguate struct-typed var decl ("Engine* e;", "Point p;") from
+      // assignment/call ("p = ...", "p();") by scanning past any pointer
+      // stars to see if an identifier follows — that pattern only occurs
+      // in a declaration, never in an expression.
+      unsigned lookahead = p->pos + 1;
+      while (lookahead < p->count && p->tokens[lookahead].type == s_star) {
+        ++lookahead;
+      }
+
+      if (lookahead < p->count && p->tokens[lookahead].type == l_identifier) {
         node_t *n = ALLOC_NODE(p);
         n->kind = NODE_VAR_DECL;
         n->var_decl.type = parse_type(p);
