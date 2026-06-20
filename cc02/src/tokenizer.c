@@ -94,10 +94,10 @@
 static token_t* add_token(token_t *tokens, unsigned *token_count, token_type_t type, unsigned line, unsigned column, unsigned length, char *file_path) {
   token_t *tok = &tokens[(*token_count)++];
   tok->type = type;
-  tok->line = line;
-  tok->column = column;
-  tok->length = length;
-  tok->file_path = file_path;
+  tok->loc.line = line;
+  tok->loc.column = column;
+  tok->loc.length = length;
+  tok->loc.file_path = file_path;
   tok->num_val = 0; // zero out the union just to be safe
   return tok;
 }
@@ -163,11 +163,11 @@ void print_tokens(const token_t *tokens, unsigned count) {
     const token_t token = tokens[i];
 
     if (token.type == l_identifier || token.type == l_string) {
-      printf("Token: %s(%s), %s:%u:%u\n", token_type_to_string(token.type), (char *)token.string_val, token.file_path, token.line, token.column);
+      printf("Token: %s(%s), %s:%u:%u\n", token_type_to_string(token.type), (char *)token.string_val, token.loc.file_path, token.loc.line, token.loc.column);
     } else if (token.type == l_num) {
-      printf("Token: %s(%ld), %s:%u:%u\n", token_type_to_string(token.type), token.num_val, token.file_path, token.line, token.column);
+      printf("Token: %s(%ld), %s:%u:%u\n", token_type_to_string(token.type), token.num_val, token.loc.file_path, token.loc.line, token.loc.column);
     } else {
-      printf("Token: %s, %s:%u:%u\n", token_type_to_string(token.type), token.file_path, token.line, token.column);
+      printf("Token: %s, %s:%u:%u\n", token_type_to_string(token.type), token.loc.file_path, token.loc.line, token.loc.column);
     }
 
     if (token.type == t_eof) {
@@ -355,21 +355,21 @@ static void print_error_line_(const char *ptr, unsigned line_number, unsigned co
 
 
 /**
- * print_error_line(line_number, column, error_length)
+ * print_error_line(loc)
  * Public facing helper function to print the line of source code where an error occurred, 
  * along with a caret pointing to the column of the error.
  * Used in parser, semantic analysis error reporting
 */
-void print_error_line(unsigned line_number, unsigned column, unsigned length) {
+void print_error_line(token_location_t loc) {
   if (!source) return;
 
   const char *ptr = source;
   unsigned current_line = 1;
 
-  while (*ptr != '\0' && current_line < line_number) {
+  while (*ptr != '\0' && current_line < loc.line) {
     if (*ptr == '\n') {
       current_line++;
-      if (current_line == line_number) {
+      if (current_line == loc.line) {
         ptr++;
         break;
       }
@@ -377,7 +377,7 @@ void print_error_line(unsigned line_number, unsigned column, unsigned length) {
     ptr++;
   }
 
-  if (*ptr == '\0' && current_line < line_number) {
+  if (*ptr == '\0' && current_line < loc.line) {
     // If the requested line number is past the end, fall back to the last line.
     ptr = source;
     while (*ptr != '\0' && *ptr != '\n') {
@@ -388,7 +388,7 @@ void print_error_line(unsigned line_number, unsigned column, unsigned length) {
     }
   }
 
-  print_error_line_(ptr, line_number, column, length);
+  print_error_line_(ptr, loc.line, loc.column, loc.length);
 }
 
 
@@ -471,7 +471,7 @@ static int tokenize_string(token_t *tokens, unsigned *token_count, char **ptr, u
     unsigned err_line = get_line_number_from_ptr(string_start);
     PRINT_ERROR_HEADER(file_path, err_line, string_column);
     fprintf(stderr, "Unterminated string literal\n");
-    print_error_line(err_line, string_column, 1);
+    print_error_line((token_location_t){ .line = err_line, .column = string_column, .length = 1, .file_path = file_path });
 
     free(string_literal);
     return -1;
@@ -527,7 +527,7 @@ static int tokenize_number(token_t *tokens, unsigned *token_count, char **ptr, u
     unsigned prefix_len = (base != 10) ? 2 : 1;
     PRINT_ERROR_HEADER(file_path, line, *column);
     fprintf(stderr, "Invalid number literal\n");
-    print_error_line(line, *column, prefix_len);
+    print_error_line((token_location_t){ .line = line, .column = *column, .length = prefix_len, .file_path = file_path });
     return -1;
   }
 
@@ -536,7 +536,7 @@ static int tokenize_number(token_t *tokens, unsigned *token_count, char **ptr, u
   if (endptr != (char *)end) {
     PRINT_ERROR_HEADER(file_path, line, *column);
     fprintf(stderr, "Invalid number literal\n");
-    print_error_line(line, *column, (unsigned)(end - *ptr));
+    print_error_line((token_location_t){ .line = line, .column = *column, .length = (unsigned)(end - *ptr), .file_path = file_path });
     return -1;
   }
 
@@ -604,7 +604,7 @@ token_t *tokenize(const char *file_path, const char *source_code, const long fil
     // If we reach here, it's an unrecognized token.
     PRINT_ERROR_HEADER(file_path, line, column);
     fprintf(stderr, "Unexpected character '%c'\n", *ptr);
-    print_error_line(line, column, 1);
+    print_error_line((token_location_t){ .line = line, .column = column, .length = 1, .file_path = (char *)file_path });
     error_count++;
 
     if (*ptr == '\n') { line++; column = 1; } else { column++; }

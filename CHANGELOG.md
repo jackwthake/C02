@@ -11,6 +11,13 @@ releases are reserved for bug fixes only.
 
 ### Changed
 
+- Generalized error handling and printing for parsing onwards
+  (including sem. analysis). Moved source location tracking to a
+  dedicated type, `token_location_t` to support pretty error messages
+  after tokens aren't directly accessible
+- Addded smoke tests for parts of the code that don't produce visual
+  output in the compiler. Updated test harness to run these and check
+  for memory leaks.
 - Generalized the arena allocator out of `parser.c` into shared
   infrastructure, so semantic analysis can reuse it for its own
   allocations.

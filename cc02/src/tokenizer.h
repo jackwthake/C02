@@ -65,10 +65,20 @@ typedef enum {
   #undef X
 } token_type_t;
 
+// A span of source text - line/column/length for the caret-and-snippet
+// error display, file_path because nothing stops the path from differing
+// per-token once multi-file compilation exists, even though today every
+// token in a single tokenize() call shares the same path. Used by
+// token_t, and (once parser.c stamps it onto nodes) node_t and error_t too -
+// "where in the source is this" is one fact, not three or four loose ones.
 typedef struct {
-  token_type_t type;
   unsigned line, column, length;
   char *file_path;
+} token_location_t;
+
+typedef struct {
+  token_type_t type;
+  token_location_t loc;
   union {
     char *string_val; // For identifiers and strings
     long num_val;     // For l_num
@@ -79,7 +89,7 @@ const char *token_type_to_string(token_type_t type);
 unsigned token_has_value(token_type_t type);
 char *token_val_to_string(const token_t tok, unsigned *should_free);
 
-void print_error_line(unsigned line, unsigned column, unsigned length);
+void print_error_line(token_location_t loc);
 void print_tokens(const token_t *tokens, unsigned count);
 
 token_t *tokenize(const char *file_path, const char *source_code, const long file_size, unsigned *num_tokens);
