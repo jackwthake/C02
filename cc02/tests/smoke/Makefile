@@ -1,4 +1,5 @@
 BIN_DIR = ../bin
+BUILD_DIR = ../../build
 SRC_DIR = ../../src
 CC = gcc
 CFLAGS = -Wall -Wextra -ggdb \
@@ -9,27 +10,22 @@ CFLAGS = -Wall -Wextra -ggdb \
          -Wno-sign-conversion \
          -Werror \
          -Wno-format-extra-args \
-         -I$(SRC_DIR)
+         -I$(SRC_DIR)/common -I$(SRC_DIR)/lexer -I$(SRC_DIR)/parser -I$(SRC_DIR)/analysis
 
 SRCS = $(wildcard *.c)
-
-# Use filter-out to remove $(BIN_DIR)/main.o from the generated object list
-SRC_OBJS = $(filter-out $(BIN_DIR)/main.o, $(patsubst $(SRC_DIR)/%.c,$(BIN_DIR)/%.o,$(wildcard $(SRC_DIR)/*.c)))
-
 BINS = $(patsubst %.c,$(BIN_DIR)/%,$(SRCS))
+
+SRC_OBJS = $(filter-out $(BUILD_DIR)/main.o, $(wildcard $(BUILD_DIR)/*.o))
 
 .PHONY: all clean
 
-all: $(BIN_DIR) $(SRC_OBJS) $(BINS)
+all: $(BIN_DIR) $(BINS)
 
 $(BIN_DIR):
 	mkdir -p $(BIN_DIR)
-
-$(BIN_DIR)/%.o: $(SRC_DIR)/%.c
-	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(BIN_DIR)/%: %.c $(SRC_OBJS)
 	$(CC) $(CFLAGS) -o $@ $< $(SRC_OBJS)
 
 clean:
-	rm -f $(BINS) $(SRC_OBJS)
+	rm -f $(BINS)

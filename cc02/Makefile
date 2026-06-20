@@ -1,4 +1,5 @@
 BIN_DIR = ../bin
+BUILD_DIR = build
 BIN = $(BIN_DIR)/cc02
 CC = gcc
 CFLAGS = -Wall -Wextra -ggdb \
@@ -8,22 +9,27 @@ CFLAGS = -Wall -Wextra -ggdb \
          -Wconversion \
          -Wno-sign-conversion \
          -Werror \
-				 -Wno-format-extra-args
-SRCS = $(wildcard src/*.c)
-OBJS = $(patsubst src/%.c,src/%.o,$(SRCS))
+         -Wno-format-extra-args \
+         -Isrc/common -Isrc/lexer -Isrc/parser -Isrc/analysis
+
+SRC_DIRS = src src/common src/lexer src/parser src/analysis
+SRCS = $(foreach dir,$(SRC_DIRS),$(wildcard $(dir)/*.c))
+OBJS = $(addprefix $(BUILD_DIR)/,$(notdir $(SRCS:.c=.o)))
+
+vpath %.c $(SRC_DIRS)
 
 .PHONY: all clean
 
-all: $(BIN_DIR) $(BIN)
+all: $(BIN)
 
-$(BIN_DIR):
-	mkdir -p $(BIN_DIR)
-
-$(BIN): $(OBJS)
+$(BIN): $(OBJS) | $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $@ $^
 
-src/%.o: src/%.c
+$(BUILD_DIR)/%.o: %.c | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
+$(BIN_DIR) $(BUILD_DIR):
+	mkdir -p $@
+
 clean:
-	rm -f $(OBJS) $(BIN)
+	rm -rf $(BUILD_DIR) $(BIN)
