@@ -229,6 +229,9 @@ struct node_t {
 };
 
 
+typedef node_t * ast_t;
+
+
 // ----------------------------------------------------------------
 // Memory Management
 // ----------------------------------------------------------------
@@ -269,7 +272,7 @@ typedef struct {
 
 
 typedef struct {
-  parser_arena_t *arena;
+  parser_arena_t arena;
 
   token_t *tokens;
   unsigned count;
@@ -284,11 +287,11 @@ typedef struct {
 // General API
 // ----------------------------------------------------------------
 
-int parser_init(parser_arena_t *a, size_t size);
-void parser_free(parser_arena_t *a);
+int parser_init(parser_t *p);
+void parser_free(parser_t *p);
 
-void print_ast(node_t *node);
+void print_ast(ast_t node);
 
-node_t *parse(token_t *tokens, unsigned num_tokens, parser_arena_t *mem_area);
+ast_t parse(parser_t *p, token_t *tokens, unsigned num_tokens);
 
 #endif // __PARSER_H__

@@ -194,21 +194,22 @@ int main(int argc, char * const *argv) {
 
   /* parse the tokens into an AST */
   t_step_start = get_time_ms();
-  parser_arena_t parser_area;
-  if (!parser_init(&parser_area, PARSER_CHUNK_ALLOC_SIZE)) {
+  
+  parser_t parser;
+  if (!parser_init(&parser)) {
     fprintf(stderr, "Parser allocation failed.");
     free(source_code);
     free_tokens(tokens, num_tokens);
     return 1;
   }
 
-  node_t *ast = parse(tokens, num_tokens, &parser_area);
+  ast_t ast = parse(&parser, tokens, num_tokens);
   t_parse = get_time_ms() - t_step_start; /* Exclude I/O dump time */
 
   if (!ast) {
     free(source_code);
     free_tokens(tokens, num_tokens);
-    parser_free(&parser_area);
+    parser_free(&parser);
     return 1;
   }
 
@@ -235,7 +236,7 @@ finish:
 
   t_step_start = get_time_ms();
   free_tokens(tokens, num_tokens);
-  parser_free(&parser_area);
+  parser_free(&parser);
   t_cleanup = get_time_ms() - t_step_start;
 
   /* Print Timing Report if flag was passed */

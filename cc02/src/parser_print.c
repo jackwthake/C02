@@ -373,7 +373,7 @@ static void print_ast_(node_t *node, int is_last, const char *prefix) {
 }
 
 
-void print_ast(node_t *node) {
+void print_ast(ast_t node) {
   char prefix[AST_PRINT_MAX_DEPTH] = "";
   print_ast_(node, 1, prefix);
 }

@@ -70,19 +70,19 @@
 extern void print_parse_error(error_t *e);
 
 
-int parser_init(parser_arena_t *a, size_t chunk_size) {
-  chunk_size = (chunk_size + sizeof(void*) - 1) & ~(sizeof(void*) - 1);
+int parser_init(parser_t *p) {
+  size_t chunk_size = (PARSER_CHUNK_ALLOC_SIZE + sizeof(void*) - 1) & ~(sizeof(void*) - 1);
 
-  a->chunk_size = chunk_size;
-  a->first = malloc(sizeof(arena_chunk_t) + chunk_size);
-  if (!a->first) {
+  p->arena.chunk_size = chunk_size;
+  p->arena.first = malloc(sizeof(arena_chunk_t) + chunk_size);
+  if (!p->arena.first) {
     return 0;
   }
 
-  a->first->next = NULL;
-  a->first->used = 0;
-  a->first->capacity = chunk_size;
-  a->current = a->first;
+  p->arena.first->next = NULL;
+  p->arena.first->used = 0;
+  p->arena.first->capacity = chunk_size;
+  p->arena.current = p->arena.first;
 
   return 1;
 }
@@ -121,11 +121,12 @@ static void *parser_alloc(parser_arena_t *a, size_t size) {
 }
 
 
-#define ALLOC_NODE(p) (memset(parser_alloc((p)->arena, sizeof(node_t)), 0, sizeof(node_t)))
+#define ALLOC_NODE(p) (memset(parser_alloc(&(p)->arena, sizeof(node_t)), 0, sizeof(node_t)))
 
 
-void parser_free(parser_arena_t *a) {
-  if (a) {
+void parser_free(parser_t *p) {
+  parser_arena_t *a = &p->arena;
+  if (p) {
     arena_chunk_t *curr = a->first;
     while (curr) {
       arena_chunk_t *tmp = curr;
@@ -238,7 +239,7 @@ static node_t *parse_function_call_site(parser_t *p, char *name) {
     if (CUR_TOK.type == s_comma) ++p->pos;
   }
 
-  n->call.args = scratch_commit(&scratch, p->arena);
+  n->call.args = scratch_commit(&scratch, &p->arena);
   free(scratch.items);
 
   EXPECT_SYMBOL(s_rparen, "')' to close argument list", "function call");
@@ -496,7 +497,7 @@ static param_list_t parse_function_params(parser_t *p) {
     if (CUR_TOK.type == s_comma) ++p->pos;
   }
 
-  params = param_scratch_commit(&scratch, p->arena);
+  params = param_scratch_commit(&scratch, &p->arena);
   free(scratch.items);
 
   EXPECT_SYMBOL(s_rparen, "')' to close parameter list", "function declaration");
@@ -528,7 +529,7 @@ static node_list_t parse_block(parser_t *p) {
     if (p->err) { free(scratch.items); return block; }
   }
 
-  block = scratch_commit(&scratch, p->arena);
+  block = scratch_commit(&scratch, &p->arena);
   free(scratch.items);
 
   EXPECT_SYMBOL(s_rbrace, "'}' to close block", "block")
@@ -658,7 +659,7 @@ static node_t *parse_struct_decl(parser_t *p) {
     ++p->pos; // consume ;
   }
 
-  decl->struct_decl.fields = field_scratch_commit(&scratch, p->arena);
+  decl->struct_decl.fields = field_scratch_commit(&scratch, &p->arena);
   free(scratch.items);
 
   EXPECT_SYMBOL(s_rbrace, "'}' to close struct body", "struct declaration");
@@ -705,7 +706,7 @@ static node_t *parse_struct_init(parser_t *p, char *struct_name) {
     if (CUR_TOK.type == s_comma) ++p->pos;
   }
 
-  n->struct_init.inits = field_init_scratch_commit(&scratch, p->arena);
+  n->struct_init.inits = field_init_scratch_commit(&scratch, &p->arena);
   free(scratch.items);
 
   EXPECT_SYMBOL(s_rbrace, "'}' to close struct initializer", "struct initializer");
@@ -858,7 +859,7 @@ static node_t *parse_stmt(parser_t *p) {
         }
       }
 
-      n->if_stmt.blocks = scratch_commit(&scratch, p->arena);
+      n->if_stmt.blocks = scratch_commit(&scratch, &p->arena);
       free(scratch.items);
 
       return n;
@@ -1087,26 +1088,29 @@ static node_t *parse_toplevel(parser_t *p) {
 }
 
 
-node_t *parse(token_t *tokens, unsigned num_tokens, parser_arena_t *mem_area) {
-  parser_t p = { mem_area, tokens, num_tokens, 0, 0, NULL };
+ast_t parse(parser_t *p, token_t *tokens, unsigned num_tokens) {
+  p->tokens = tokens;
+  p->count = num_tokens; 
+  p->pos = p->has_errored = 0;
+  p->err = NULL;
 
   scratch_t scratch = {0};
-  while (p.pos < p.count && p.tokens[p.pos].type != t_eof) {
-    scratch_push(&scratch, parse_toplevel(&p), &p);
+  while (p->pos < p->count && CUR_TOK.type != t_eof) {
+    scratch_push(&scratch, parse_toplevel(p), p);
 
-    if (p.has_errored) {
-      print_parse_error(p.err);
+    if (p->has_errored) {
+      print_parse_error(p->err);
 
       free(scratch.items);
-      free(p.err);
-      p.err = NULL;
+      free(p->err);
+      p->err = NULL;
       return NULL;
     }
   }
 
-  node_t *root = ALLOC_NODE(&p);
+  node_t *root = ALLOC_NODE(p);
   root->kind = NODE_PROGRAM;
-  root->program = scratch_commit(&scratch, p.arena);
+  root->program = scratch_commit(&scratch, &p->arena);
 
   free(scratch.items);
   return root;
