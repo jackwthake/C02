@@ -11,6 +11,8 @@ c02-objdump: c02-objdump/
 	@$(MAKE) -C c02-objdump
 
 test: cc02
+	@printf '==> build cc02 smoke tests\n'
+	@$(MAKE) -C cc02/tests/smoke
 	python3 cc02/tests/test.py
 
 update-tests: cc02
