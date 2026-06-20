@@ -152,7 +152,7 @@ static void print_ast_label(node_t *node) {
     case NODE_FUNCTION:
       printf("%s %s(", node_kind_name(node->kind), node->function.name ? node->function.name : "<anon>");
       for (unsigned i = 0; i < node->function.params.count; ++i) {
-        field_t *param = &node->function.params.items[i];
+        param_t *param = &node->function.params.items[i];
         if (i > 0) printf(", ");
         print_type_suffix(param->type);
         printf(" %s", param->name ? param->name : "<anon>");

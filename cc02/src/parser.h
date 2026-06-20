@@ -15,11 +15,12 @@ typedef enum {
 } type_kind_t;
 
 typedef struct {
-  type_kind_t kind;     // existing: TYPE_U8, TYPE_I8, ..., now also TYPE_STRUCT
+  type_kind_t kind;
   unsigned is_ptr;
   unsigned ptr_depth;
   char *struct_name;    // only valid when kind == TYPE_STRUCT; resolved to a decl in analysis
 } type_t;
+
 
 // ----------------------------------------------------------------
 // Operators
@@ -35,6 +36,7 @@ typedef enum {
   OP_LEFT_SHIFT, OP_RIGHT_SHIFT,
   OP_BAND, OP_BXOR, OP_BOR, OP_BNOT
 } op_t;
+
 
 // ----------------------------------------------------------------
 // Node
@@ -74,6 +76,11 @@ typedef enum {
   NODE_PROGRAM,
 } node_kind_t;
 
+
+// ----------------------------------------------------------------
+// Scratch buffer structs
+// ----------------------------------------------------------------
+
 typedef struct node_t node_t;
 
 typedef struct {
@@ -84,12 +91,26 @@ typedef struct {
 typedef struct {
   type_t  type;
   char   *name;
-} field_t;
+} scratch_buffer_item_t;
 
 typedef struct {
-  field_t  *items;
+  scratch_buffer_item_t  *items;
   unsigned  count;
-} field_list_t;
+} scratch_buffer_list_t;
+
+typedef scratch_buffer_item_t field_t;
+typedef scratch_buffer_list_t field_list_t;
+
+typedef scratch_buffer_item_t param_t;
+typedef scratch_buffer_list_t param_list_t;
+
+typedef scratch_buffer_item_t field_init_t;
+typedef scratch_buffer_list_t field_init_list_t;
+
+
+// ----------------------------------------------------------------
+// Node struct
+// ----------------------------------------------------------------
 
 struct node_t {
   node_kind_t kind;
@@ -112,7 +133,7 @@ struct node_t {
 
     struct {
       char       *name;
-      node_list_t args;
+      node_list_t args; 
     } call;                               // NODE_CALL
 
     node_t *deref_target;                 // NODE_DEREF
@@ -160,7 +181,7 @@ struct node_t {
     // --- top-level ---
     struct {
       char        *name;
-      field_list_t params;
+      param_list_t params;
       type_t       return_type;
       node_t      *body;
     } function;                           // NODE_FUNCTION
@@ -192,6 +213,7 @@ struct node_t {
   };
 };
 
+
 // ----------------------------------------------------------------
 // Memory Management
 // ----------------------------------------------------------------
@@ -211,7 +233,11 @@ typedef struct {
 
 #define PARSER_CHUNK_ALLOC_SIZE (sizeof(node_t) * 100)
 
-/* error reporting types, internal to parsing code */
+
+// ----------------------------------------------------------------
+// Error types
+// ----------------------------------------------------------------
+
 typedef enum {
   UNEXPECTED_EOF,
   UNEXPECTED_TOKEN,
@@ -225,6 +251,19 @@ typedef struct {
   char *expected;
   char *context;
 } error_t;
+
+
+typedef struct {
+  parser_arena_t *arena;
+
+  token_t *tokens;
+  unsigned count;
+  unsigned pos;
+  
+  unsigned has_errored;
+  error_t *err;
+} parser_t;
+
 
 // ----------------------------------------------------------------
 // General API

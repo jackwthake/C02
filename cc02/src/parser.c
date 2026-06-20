@@ -47,6 +47,7 @@
  * parse_toplevel() dispatches on:
  *   Kw_fn        -> parse_function()   (name + params + return type + block)
  *   Kw_reg       -> parse_reg_decl()   (type + name + @ + address)
+ *   Kw_struct    -> parse_struct_decl()
  *   type keyword -> parse_global_var_decl()
  *
  * ERROR HANDLING
@@ -64,85 +65,6 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-
-typedef struct {
-  node_t **items;
-  unsigned count;
-  unsigned capacity;
-} scratch_t;
-
-
-typedef struct {
-  field_t  *items;
-  unsigned  count;
-  unsigned  capacity;
-} field_scratch_t;
-
-
-typedef struct {
-  parser_arena_t *arena;
-
-  token_t *tokens;
-  unsigned count;
-  unsigned pos;
-  
-  unsigned has_errored;
-  error_t *err;
-} parser_t;
-
-
-#define GENERATE_ERROR(TYPE, TOKEN, EXPECTED, CTX) \
-  do {                                             \
-    p->err = malloc(sizeof(error_t));              \
-    p->err->type = TYPE;                           \
-    p->err->found = TOKEN;                         \
-    p->err->expected = EXPECTED;                   \
-    p->err->context = CTX;                         \
-    p->has_errored = 1;                            \
-  } while(0)                                       \
-
-
-#define GENERATE_ALLOCATOR_ERROR()                                                                        \
-  do {                                                                                                    \
-    token_t err = { .type = t_eof, .line = __LINE__, .column = 0, .length = 0, .file_path = "parser.c" }; \
-    GENERATE_ERROR(ALLOCATION_FAILED, err, "", "");                                                       \
-  } while(0);
-
-
-#define EXPECT_SYMBOL(EXPECTED, ERR_EXPECTED, ERR_CTX)                     \
-  do {                                                                     \
-    if (CUR_TOK.type != EXPECTED) {                                        \
-      GENERATE_ERROR(UNEXPECTED_TOKEN, CUR_TOK, ERR_EXPECTED, ERR_CTX);    \
-    }                                                                      \
-  } while(0);
-
-
-
-#define BINOP_LEVEL(NAME, NEXT, ...)                       \
-static node_t *NAME(parser_t *p) {                         \
-  node_t *left = NEXT(p);                                  \
-  GUARD(p);                                                \
-  for (;;) {                                               \
-    op_t op;                                               \
-    switch (CUR_TOK.type) {                                \
-      __VA_ARGS__                                          \
-      default: return left;                                \
-    }                                                      \
-                                                           \
-    ++p->pos; /* consume operator */                       \
-                                                           \
-    node_t *right = NEXT(p);                               \
-    GUARD(p);                                              \
-                                                           \
-    node_t *n = ALLOC_NODE(p);                             \
-    n->kind = NODE_BINOP;                                  \
-    n->binop.left  = left;                                 \
-    n->binop.op    = op;                                   \
-    n->binop.right = right;                                \
-                                                           \
-    left = n;                                              \
-  }                                                        \
-}
 
 
 extern void print_parse_error(error_t *e);
@@ -216,59 +138,16 @@ void parser_free(parser_arena_t *a) {
   }
 }
 
+// ----------------------------------------------------------------
+// Define scratch functions
+// ----------------------------------------------------------------
 
-static void scratch_push(scratch_t *s, node_t *node, parser_t *p) {
-  if (s->count == s->capacity) {
-    s->capacity = s->capacity ? s->capacity * 2 : 8;
-    node_t **grown = realloc(s->items, sizeof(node_t*) * s->capacity);
-    if (!grown) {
-      GENERATE_ALLOCATOR_ERROR();
-      return;
-    }
-    s->items = grown;
-  }
-  s->items[s->count++] = node;
-}
+#include "parser_macros.inc"
 
-
-static node_list_t scratch_commit(scratch_t *s, parser_arena_t *arena) {
-  node_list_t list = { NULL, 0 };
-  if (s->count > 0) {
-    node_t **items = parser_alloc(arena, sizeof(node_t*) * s->count);
-    memcpy(items, s->items, sizeof(node_t*) * s->count);
-    list.items = items;
-    list.count = s->count;
-  }
-  s->count = 0;
-  return list;
-}
-
-
-static void field_scratch_push(field_scratch_t *s, field_t param, parser_t *p) {
-  if (s->count == s->capacity) {
-    s->capacity = s->capacity ? s->capacity * 2 : 8;
-    field_t *grown = realloc(s->items, sizeof(field_t) * s->capacity);
-    if (!grown) {
-      GENERATE_ALLOCATOR_ERROR();
-      return;
-    }
-    s->items = grown;
-  }
-  s->items[s->count++] = param;
-}
-
-
-static field_list_t field_scratch_commit(field_scratch_t *s, parser_arena_t *arena) {
-  field_list_t list = { NULL, 0 };
-  if (s->count > 0) {
-    field_t *items = parser_alloc(arena, sizeof(field_t) * s->count);
-    memcpy(items, s->items, sizeof(field_t) * s->count);
-    list.items = items;
-    list.count = s->count;
-  }
-  s->count = 0;
-  return list;
-}
+DEFINE_NODE_SCRATCH(scratch)                                              // node_t* — statement lists, call args, etc.
+DEFINE_VALUE_SCRATCH(field_scratch, field_t, field_list_t)                // struct decl fields
+DEFINE_VALUE_SCRATCH(param_scratch, param_t, param_list_t)                // function params
+// DEFINE_VALUE_SCRATCH(field_init_scratch, field_init_t, field_init_list_t) // struct initializer { .field = val }
 
 
 static inline int token_type_to_parser_type(token_type_t t) {
@@ -582,14 +461,14 @@ static node_t *parse_expr(parser_t *p) {
 // ----------------------------------------------------------------
 
 
-static field_list_t parse_function_params(parser_t *p) {
-  field_list_t params = { 0 };
+static param_list_t parse_function_params(parser_t *p) {
+  param_list_t params = { 0 };
 
   EXPECT_SYMBOL(s_lparen, "'(' to open parameter list", "function declaration");
   if (p->err) return params;
   ++p->pos;
 
-  field_scratch_t scratch = { 0 };
+  param_scratch_t scratch = { 0 };
 
   while (CUR_TOK.type != s_rparen && CUR_TOK.type != t_eof) {
     // parse each param: type + identifier
@@ -606,12 +485,12 @@ static field_list_t parse_function_params(parser_t *p) {
 
     ++p->pos; // consume identifier
 
-    field_scratch_push(&scratch, param, p);
+    param_scratch_push(&scratch, param, p);
     if (p->err) { free(scratch.items); return params; }
     if (CUR_TOK.type == s_comma) ++p->pos;
   }
 
-  params = field_scratch_commit(&scratch, p->arena);
+  params = param_scratch_commit(&scratch, p->arena);
   free(scratch.items);
 
   EXPECT_SYMBOL(s_rparen, "')' to close parameter list", "function declaration");
