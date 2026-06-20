@@ -28,6 +28,17 @@
 
 - **Disassembler:** Decodes compiled `.bin` files back into annotated 65C02 assembly, resolving jump targets to named labels for readability. See [c02-objdump](c02-objdump/) for more information.
 
+## Current Status & Limitations
+
+C02 is under active, early development. This is a **frontend-only** release — the tokenizer, parser, and AST printer are functional and tested, but nothing downstream of parsing exists yet:
+
+- **Semantic analysis is not implemented.** The parser accepts syntactically valid but semantically meaningless programs (undeclared struct types, mismatched types, unknown fields, etc.) without complaint. Nothing is type-checked yet.
+- **Code generation is not implemented.** `cc02` will not currently produce a working 65C02 binary. The zero-page register layout below is a design target for the code generator, not yet a reality.
+- **No arrays.** There's no array type or subscript syntax (`a[i]`) yet. Strings work as `u8*` and pointer arithmetic covers some of the same ground in the meantime, but fixed-size arrays with bounds/length tracking are unimplemented.
+- **No `struct` field access through a pointer is auto-dereferenced**, but there's no `->` operator — `.` is used uniformly and indirection is intended to be resolved during semantic analysis, which doesn't exist yet, so this is currently unverified in practice.
+
+If you're exploring the codebase: the parser, [parser.c](cc02/src/parser.c) and its design notes in the header comment are the most complete and representative part of the project right now. Issues and PRs around parser bugs, grammar gaps, or AST design are welcome; semantic analysis and codegen are actively being worked on next.
+
 ## Toolchain Usage
 
 ### Compiling the Toolchain
