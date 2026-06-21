@@ -1,3 +1,7 @@
 u8 global;
 
 u8 global;
+
+u8 x;
+
+u16 x;

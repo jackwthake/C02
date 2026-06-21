@@ -136,7 +136,6 @@ EXTENSION_LABELS = {
     ".h": "C Header",
     ".c02": "C02",
     ".py": "Python",
-    ".md": "Markdown",
     ".mk": "Makefile",
 }
 

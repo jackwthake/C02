@@ -84,10 +84,16 @@ static void print_semantic_kind_error(error_t *e) {
   char expected_buf[64], actual_buf[64];
 
   switch (e->type) {
-    case ERR_UNDECLARED_IDENTIFIER:
+    case ERR_UNDECLARED_IDENTIFIER: {
       PRINT_ERR_HEADER(e);
-      fprintf(stderr, "undeclared identifier '%s'\n", e->name_error.name);
+
+      if (strncmp(e->name_error.name, "main", 4) == 0) {
+        fprintf(stderr, "missing or improperly defined main function\n");
+      } else { 
+        fprintf(stderr, "undeclared identifier '%s'\n", e->name_error.name);
+      }
       break;
+    }
 
     case ERR_NOT_A_FUNCTION:
       PRINT_ERR_HEADER(e);

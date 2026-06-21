@@ -70,64 +70,55 @@ symbol_t *analyzer_lookup(analyzer_t *a, const char *key) {
 }
 
 
+/*
+ * Reduces the repetitive case-decl pattern to a
+ * single line per node kind. Expands to a switch case that builds a
+ * symbol_t from the corresponding node_t union member.
+ *
+ *   NODE_TYPE          - node_kind_t enum value (e.g. NODE_FUNCTION)
+ *   NODE_STRUCT_NAME   - node_t union member name (e.g. function)
+ *   SYMBOL_TYPE        - symbol_kind_t enum value (e.g. SYMBOL_FUNCTION)
+ *   SYMBOL_STRUCT_NAME - symbol_t union member name (e.g. function)
+ *   ...                - designated initialiser fields for the symbol's
+ *                        union member (variadic to allow commas)
+ */
+#define REGISTER_SYMBOL(NODE_TYPE, NODE_STRUCT_NAME, SYMBOL_TYPE, SYMBOL_STRUCT_NAME, ...) \
+  case NODE_TYPE: {                                                                        \
+    sym = (symbol_t){                                                                      \
+      .kind = SYMBOL_TYPE,                                                                 \
+      .name = decl->NODE_STRUCT_NAME.name,                                                 \
+      .SYMBOL_STRUCT_NAME = { __VA_ARGS__ }                                                \
+    };                                                                                     \
+    break;                                                                                 \
+  }
+
+
 static void pass1_register_globals(analyzer_t *a, ast_t program) {
   for (unsigned i = 0; i < program->program.count; ++i) {
     node_t *decl = program->program.items[i];
     symbol_t sym;
 
     switch (decl->kind) {
-      case NODE_REG_DECL:  {
-        sym = (symbol_t){
-          .kind = SYMBOL_VARIABLE,
-          .name = decl->reg_decl.name,
-          .variable = {
-            .type = decl->reg_decl.type,
-            .is_register = 1,
-            .addr = decl->reg_decl.addr,
-          }
-        };
+      REGISTER_SYMBOL(NODE_REG_DECL, reg_decl, SYMBOL_VARIABLE, variable, 
+        .type = decl->reg_decl.type,
+        .is_register = 1,
+        .addr = decl->reg_decl.addr,
+      )
+      
+      REGISTER_SYMBOL(NODE_GLOBAL_VAR, global_var, SYMBOL_VARIABLE, variable,
+        .type = decl->global_var.type,
+        .is_register = 0,
+        .addr = 0,
+      )
 
-        break;
-      }
+      REGISTER_SYMBOL(NODE_STRUCT_DECL, struct_decl, SYMBOL_STRUCT, struct_decl,
+        .fields = decl->struct_decl.fields
+      )
 
-      case NODE_GLOBAL_VAR: {
-        sym = (symbol_t){
-          .kind = SYMBOL_VARIABLE,
-          .name = decl->global_var.name,
-          .variable = {
-            .type = decl->global_var.type,
-            .is_register = 0,
-            .addr = 0,
-          }
-        };
-
-        break;
-      }
-
-      case NODE_STRUCT_DECL: {
-        sym = (symbol_t){
-          .kind = SYMBOL_STRUCT,
-          .name = decl->struct_decl.name,
-          .struct_decl = {
-            .fields = decl->struct_decl.fields
-          }
-        };
-
-        break;
-      }
-
-      case NODE_FUNCTION: {
-        sym = (symbol_t){
-          .kind = SYMBOL_FUNCTION,
-          .name = decl->function.name,
-          .function = {
-            .params = decl->function.params,
-            .return_type = decl->function.return_type
-          }
-        };
-
-        break;
-      }
+      REGISTER_SYMBOL(NODE_FUNCTION, function, SYMBOL_FUNCTION, function, 
+        .params = decl->function.params,
+        .return_type = decl->function.return_type
+      )
 
       default: assert(0 && "Unreachable!");
     }
@@ -158,6 +149,19 @@ symtab_t *analyze(analyzer_t *a, ast_t ast) {
   }
 
   pass1_register_globals(a, ast);
+
+  // if no main function found, error
+  symbol_t *main;
+  if (!(main = analyzer_lookup(a, "main")) || main->kind != SYMBOL_FUNCTION) {
+    error_t e = (error_t) {
+      .type = ERR_UNDECLARED_IDENTIFIER,
+      .loc = ast->loc,
+      .name_error = { .name = "main" }
+    };
+
+    a->has_errored = 1;
+    print_error(&e);
+  }
 
   return analyzer_global_scope(a);
 }
