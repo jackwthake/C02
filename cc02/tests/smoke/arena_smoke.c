@@ -37,26 +37,37 @@ int main(void) {
     arena_free(&arena);
   }
 
-  // --- oversized allocations (larger than chunk_size) ---
-  // NOTE: tested in a separate arena because arena_alloc has a known leak
-  // when a standard new-chunk allocation follows an oversized splice -
-  // the standard path overwrites current->next, orphaning the oversized
-  // chunk. This test isolates oversized allocs so valgrind stays clean;
-  // the underlying bug in arena.c should be fixed separately.
+  // --- oversized allocations interleaved with standard chunk growth ---
+  // Regression test: an oversized alloc splices a chunk in after `current`
+  // without advancing it. A subsequent standard new-chunk alloc must keep
+  // that spliced chunk linked (it used to overwrite current->next and
+  // orphan the oversized chunk, leaking it past arena_free). Everything
+  // here lives in one arena so valgrind catches a regression.
   {
     arena_t arena;
     assert(arena_init(&arena, 64));
 
-    char *big = arena_alloc(&arena, 128);
-    assert(big != NULL);
-    memset(big, 'X', 128);
-    assert(big[0] == 'X' && big[127] == 'X');
+    char *small = arena_alloc(&arena, 32);   // fits in first chunk (used=32)
+    assert(small != NULL);
+    memset(small, 'A', 32);
 
-    char *huge = arena_alloc(&arena, 1024);
+    char *big = arena_alloc(&arena, 200);    // oversized -> spliced after first
+    assert(big != NULL);
+    memset(big, 'X', 200);
+
+    char *more = arena_alloc(&arena, 40);    // 32+40 > 64 -> standard new chunk
+    assert(more != NULL);                    // must not orphan the 200-byte chunk
+    memset(more, 'B', 40);
+
+    char *huge = arena_alloc(&arena, 1024);  // another oversized splice
     assert(huge != NULL);
     memset(huge, 'Y', 1024);
+
+    // every prior allocation is still intact and independent
+    assert(small[0] == 'A' && small[31] == 'A');
+    assert(big[0] == 'X' && big[199] == 'X');
+    assert(more[0] == 'B' && more[39] == 'B');
     assert(huge[0] == 'Y' && huge[1023] == 'Y');
-    assert(big[0] == 'X');
 
     arena_free(&arena);
   }

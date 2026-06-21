@@ -1,0 +1,17 @@
+// Gap F: a non-pointer void is not a valid variable/parameter/field/global
+// type. (A void* is fine - it is just a null pointer.)
+
+void global_void;                 // global
+
+struct Box {
+  void payload;                   // struct field
+}
+
+fn takes_void(void v) -> void {   // parameter
+  return;
+}
+
+fn main() -> void {
+  void local;                     // local variable
+  void *ok = null;                // void* is allowed - this line is fine
+}

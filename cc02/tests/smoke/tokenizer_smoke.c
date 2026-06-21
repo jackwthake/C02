@@ -65,6 +65,20 @@ static void test_strings(void) {
   assert(tokens[1].type == t_eof);
 
   free_tokens(tokens, count);
+
+  // escape sequences decode to their bytes, and the character right after an
+  // escape is not dropped. Regression: the old length counter was short by one
+  // per escape, so strndup truncated one trailing byte for every escape.
+  // C02 source below is:  "a\nb\\c\"d"  -> a, newline, b, backslash, c, ", d
+  const char *esc_src = "\"a\\nb\\\\c\\\"d\"";
+  unsigned esc_count = 0;
+  token_t *esc = tokenize("test", esc_src, (long)strlen(esc_src), &esc_count);
+  assert(esc != NULL);
+  assert(esc[0].type == l_string);
+  assert(strcmp(esc[0].string_val, "a\nb\\c\"d") == 0);
+  assert(esc[1].type == t_eof);
+
+  free_tokens(esc, esc_count);
 }
 
 static void test_identifiers(void) {

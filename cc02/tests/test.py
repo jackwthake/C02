@@ -15,6 +15,31 @@ FAIL = "\033[31mFAIL\033[0m"
 def should_fail(filename):
     return "_bad_" in filename
 
+
+# A "_bad_" test is expected to fail at a specific compilation stage, and the
+# compiler exits with a distinct code per stage (the *_RET_CODE defines in
+# cc02/src/main.c). The stage is encoded in the filename prefix, so e.g.
+# parser_bad_type.c02 must exit with PARSER_ERROR_RET_CODE. Failing at the
+# wrong stage - or crashing, which lands here as a 139-ish/negative code - is
+# a real regression even though the run still "failed".
+STAGE_EXIT_CODES = {
+    "lexer":    3,  # TOKEN_ERROR_RET_CODE
+    "parser":   4,  # PARSER_ERROR_RET_CODE
+    "analyzer": 5,  # ANALYZER_ERROR_RET_CODE
+}
+
+def expected_exit_code(filename):
+    return STAGE_EXIT_CODES.get(filename.split("_", 1)[0])
+
+
+def normalize(text, path):
+    # Diagnostics embed the input file path; collapse the machine-specific
+    # absolute path down to the basename so goldens are portable across
+    # checkouts and CI. ANSI colour codes are left intact, matching the
+    # convention already used by the stdout goldens.
+    return text.replace(path, os.path.basename(path))
+
+
 def get_flags(filename):
     if should_fail(filename):
         return ["--syntax-check-only"]
@@ -24,40 +49,63 @@ def get_flags(filename):
         return ["--ast-dump"]
     return []
 
+def compare_golden(filename, actual, stream_label, require_golden):
+    """Compare `actual` against the stored golden for `filename`. Returns True
+    on a match, False on a mismatch. A missing golden is tolerated (with a
+    note) for good tests, but is a hard failure when `require_golden` is set:
+    a _bad_ test with no committed golden silently checks nothing, which is
+    exactly the no-op-in-CI trap this harness exists to avoid."""
+    golden_path = os.path.join(GOLDEN_DIR, filename + ".golden")
+    if not os.path.exists(golden_path):
+        if require_golden:
+            print(f"  {FAIL} {filename} (no golden — its {stream_label} is unchecked; run --update and commit it)")
+            return False
+        print(f"  {PASS} {filename} (no golden — run with --update to create)")
+        return True
+    with open(golden_path) as f:
+        expected = f.read()
+    if actual != expected:
+        print(f"  {FAIL} {filename} ({stream_label} differs from golden)")
+        print(f"         rerun with --update if change is intentional")
+        return False
+    print(f"  {PASS} {filename}")
+    return True
+
+
 def run_test(path):
     filename = os.path.basename(path)
     flags = get_flags(filename)
-    result = subprocess.run(
-        [BIN] + flags + [path],
-        capture_output=True, text=True
-    )
+    result = subprocess.run([BIN] + flags + [path], capture_output=True, text=True)
 
-    expects_failure = should_fail(filename)
-    actually_failed = result.returncode != 0
+    if should_fail(filename):
+        # Bad test: must fail at the expected stage (exact exit code), and the
+        # diagnostic it prints to stderr must match the golden.
+        expected = expected_exit_code(filename)
+        if expected is None:
+            ok, detail = result.returncode != 0, "nonzero exit"
+        else:
+            ok, detail = result.returncode == expected, f"exit {expected}"
+        if not ok:
+            print(f"  {FAIL} {filename}")
+            print(f"         expected {detail}, got exit {result.returncode}")
+            if result.stderr:
+                print(f"         stderr: {result.stderr.strip()}")
+            return False
+        return compare_golden(filename, normalize(result.stderr, path), "stderr", require_golden=True)
 
-    if expects_failure != actually_failed:
+    # Good test: must succeed (exit 0) with no stderr noise, and the dump it
+    # prints to stdout must match the golden.
+    if result.returncode != 0:
         print(f"  {FAIL} {filename}")
-        print(f"         expected {'failure' if expects_failure else 'success'}, got {'failure' if actually_failed else 'success'}")
+        print(f"         expected success (exit 0), got exit {result.returncode}")
         if result.stderr:
             print(f"         stderr: {result.stderr.strip()}")
         return False
-
-    if not expects_failure:
-        golden_path = os.path.join(GOLDEN_DIR, filename + ".golden")
-        if not os.path.exists(golden_path):
-            print(f"  {PASS} {filename} (no golden — run with --update to create)")
-        else:
-            with open(golden_path) as f:
-                expected = f.read()
-            if result.stdout != expected:
-                print(f"  {FAIL} {filename} (output differs from golden)")
-                print(f"         rerun with --update if change is intentional")
-                return False
-            print(f"  {PASS} {filename}")
-    else:
-        print(f"  {PASS} {filename} (expected failure)")
-
-    return True
+    if result.stderr.strip():
+        print(f"  {FAIL} {filename} (unexpected stderr on a successful compile)")
+        print(f"         stderr: {result.stderr.strip()}")
+        return False
+    return compare_golden(filename, result.stdout, "stdout", require_golden=False)
 
 def run_valgrind(path):
     filename = os.path.basename(path)
@@ -110,23 +158,29 @@ def run_smoke_binary(path):
 
 def update_golden(path):
     filename = os.path.basename(path)
-    if should_fail(filename):
-        print(f"  skip  {filename} (expected failure, no golden needed)")
-        return
     flags = get_flags(filename)
-    result = subprocess.run(
-        [BIN] + flags + [path],
-        capture_output=True, text=True
-    )
-    if result.returncode != 0:
-        print(f"  {FAIL} {filename} (binary failed during update)")
-        if result.stderr:
-            print(f"         stderr: {result.stderr.strip()}")
-        return
+    result = subprocess.run([BIN] + flags + [path], capture_output=True, text=True)
+
+    if should_fail(filename):
+        # Bad test: golden the diagnostic (stderr) emitted at the failing stage.
+        expected = expected_exit_code(filename)
+        if expected is not None and result.returncode != expected:
+            print(f"  {FAIL} {filename} (expected exit {expected}, got {result.returncode} during update)")
+            return
+        content = normalize(result.stderr, path)
+    else:
+        # Good test: golden the dump (stdout) from a successful compile.
+        if result.returncode != 0:
+            print(f"  {FAIL} {filename} (binary failed during update)")
+            if result.stderr:
+                print(f"         stderr: {result.stderr.strip()}")
+            return
+        content = result.stdout
+
     os.makedirs(GOLDEN_DIR, exist_ok=True)
     golden_path = os.path.join(GOLDEN_DIR, filename + ".golden")
     with open(golden_path, "w") as f:
-        f.write(result.stdout)
+        f.write(content)
     print(f"  updated {filename}")
 
 REPO_ROOT = os.path.join(SCRIPT_DIR, "../..")
@@ -134,15 +188,21 @@ REPO_ROOT = os.path.join(SCRIPT_DIR, "../..")
 EXTENSION_LABELS = {
     ".c": "C",
     ".h": "C Header",
+    ".inc": "C Include",
     ".c02": "C02",
     ".py": "Python",
     ".mk": "Makefile",
 }
 
+COMPILER_EXTS = {".c", ".h", ".inc", ".mk"}
+HARNESS_EXTS = {".py", ".c02"}
+TESTS_REL = os.path.join("cc02", "tests")
+
 IGNORED_DIRS = {".git", "bin", "build", "node_modules", "__pycache__"}
 
 def count_lines():
-    counts = {}
+    compiler_counts = {}
+    harness_counts = {}
     for dirpath, dirnames, filenames in os.walk(REPO_ROOT):
         dirnames[:] = [d for d in dirnames if d not in IGNORED_DIRS]
         for f in filenames:
@@ -154,23 +214,38 @@ def count_lines():
             filepath = os.path.join(dirpath, f)
             try:
                 with open(filepath) as fh:
-                    counts[ext] = counts.get(ext, 0) + sum(1 for _ in fh)
+                    lines = sum(1 for _ in fh)
             except (OSError, UnicodeDecodeError):
-                pass
+                continue
+            relpath = os.path.relpath(filepath, REPO_ROOT)
+            in_tests = relpath.startswith(TESTS_REL)
+            if in_tests or ext in HARNESS_EXTS:
+                harness_counts[ext] = harness_counts.get(ext, 0) + lines
+            elif ext in COMPILER_EXTS:
+                compiler_counts[ext] = compiler_counts.get(ext, 0) + lines
 
-    if not counts:
+    if not compiler_counts and not harness_counts:
         print("no recognized source files found")
         return
 
-    total = sum(counts.values())
-    max_label = max(len(EXTENSION_LABELS[e]) for e in counts)
-    max_digits = len(str(max(counts.values())))
-    for ext in sorted(counts, key=lambda e: counts[e], reverse=True):
-        label = (EXTENSION_LABELS[ext] + ":").ljust(max_label + 1)
-        pct = counts[ext] / total * 100
-        print(f"  {label} {counts[ext]:<{max_digits}} lines ({pct:.1f}%)")
+    def print_section(title, counts):
+        if not counts:
+            return
+        total = sum(counts.values())
+        max_label = max(len(EXTENSION_LABELS[e]) for e in counts)
+        max_digits = len(str(max(counts.values())))
+        print(f"\n  {title}")
+        for ext in sorted(counts, key=lambda e: counts[e], reverse=True):
+            label = (EXTENSION_LABELS[ext] + ":").ljust(max_label + 1)
+            pct = counts[ext] / total * 100
+            print(f"    {label} {counts[ext]:<{max_digits}} lines ({pct:.1f}%)")
+        print(f"    {'Total:'.ljust(max_label + 1)} {total} lines")
 
-    print(f"\n  Total: {total} lines")
+    print_section("Compiler", compiler_counts)
+    print_section("Test Harness", harness_counts)
+
+    grand_total = sum(compiler_counts.values()) + sum(harness_counts.values())
+    print(f"\n  Grand Total: {grand_total} lines")
 
 if __name__ == "__main__":
     if "--cloc" in sys.argv:

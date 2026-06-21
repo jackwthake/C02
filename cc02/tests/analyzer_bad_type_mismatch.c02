@@ -19,6 +19,9 @@ fn main() -> void {
 
   // wrong return type
   u8 bad = returns_u8();
+
+  // using a void function's result as a value
+  u8 from_void = takes_u8(1);
 }
 
 fn bad_return() -> u8 {

@@ -1,0 +1,26 @@
+// Gap A: a named struct type that doesn't exist must be rejected wherever it
+// appears in a declaration - global, struct field, function return type,
+// parameter, and local variable. (Previously only struct initializers and
+// field access caught an unknown struct; plain declarations slipped through.)
+
+Ghost g;                          // global variable of unknown struct type
+
+struct Holder {
+  Ghost field;                    // struct field of unknown struct type
+}
+
+fn returns_ghost() -> Ghost {     // function return type
+  Ghost local;                    // local variable
+  return local;
+}
+
+fn takes_ghost(Ghost p) -> void { // parameter type
+  return;
+}
+
+fn uses_bad() -> void {
+  Ghost g2;                       // unknown struct reported once here...
+  g2.a = 1;                       // ...uses are poisoned, so they don't re-report
+}
+
+fn main() -> void {}

@@ -1,6 +1,7 @@
 #include "tokenizer.h"
 
 #include <ctype.h>
+#include <errno.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -134,12 +135,12 @@ unsigned token_has_value(token_type_t type) {
 
 char *token_val_to_string(const token_t tok, unsigned *should_free) {
   if (!token_has_value(tok.type)) {
-    should_free = 0;
+    *should_free = 0;
     return NULL;
   }
 
   if (tok.type == l_identifier || tok.type == l_string) {
-    should_free = 0;
+    *should_free = 0;
     return (char *)tok.string_val;
   }
 
@@ -149,7 +150,7 @@ char *token_val_to_string(const token_t tok, unsigned *should_free) {
       return NULL;
     }
 
-    snprintf(str, 32, "%ld", *(long *)tok.string_val);
+    snprintf(str, 32, "%ld", tok.num_val);
     *should_free = 1;
     return str;
   }
@@ -446,11 +447,13 @@ static int tokenize_string(token_t *tokens, unsigned *token_count, char **ptr, u
   (*ptr)++; // Skip opening quote
   (*column)++;
 
-  const char *start = *ptr;
-  unsigned length = 0;
+  // First scan to the closing quote, advancing line/column. A backslash
+  // escapes the next character, so an escaped quote (\") doesn't end the
+  // string.
+  const char *content_start = *ptr;
   while (**ptr != '\0' && **ptr != '"' && **ptr != '\n') {
     if (**ptr == '\\') {
-      (*ptr)++; // Skip escape character
+      (*ptr)++; // skip the backslash; the escaped char is consumed below
       (*column)++;
       if (**ptr == '\0') {
         break;
@@ -458,13 +461,6 @@ static int tokenize_string(token_t *tokens, unsigned *token_count, char **ptr, u
     }
     (*ptr)++;
     (*column)++;
-    length++;
-  }
-
-  char *string_literal = strndup(start, length);
-  if (!string_literal) {
-    perror("Failed to allocate memory for string literal");
-    return -1;
   }
 
   if (**ptr != '"') {
@@ -472,15 +468,49 @@ static int tokenize_string(token_t *tokens, unsigned *token_count, char **ptr, u
     PRINT_ERROR_HEADER(file_path, err_line, string_column);
     fprintf(stderr, "Unterminated string literal\n");
     print_error_line((token_location_t){ .line = err_line, .column = string_column, .length = 1, .file_path = file_path });
-
-    free(string_literal);
     return -1;
   }
+
+  // Decode the raw [content_start, *ptr) span into a fresh buffer, translating
+  // escape sequences. The decoded form is never longer than the raw span (each
+  // escape collapses two source bytes into one), so raw_span + 1 always fits -
+  // copying the raw span directly (the old strndup of a logical length that
+  // undercounted escapes) dropped one trailing byte per escape.
+  size_t raw_span = (size_t)(*ptr - content_start);
+  char *string_literal = malloc(raw_span + 1);
+  if (!string_literal) {
+    perror("Failed to allocate memory for string literal");
+    return -1;
+  }
+
+  size_t out_len = 0;
+  for (const char *s = content_start; s < *ptr; ++s) {
+    if (*s == '\\' && (s + 1) < *ptr) {
+      ++s; // consume the escaped character
+      switch (*s) {
+        case 'n':  string_literal[out_len++] = '\n'; break;
+        case 't':  string_literal[out_len++] = '\t'; break;
+        case 'r':  string_literal[out_len++] = '\r'; break;
+        case '0':  string_literal[out_len++] = '\0'; break;
+        case '\\': string_literal[out_len++] = '\\'; break;
+        case '"':  string_literal[out_len++] = '"';  break;
+        case '\'': string_literal[out_len++] = '\''; break;
+        default:   string_literal[out_len++] = *s;   break; // unknown escape: keep the char verbatim
+      }
+    } else {
+      string_literal[out_len++] = *s;
+    }
+  }
+  string_literal[out_len] = '\0';
 
   (*ptr)++; // Skip closing quote
   (*column)++;
 
-  token_t *tok = add_token(tokens, token_count, l_string, line, *column - length - 2, length + 2, file_path);
+  // loc spans the whole literal including both quotes, anchored at the opening
+  // quote - derived from source offsets so it stays correct no matter how many
+  // escapes shortened the decoded string.
+  const unsigned literal_length = (unsigned)(*ptr - string_start);
+  token_t *tok = add_token(tokens, token_count, l_string, line, string_column, literal_length, file_path);
   tok->string_val = string_literal;
   return 1;
 }
@@ -524,23 +554,34 @@ static int tokenize_number(token_t *tokens, unsigned *token_count, char **ptr, u
   }
 
   if (end == literal_start) {
+    // no valid digits (e.g. "0x" with nothing after) - consume the prefix so
+    // tokenizing makes forward progress instead of re-reporting the same spot
     unsigned prefix_len = (base != 10) ? 2 : 1;
     PRINT_ERROR_HEADER(file_path, line, *column);
     fprintf(stderr, "Invalid number literal\n");
     print_error_line((token_location_t){ .line = line, .column = *column, .length = prefix_len, .file_path = file_path });
-    return -1;
-  }
-
-  char *endptr = NULL;
-  long value = strtol(literal_start, &endptr, base);
-  if (endptr != (char *)end) {
-    PRINT_ERROR_HEADER(file_path, line, *column);
-    fprintf(stderr, "Invalid number literal\n");
-    print_error_line((token_location_t){ .line = line, .column = *column, .length = (unsigned)(end - *ptr), .file_path = file_path });
+    *ptr += prefix_len;
+    *column += prefix_len;
     return -1;
   }
 
   const unsigned literal_length = (unsigned)(end - *ptr);
+
+  char *endptr = NULL;
+  errno = 0;
+  long value = strtol(literal_start, &endptr, base);
+  if (endptr != (char *)end || errno == ERANGE) {
+    PRINT_ERROR_HEADER(file_path, line, *column);
+    fprintf(stderr, errno == ERANGE ? "Integer literal is too large to represent\n"
+                                    : "Invalid number literal\n");
+    print_error_line((token_location_t){ .line = line, .column = *column, .length = literal_length, .file_path = file_path });
+    // consume the whole malformed literal so it's reported exactly once, not
+    // re-scanned digit by digit
+    *ptr = (char *)end;
+    *column += literal_length;
+    return -1;
+  }
+
   token_t *tok = add_token(tokens, token_count, l_num, line, *column, literal_length, file_path);
   tok->num_val = value;
 
@@ -584,9 +625,7 @@ token_t *tokenize(const char *file_path, const char *source_code, const long fil
     int is_number_result = tokenize_number(tokens, &token_count, &ptr, line, &column, (char *)file_path);
     if (is_number_result < 0) {
       error_count++;
-      if (*ptr == '\n') { line++; column = 1; } else { column++; }
-      ptr++;
-      continue;
+      continue; // tokenize_number consumed the offending characters itself
     } else if (is_number_result > 0) {
       continue;
     }

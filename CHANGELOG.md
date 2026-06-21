@@ -36,6 +36,35 @@ releases are reserved for bug fixes only.
 - Compiler test cases covering analyzer error paths (undeclared
   identifiers, type mismatches, call errors, struct errors) and
   success paths (scoping, widening, pointers, basic analysis).
+- **Analyzer hardening** — additional validation closing gaps where invalid
+  programs were previously accepted silently:
+  - Named struct types are checked for existence in *every* declaration form
+    (locals, parameters, globals, registers, struct fields, function return
+    types), not just struct initializers and field access. A symbol whose
+    declared type is invalid is poisoned, so later uses don't cascade
+    duplicate diagnostics.
+  - A non-pointer `void` is rejected as a variable/parameter/field/global
+    type (`void*` remains valid as a null pointer).
+  - Integer literals that don't fit any supported type are now an error
+    (previously swallowed); the lexer rejects literals that overflow `long`.
+    Negative literals are typed from their value (`-5` is `i8`, `-300` is
+    `i16`).
+  - Assignment targets and the operands of `&`, `++`, and `--` must be
+    lvalues.
+  - Global variable initializers are type-checked (resolved in the global
+    scope), just like local declarations - previously they were ignored.
+  - A bare `return;` in a non-void function is rejected, and a non-void
+    function that can fall off its end without returning a value is flagged.
+    (This last check is shallow: a function ending in a control-flow statement
+    — e.g. a one-armed `if` that falls through, or an `if`/`else` where only
+    some branches return — is assumed to return and is not flagged. Full
+    path-coverage analysis is future work.)
+- Struct-typed globals (`Point p;` at file scope) now parse, matching the
+  form used for locals.
+- Field access auto-dereferences a single-level struct pointer (`c.field` on
+  a `Struct*`), since there is no `->` operator.
+- A negative-test corpus exercising each new check, plus positive tests for
+  pointer field auto-deref and negative-literal typing.
 
 ### Changed
 
@@ -54,6 +83,18 @@ releases are reserved for bug fixes only.
 - Generalized the arena allocator out of `parser.c` into shared
   infrastructure, so semantic analysis can reuse it for its own
   allocations.
+- Diagnostics now print the full pointer depth (`u16**`, not `u16*`) and name
+  the actual type in field-access-on-non-struct errors; a malformed number
+  literal and a repeated unknown-type are each reported once rather than per
+  character / per use.
+
+### Fixed
+
+- Fixed a segfault when a parse error's offending token was a numeric literal.
+- Fixed a memory leak in the arena allocator when a standard chunk allocation
+  followed an oversized one.
+- String literals with escape sequences no longer drop a trailing character
+  per escape, and common escapes (`\n`, `\t`, `\\`, `\"`, ...) are decoded.
 
 ## [0.1.1] - 2026-06-20
 
@@ -96,7 +137,6 @@ implemented.
 
 ### Known Limitations
 
-- No semantic analysis: types, struct fields, and symbol references are not validated.
 - No code generation: `cc02` does not yet produce a working 65C02 binary.
 - No array type or subscript syntax.
 - `->` is not implemented; field access through a pointer is intended to auto-dereference via semantic analysis once that exists.

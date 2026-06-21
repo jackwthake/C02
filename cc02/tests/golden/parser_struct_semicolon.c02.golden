@@ -1,0 +1,19 @@
+`- TranslationUnitDecl
+   |- StructDecl WithSemi {u8 a, u16 b}
+   |- StructDecl WithoutSemi {u8 c}
+   `- FunctionDecl main() -> void
+      `- CompoundStmt
+         |- StructDecl LocalSemi {u8 d}
+         |- VarDecl w : WithSemi
+         |- AssignStmt
+         |  |- [target]
+         |  |  `- FieldAccess .a
+         |  |     `- Identifier w
+         |  `- [value]
+         |     `- IntegerLiteral (1)
+         `- AssignStmt
+            |- [target]
+            |  `- FieldAccess .b
+            |     `- Identifier w
+            `- [value]
+               `- IntegerLiteral (2)

@@ -1,0 +1,7 @@
+// Gap D: a bare `return;` is only valid in a function that returns void.
+
+fn needs_value() -> u8 {
+  return;            // missing return value in a non-void function
+}
+
+fn main() -> void {}

@@ -1,9 +1,13 @@
 // Exercises struct-related errors: unknown struct, unknown field,
-// field access on non-struct
+// field access on non-struct, assignment between distinct struct types
 
 struct Point {
   u8 x;
   u8 y;
+}
+
+struct Other {
+  u8 w;
 }
 
 fn main() -> void {
@@ -20,4 +24,9 @@ fn main() -> void {
   // field access with unknown field name
   Point p2 = Point { .x = 1, .y = 2 };
   u8 q = p2.z;
+
+  // assignment between two distinct struct types is not allowed
+  Point p3;
+  Other o;
+  p3 = o;
 }

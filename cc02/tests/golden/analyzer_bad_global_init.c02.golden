@@ -1,0 +1,12 @@
+[1;37manalyzer_bad_global_init.c02[0m:[1;37m6[0m:[1;37m26: [1;31merror: [0mundeclared identifier 'nope'
+[1;34m6 |[0m u8 from_undeclared = nope;        // undeclared identifier in a global initializer
+[1;34m  |[1;31m                          ^[0m
+[1;37manalyzer_bad_global_init.c02[0m:[1;37m7[0m:[1;37m1: [1;31merror: [0mtype mismatch in bad_ptr: expected u16*, found u8
+[1;34m7 |[0m u16 *bad_ptr = 5;                 // pointer initialized from an integer
+[1;34m  |[1;31m ^~~[0m
+[1;37manalyzer_bad_global_init.c02[0m:[1;37m8[0m:[1;37m1: [1;31merror: [0mtype mismatch in t: expected Thing, found u8
+[1;34m8 |[0m Thing t = 5;                      // struct global initialized from an int
+[1;34m  |[1;31m ^~~~~[0m
+[31m
+Semantic analysis failed with [1;31m3[0m[31m errors.
+[0m

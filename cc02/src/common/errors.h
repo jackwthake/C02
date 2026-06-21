@@ -48,6 +48,12 @@ typedef enum {
   ERR_WRONG_ARG_COUNT,
   ERR_UNKNOWN_FIELD,
   ERR_NOT_ASSIGNABLE,
+  ERR_MISSING_MAIN,         // no main, or a `main` that isn't a function
+  ERR_LITERAL_OUT_OF_RANGE, // integer literal doesn't fit any supported type (loc only)
+  ERR_NOT_LVALUE,           // assignment / & / ++ / -- applied to a non-lvalue
+  ERR_VOID_VARIABLE,        // variable/param/field/global declared with non-pointer void type
+  ERR_NOT_A_STRUCT,         // field access ('.') on a non-struct type
+  ERR_MISSING_RETURN,       // a non-void function may fall off the end without returning
 } error_type_t;
 
 typedef struct {
@@ -81,6 +87,10 @@ typedef struct {
       char *struct_name;
       char *field_name;
     } unknown_field;                  // ERR_UNKNOWN_FIELD
+
+    struct {
+      char *message;                  // full, ready-to-print message
+    } lvalue;                         // ERR_NOT_LVALUE
   };
 } error_t;
 

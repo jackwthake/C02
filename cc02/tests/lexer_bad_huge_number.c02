@@ -1,0 +1,6 @@
+// An integer literal too large to fit in a long overflows strtol and is a
+// lex error (caught before parsing/analysis).
+
+u16 x = 999999999999999999999999;
+
+fn main() -> void {}

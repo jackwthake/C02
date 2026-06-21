@@ -1,0 +1,11 @@
+[1;37mlexer_bad_syntax.c02[0m:[1;37m11[0m:[1;37m11[0m: [1;31merror: [0mUnexpected character '$'
+[1;34m11 |[0m u8 *msg = $"Hello C02!;
+[1;34m   |[1;31m           ^[0m
+[1;37mlexer_bad_syntax.c02[0m:[1;37m11[0m:[1;37m12[0m: [1;31merror: [0mUnterminated string literal
+[1;34m11 |[0m u8 *msg = $"Hello C02!;
+[1;34m   |[1;31m            ^[0m
+[1;37mlexer_bad_syntax.c02[0m:[1;37m29[0m:[1;37m20[0m: [1;31merror: [0mInvalid number literal
+[1;34m29 |[0m   lcd_send_command(0x); // Function set: 8-bit, 2 lines, 5x8 dots
+[1;34m   |[1;31m                    ^~[0m
+[31mTokenization failed with [1;31m3[0m[31m error(s)
+[0m

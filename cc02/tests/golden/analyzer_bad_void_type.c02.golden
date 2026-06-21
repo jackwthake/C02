@@ -1,0 +1,15 @@
+[1;37manalyzer_bad_void_type.c02[0m:[1;37m4[0m:[1;37m1: [1;31merror: [0m'global_void' declared with incomplete type 'void'
+[1;34m4 |[0m void global_void;                 // global
+[1;34m  |[1;31m ^~~~[0m
+[1;37manalyzer_bad_void_type.c02[0m:[1;37m6[0m:[1;37m8: [1;31merror: [0m'payload' declared with incomplete type 'void'
+[1;34m6 |[0m struct Box {
+[1;34m  |[1;31m        ^~~[0m
+[1;37manalyzer_bad_void_type.c02[0m:[1;37m10[0m:[1;37m4: [1;31merror: [0m'v' declared with incomplete type 'void'
+[1;34m10 |[0m fn takes_void(void v) -> void {   // parameter
+[1;34m   |[1;31m    ^~~~~~~~~~[0m
+[1;37manalyzer_bad_void_type.c02[0m:[1;37m15[0m:[1;37m3: [1;31merror: [0m'local' declared with incomplete type 'void'
+[1;34m15 |[0m   void local;                     // local variable
+[1;34m   |[1;31m   ^~~~[0m
+[31m
+Semantic analysis failed with [1;31m4[0m[31m errors.
+[0m
