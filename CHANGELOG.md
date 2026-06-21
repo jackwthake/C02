@@ -9,6 +9,24 @@ releases are reserved for bug fixes only.
 
 ## [Unreleased]
 
+### Added
+
+- **IR generation (in progress)** — new `src/ir-gen/` module for lowering the
+  analysed AST into a self-contained intermediate representation:
+  - `ir_module_t`: a complete IR output containing struct layouts (with
+    computed field offsets and sizes), global variable declarations, register
+    definitions, and one CFG per function — designed so codegen never needs to
+    consult the AST or symbol table.
+  - Pass 1 (declaration collection): walks top-level declarations and
+    populates register definitions (name, type, hardware address), global
+    variables (with integer or string initialiser support), and struct layouts
+    with sequential field offsets.
+  - TAC instruction set and operand types defined; CFG / basic block
+    structures in place. Function body lowering (pass 2) is not yet
+    implemented.
+  - `--ir-dump` CLI flag for inspecting the IR module after lowering.
+  - IR generation timing integrated into `--time-report`.
+
 ## [0.2.0] - 2026-06-21
 
 ### Added
