@@ -1,57 +1,67 @@
 #include "analyzer.h"
 
+#include <stdio.h>
 #include <assert.h>
 
 
 #define SCOPE_STACK_INITIAL_CAPACITY 8   // matches the starting capacity used by parser.c's scratch buffers
 
 
-void scope_stack_init(scope_stack_t *stack, arena_t *arena) {
-  stack->arena = arena;
-  stack->capacity = SCOPE_STACK_INITIAL_CAPACITY;
-  stack->scopes = arena_alloc(arena, sizeof(symtab_t) * stack->capacity);
-  stack->depth = 0;
+int analyzer_init(analyzer_t *a) {
+  if (!arena_init(&a->arena, ANALYZER_SCOPE_ALLOC_SIZE))
+    return 0;
 
-  // global scope lives at index 0 from the start
-  scope_push(stack);
+  a->capacity = SCOPE_STACK_INITIAL_CAPACITY;
+  a->scopes = arena_alloc(&a->arena, sizeof(symtab_t) * a->capacity);
+  a->depth = 0;
+  a->has_errored = 0;
+
+  analyzer_scope_push(a);
+
+  return 1;
 }
 
 
-void scope_push(scope_stack_t *stack) {
-  if (stack->depth == stack->capacity) {
-    unsigned new_capacity = stack->capacity * 2;
-    symtab_t *grown = arena_alloc(stack->arena, sizeof(symtab_t) * new_capacity);
+void analyzer_free(analyzer_t *a) {
+  if (a) {
+    arena_free(&a->arena);
+  }
+}
 
-    // arena_alloc zeroes new memory but doesn't know about the old
-    // allocation - copy the live scopes across by hand
-    for (unsigned i = 0; i < stack->depth; i++) {
-      grown[i] = stack->scopes[i];
+
+void analyzer_scope_push(analyzer_t *a) {
+  if (a->depth == a->capacity) {
+    unsigned new_capacity = a->capacity * 2;
+    symtab_t *grown = arena_alloc(&a->arena, sizeof(symtab_t) * new_capacity);
+
+    for (unsigned i = 0; i < a->depth; i++) {
+      grown[i] = a->scopes[i];
     }
 
-    stack->scopes = grown;
-    stack->capacity = new_capacity;
+    a->scopes = grown;
+    a->capacity = new_capacity;
   }
 
-  symtab_init(&stack->scopes[stack->depth]);
-  stack->depth++;
+  symtab_init(&a->scopes[a->depth]);
+  a->depth++;
 }
 
 
-void scope_pop(scope_stack_t *stack) {
-  assert(stack->depth > 1 && "scope_pop: attempted to pop the global scope");
-  stack->depth--;
+void analyzer_scope_pop(analyzer_t *a) {
+  assert(a->depth > 1 && "analyzer_scope_pop: attempted to pop the global scope");
+  a->depth--;
 }
 
 
-int scope_insert_local(scope_stack_t *stack, char *key, symbol_t value) {
-  symtab_t *current = &stack->scopes[stack->depth - 1];
-  return symtab_insert(current, key, value, stack->arena);
+int analyzer_insert_local(analyzer_t *a, char *key, symbol_t value) {
+  symtab_t *current = &a->scopes[a->depth - 1];
+  return symtab_insert(current, key, value, &a->arena);
 }
 
 
-symbol_t *scope_lookup(scope_stack_t *stack, const char *key) {
-  for (unsigned i = stack->depth; i > 0; i--) {
-    symbol_t *found = symtab_lookup(&stack->scopes[i - 1], key);
+symbol_t *analyzer_lookup(analyzer_t *a, const char *key) {
+  for (unsigned i = a->depth; i > 0; i--) {
+    symbol_t *found = symtab_lookup(&a->scopes[i - 1], key);
     if (found) {
       return found;
     }
@@ -60,6 +70,94 @@ symbol_t *scope_lookup(scope_stack_t *stack, const char *key) {
 }
 
 
-symtab_t *scope_global(scope_stack_t *stack) {
-  return &stack->scopes[0];
+static void pass1_register_globals(analyzer_t *a, ast_t program) {
+  for (unsigned i = 0; i < program->program.count; ++i) {
+    node_t *decl = program->program.items[i];
+    symbol_t sym;
+
+    switch (decl->kind) {
+      case NODE_REG_DECL:  {
+        sym = (symbol_t){
+          .kind = SYMBOL_VARIABLE,
+          .name = decl->reg_decl.name,
+          .variable = {
+            .type = decl->reg_decl.type,
+            .is_register = 1,
+            .addr = decl->reg_decl.addr,
+          }
+        };
+
+        break;
+      }
+
+      case NODE_GLOBAL_VAR: {
+        sym = (symbol_t){
+          .kind = SYMBOL_VARIABLE,
+          .name = decl->global_var.name,
+          .variable = {
+            .type = decl->global_var.type,
+            .is_register = 0,
+            .addr = 0,
+          }
+        };
+
+        break;
+      }
+
+      case NODE_STRUCT_DECL: {
+        sym = (symbol_t){
+          .kind = SYMBOL_STRUCT,
+          .name = decl->struct_decl.name,
+          .struct_decl = {
+            .fields = decl->struct_decl.fields
+          }
+        };
+
+        break;
+      }
+
+      case NODE_FUNCTION: {
+        sym = (symbol_t){
+          .kind = SYMBOL_FUNCTION,
+          .name = decl->function.name,
+          .function = {
+            .params = decl->function.params,
+            .return_type = decl->function.return_type
+          }
+        };
+
+        break;
+      }
+
+      default: assert(0 && "Unreachable!");
+    }
+
+    if (!analyzer_insert_local(a, sym.name, sym)) {
+      error_t e = (error_t){
+        .type = ERR_REDECLARATION,
+        .loc = decl->loc,
+        .name_error = { .name = sym.name }
+      };
+
+      a->has_errored = 1;
+      print_error(&e);
+    }
+  }
+}
+
+
+symtab_t *analyzer_global_scope(analyzer_t *a) {
+  return &a->scopes[0];
+}
+
+
+symtab_t *analyze(analyzer_t *a, ast_t ast) {
+  if (!ast || ast->kind != NODE_PROGRAM || ast->program.count == 0) {
+    fprintf(stderr, "Error, empty translation unit\n");
+    return NULL;
+  }
+
+  pass1_register_globals(a, ast);
+
+  return analyzer_global_scope(a);
 }

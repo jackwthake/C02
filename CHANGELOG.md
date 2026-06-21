@@ -11,6 +11,8 @@ releases are reserved for bug fixes only.
 
 ### Changed
 
+- Added command-line option for printing symbol table: `--symbol-dump`
+- Refactored program error codes so each failure stage gets it's own exit code
 - Generalized error handling and printing for parsing onwards
   (including sem. analysis). Moved source location tracking to a
   dedicated type, `token_location_t` to support pretty error messages

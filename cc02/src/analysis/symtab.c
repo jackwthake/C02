@@ -64,3 +64,16 @@ symbol_t *symtab_lookup(symtab_t *table, const char *key) {
 
   return NULL;
 }
+
+
+unsigned is_symtab_empty(symtab_t *s) {
+  if (s) {
+    for (unsigned i = 0; i < SYMTAB_NUM_BUCKETS; ++i) {
+      if (s->buckets[i]) return 0;
+    }
+
+    return 1;
+  }
+
+  return 0;
+}

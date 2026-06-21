@@ -18,7 +18,11 @@ def should_fail(filename):
 def get_flags(filename):
     if should_fail(filename):
         return ["--syntax-check-only"]
-    return ["--ast-dump"]
+    if filename.startswith("analyzer"):
+        return ["--symbol-dump"]
+    if filename.startswith("parser"):
+        return ["--ast-dump"]
+    return []
 
 def run_test(path):
     filename = os.path.basename(path)
@@ -109,8 +113,9 @@ def update_golden(path):
     if should_fail(filename):
         print(f"  skip  {filename} (expected failure, no golden needed)")
         return
+    flags = get_flags(filename)
     result = subprocess.run(
-        [BIN, "--ast-dump", path],
+        [BIN] + flags + [path],
         capture_output=True, text=True
     )
     if result.returncode != 0:

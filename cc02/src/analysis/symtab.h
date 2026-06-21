@@ -99,4 +99,6 @@ int symtab_insert(symtab_t *table, char *key, symbol_t value, arena_t *arena);
 // pointer is valid as long as the backing arena is alive.
 symbol_t *symtab_lookup(symtab_t *table, const char *key);
 
+unsigned is_symtab_empty(symtab_t *s);
+
 #endif // __SYMTAB_H__

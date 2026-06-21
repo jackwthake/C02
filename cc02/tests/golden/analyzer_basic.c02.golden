@@ -1,0 +1,5 @@
+  [36mtest_struct[0m struct { u16 x, i8 y }
+  [36mmain      [0m function () -> void
+  [36msum       [0m function (u8 a, u8 b) -> u8
+  [36mglobal_symbol[0m variable : u16
+  [36mPORTB     [0m variable : u8 @ 0x6000
