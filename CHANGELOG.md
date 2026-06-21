@@ -9,6 +9,8 @@ releases are reserved for bug fixes only.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-06-21
+
 ### Added
 
 - **Semantic analysis** — two-pass analyzer that validates the full AST:
