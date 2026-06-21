@@ -1,0 +1,23 @@
+// Exercises struct-related errors: unknown struct, unknown field,
+// field access on non-struct
+
+struct Point {
+  u8 x;
+  u8 y;
+}
+
+fn main() -> void {
+  // unknown struct in initializer
+  Nonexistent bad = Nonexistent {};
+
+  // unknown field in initializer
+  Point p = Point { .x = 1, .z = 2 };
+
+  // field access on non-struct
+  u8 val = 5;
+  u8 r = val.x;
+
+  // field access with unknown field name
+  Point p2 = Point { .x = 1, .y = 2 };
+  u8 q = p2.z;
+}

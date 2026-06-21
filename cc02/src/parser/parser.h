@@ -4,23 +4,10 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#include "arena.h"
 #include "tokenizer.h"
-
-// ----------------------------------------------------------------
-// Types
-// ----------------------------------------------------------------
-
-typedef enum {
-  TYPE_U8, TYPE_I8, TYPE_U16, TYPE_I16, TYPE_VOID, TYPE_STRUCT
-} type_kind_t;
-
-typedef struct {
-  type_kind_t kind;
-  unsigned is_ptr;
-  unsigned ptr_depth;
-  char *struct_name;    // only valid when kind == TYPE_STRUCT; resolved to a decl in analysis
-} type_t;
-
+#include "types.h"
+#include "errors.h"
 
 // ----------------------------------------------------------------
 // Operators
@@ -124,6 +111,7 @@ typedef struct {
 
 struct node_t {
   node_kind_t kind;
+  token_location_t loc;   // where this node started in the source - stamped by ALLOC_NODE from CUR_TOK
   union {
     // --- expressions ---
     long   number;                        // NODE_NUMBER
@@ -236,43 +224,11 @@ typedef node_t * ast_t;
 // Memory Management
 // ----------------------------------------------------------------
 
-typedef struct arena_chunk_t {
-  struct arena_chunk_t *next;
-  size_t used;
-  size_t capacity;
-  char data[];  // flexible array member
-} arena_chunk_t;
-
-typedef struct {
-  arena_chunk_t *first;
-  arena_chunk_t *current;
-  size_t chunk_size;
-} parser_arena_t;
-
 #define PARSER_CHUNK_ALLOC_SIZE (sizeof(node_t) * 100)
 
 
-// ----------------------------------------------------------------
-// Error types
-// ----------------------------------------------------------------
-
-typedef enum {
-  UNEXPECTED_EOF,
-  UNEXPECTED_TOKEN,
-  ALLOCATION_FAILED
-} error_type_t;
-
 typedef struct {
-  error_type_t type;
-  token_t found;
-
-  char *expected;
-  char *context;
-} error_t;
-
-
-typedef struct {
-  parser_arena_t arena;
+  arena_t arena;
 
   token_t *tokens;
   unsigned count;

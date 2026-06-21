@@ -9,3 +9,5 @@ i16 *signed_global_ptr;
 void *void_ptr;
 
 u16 dereffed = *global_ptr;
+
+fn main () -> void { }

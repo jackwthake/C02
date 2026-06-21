@@ -1,0 +1,97 @@
+`- TranslationUnitDecl
+   |- FunctionDecl no_params() -> void
+   |  `- CompoundStmt
+   |     `- ReturnStmt
+   |- FunctionDecl one_param(u8 x) -> u8
+   |  `- CompoundStmt
+   |     `- ReturnStmt
+   |        `- Identifier x
+   |- FunctionDecl multi_params(u8 a, u16 b, i8 c, i16 d) -> u16
+   |  `- CompoundStmt
+   |     `- ReturnStmt
+   |        `- Identifier b
+   |- FunctionDecl returns_u8() -> u8
+   |  `- CompoundStmt
+   |     `- ReturnStmt
+   |        `- IntegerLiteral (42)
+   |- FunctionDecl returns_ptr() -> u8*
+   |  `- CompoundStmt
+   |     |- VarDecl x : u8
+   |     |  `- IntegerLiteral (10)
+   |     `- ReturnStmt
+   |        `- UnaryOperator &
+   |           `- Identifier x
+   `- FunctionDecl main() -> void
+      `- CompoundStmt
+         |- CallExpr no_params
+         |- VarDecl val : u8
+         |  `- CallExpr one_param
+         |     `- IntegerLiteral (5)
+         |- VarDecl result : u16
+         |  `- CallExpr multi_params
+         |     |- IntegerLiteral (1)
+         |     |- IntegerLiteral (2)
+         |     |- IntegerLiteral (3)
+         |     `- IntegerLiteral (4)
+         |- VarDecl sum : u8
+         |  `- BinaryOperator +
+         |     |- CallExpr one_param
+         |     |  `- IntegerLiteral (1)
+         |     `- CallExpr one_param
+         |        `- IntegerLiteral (2)
+         |- VarDecl cmp : u8
+         |  `- BinaryOperator >
+         |     |- CallExpr one_param
+         |     |  `- IntegerLiteral (5)
+         |     `- IntegerLiteral (3)
+         |- VarDecl nested : u8
+         |  `- CallExpr one_param
+         |     `- CallExpr returns_u8
+         |- IfStmt
+         |  |- [cond]
+         |  |  `- BinaryOperator >
+         |  |     |- CallExpr one_param
+         |  |     |  `- IntegerLiteral (1)
+         |  |     `- IntegerLiteral (0)
+         |  `- [then body]
+         |     |- CompoundStmt
+         |     |  `- CallExpr no_params
+         |- WhileStmt
+         |  |- [cond]
+         |  |  `- BinaryOperator >
+         |  |     |- CallExpr one_param
+         |  |     |  `- Identifier val
+         |  |     `- IntegerLiteral (0)
+         |  `- [body]
+         |     `- CompoundStmt
+         |        `- AssignStmt
+         |           |- [target]
+         |           |  `- Identifier val
+         |           `- [value]
+         |              `- BinaryOperator -
+         |                 |- Identifier val
+         |                 `- IntegerLiteral (1)
+         |- ForStmt
+         |  |- [init]
+         |  |  `- VarDecl i : u8
+         |  |     `- CallExpr one_param
+         |  |        `- IntegerLiteral (0)
+         |  |- [cond]
+         |  |  `- BinaryOperator <
+         |  |     |- Identifier i
+         |  |     `- CallExpr one_param
+         |  |        `- IntegerLiteral (10)
+         |  |- [step]
+         |  |  `- AssignStmt
+         |  |     |- [target]
+         |  |     |  `- Identifier i
+         |  |     `- [value]
+         |  |        `- BinaryOperator +
+         |  |           |- Identifier i
+         |  |           `- IntegerLiteral (1)
+         |  `- [body]
+         |     `- CompoundStmt
+         |        `- CallExpr no_params
+         |- VarDecl p : u8*
+         |  `- CallExpr returns_ptr
+         `- ReturnStmt

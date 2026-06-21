@@ -25,6 +25,8 @@
    |     `- Identifier casted
    |- GlobalVarDecl signed_global_ptr : i16*
    |- GlobalVarDecl void_ptr : void*
-   `- GlobalVarDecl dereffed : u16
-      `- PtrDeref *
-         `- Identifier global_ptr
+   |- GlobalVarDecl dereffed : u16
+   |  `- PtrDeref *
+   |     `- Identifier global_ptr
+   `- FunctionDecl main() -> void
+      `- CompoundStmt

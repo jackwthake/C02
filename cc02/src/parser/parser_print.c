@@ -8,7 +8,6 @@
 
 #define AST_PRINT_MAX_DEPTH 128
 
-void print_parse_error(error_t *e);
 static void print_ast_(node_t *node, int is_last, const char *prefix);
 
 
@@ -376,56 +375,4 @@ static void print_ast_(node_t *node, int is_last, const char *prefix) {
 void print_ast(ast_t node) {
   char prefix[AST_PRINT_MAX_DEPTH] = "";
   print_ast_(node, 1, prefix);
-}
-
-
-#define PRINT_ERR_HEADER_(err_string, val)                                                \
-  do {                                                                                    \
-  fprintf(stderr, BOLD_WHITE "%s" RESET ":" BOLD_WHITE "%u" RESET ":" BOLD_WHITE "%u: "   \
-              BOLD_RED "error: " RESET err_string "\n",                                   \
-              tok->file_path, tok->line, tok->column, val);                               \
-  } while (0);
-
-#define PRINT_ERR_HEADER(err_string) \
-    PRINT_ERR_HEADER_(err_string, "")
-
-#define PRINT_ERROR_MESG_VAL(err_string, val)                                             \
-  do {                                                                                    \
-    PRINT_ERR_HEADER_(err_string, val);                                                   \
-    fprintf(stderr, "  =" BOLD_BLUE " expected: " RESET BLUE "%s\n" RESET, e->expected);  \
-    fprintf(stderr, "  =" BOLD_BLUE " context:  " RESET BLUE "%s\n" RESET, e->context);   \
-  } while (0)
-
-#define PRINT_ERROR_MESG(err_string) \
-  PRINT_ERROR_MESG_VAL(err_string, "")
-
-void print_parse_error(error_t *e) {
-  const token_t *tok = &e->found;
-
-  switch (e->type) {
-    case UNEXPECTED_EOF:
-      PRINT_ERROR_MESG("unexpected end of file");
-      print_error_line(tok->line, tok->column, 1);
-      return;
-    
-    case ALLOCATION_FAILED: {
-      fprintf(stderr, BOLD_BLUE "[c02 Internal] " RESET );
-      PRINT_ERR_HEADER("Internal parsing allocation failed - this is a bug, please report it."); // will print c02 internal file name and not user's c02 code
-      return;
-    }
-
-    case UNEXPECTED_TOKEN: {
-      if (token_has_value(tok->type)) {
-        unsigned should_free = 0;
-        char *val = token_val_to_string(*tok, &should_free);
-        PRINT_ERROR_MESG_VAL("unexpected token: %s", val);
-        print_error_line(tok->line, tok->column, tok->length);
-        if (should_free) free(val);
-      } else {
-        PRINT_ERROR_MESG("unexpected token");
-        print_error_line(tok->line, tok->column, tok->length);
-      }
-      return;
-    }
-  }
 }

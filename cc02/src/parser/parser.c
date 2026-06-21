@@ -5,9 +5,9 @@
  * --------
  * Converts a flat token array (from tokenizer.c) into an AST rooted at a
  * NODE_PROGRAM node. All AST nodes are allocated from a chunked arena
- * (parser_arena_t) — call parser_init() before parse() and parser_free()
- * when done. String fields in nodes (names, identifiers) point directly into
- * the token array; the token array must outlive the AST.
+ * (arena_t, see arena.h) — call parser_init() before parse() and
+ * parser_free() when done. String fields in nodes (names, identifiers)
+ * point directly into the token array; the token array must outlive the AST.
  *
  * RECURSIVE DESCENT CHAIN
  * -----------------------
@@ -67,75 +67,15 @@
 #include <string.h>
 
 
-extern void print_parse_error(error_t *e);
-
-
 int parser_init(parser_t *p) {
   size_t chunk_size = (PARSER_CHUNK_ALLOC_SIZE + sizeof(void*) - 1) & ~(sizeof(void*) - 1);
-
-  p->arena.chunk_size = chunk_size;
-  p->arena.first = malloc(sizeof(arena_chunk_t) + chunk_size);
-  if (!p->arena.first) {
-    return 0;
-  }
-
-  p->arena.first->next = NULL;
-  p->arena.first->used = 0;
-  p->arena.first->capacity = chunk_size;
-  p->arena.current = p->arena.first;
-
-  return 1;
+  return arena_init(&p->arena, chunk_size);
 }
-
-
-static void *parser_alloc(parser_arena_t *a, size_t size) {
-  size = (size + sizeof(void*) - 1) & ~(sizeof(void*) - 1);
-
-  if (a->current->used + size > a->current->capacity) {
-    if (size > a->chunk_size) {
-      // Oversized allocation: insert after current, don't advance current
-      arena_chunk_t *chunk = malloc(sizeof(arena_chunk_t) + size);
-      if (!chunk) exit(1);
-      chunk->used = size;
-      chunk->capacity = size;
-      chunk->next = a->current->next;
-      a->current->next = chunk;
-      return chunk->data;
-    } else {
-      // Standard allocation: create a new chunk and advance current
-      arena_chunk_t *chunk = malloc(sizeof(arena_chunk_t) + a->chunk_size);
-      if (!chunk) exit(1);
-      chunk->used = size;
-      chunk->capacity = a->chunk_size;
-      chunk->next = NULL; // Assuming it goes at the end
-      
-      a->current->next = chunk;
-      a->current = chunk;
-      return chunk->data;
-    }
-  }
-
-  void *ptr = a->current->data + a->current->used;
-  a->current->used += size;
-  return ptr;
-}
-
-
-#define ALLOC_NODE(p) (memset(parser_alloc(&(p)->arena, sizeof(node_t)), 0, sizeof(node_t)))
 
 
 void parser_free(parser_t *p) {
-  parser_arena_t *a = &p->arena;
   if (p) {
-    arena_chunk_t *curr = a->first;
-    while (curr) {
-      arena_chunk_t *tmp = curr;
-      curr = curr->next;
-      free(tmp);
-    }
-
-    a->chunk_size = 0;
-    a->current = a->first = NULL;
+    arena_free(&p->arena);
   }
 }
 
@@ -172,6 +112,19 @@ static inline int token_type_to_parser_type(token_type_t t) {
 #define CUR_TOK p->tokens[p->pos]
 
 
+// Allocates a zeroed node_t from p's arena and stamps its source location
+// from whatever token is current - this is "where parsing of this node
+// began", not necessarily the node's full span (e.g. a NODE_BINOP's loc is
+// wherever its left operand started, not the operator or right side), but
+// it's enough to point an error at the right neighbourhood of source.
+static node_t *alloc_node(parser_t *p) {
+  node_t *n = ARENA_ALLOC(&p->arena, node_t);
+  n->loc = CUR_TOK.loc;
+  return n;
+}
+#define ALLOC_NODE(p) alloc_node(p)
+
+
 static node_t *parse_struct_init(parser_t *p, char *struct_name);
 static node_t *logical_or(parser_t *p); // recursive descent entry point
 
@@ -196,7 +149,7 @@ static type_t parse_type(parser_t *p) {
       res.struct_name = CUR_TOK.string_val;
       ++p->pos; // consume identifier
     } else {
-      GENERATE_ERROR(UNEXPECTED_TOKEN, CUR_TOK, "type name (u8, i8, u16, i16, void, or struct name)", "type annotation");
+      GENERATE_ERROR(ERR_UNEXPECTED_TOKEN, CUR_TOK, "type name (u8, i8, u16, i16, void, or struct name)", "type annotation");
       return res;
     }
   } else {
@@ -253,7 +206,7 @@ static node_t *parse_function_call_site(parser_t *p, char *name) {
 /* consumes token, returning next one -> throws error if EOF is encountered */
 static token_t consume(parser_t *p) {
   if (p->pos >= p->count || CUR_TOK.type == t_eof) {
-    GENERATE_ERROR(UNEXPECTED_EOF, CUR_TOK, "expression (literal, identifier, or '(')", "expression parsing");
+    GENERATE_ERROR(ERR_UNEXPECTED_EOF, CUR_TOK, "expression (literal, identifier, or '(')", "expression parsing");
     return CUR_TOK; // return whatever's there, caller checks p->err
   }
 
@@ -330,7 +283,7 @@ static node_t *primary(parser_t *p) {
     }
 
     default:
-      GENERATE_ERROR(UNEXPECTED_TOKEN, tok, "expression (literal, identifier, function call, or '(' expr ')')", "expression parsing");
+      GENERATE_ERROR(ERR_UNEXPECTED_TOKEN, tok, "expression (literal, identifier, function call, or '(' expr ')')", "expression parsing");
       return NULL;
   }
 
@@ -561,7 +514,7 @@ static node_t *parse_assignment(parser_t *p) {
       ++p->pos;
       node_t *n = ALLOC_NODE(p);
       n->kind = NODE_ASSIGN;
-      n->assign.target = target;   // was .name (char*), now a node_t* lvalue
+      n->assign.target = target;
       n->assign.value = parse_expr(p);
       GUARD(p);
       return n;
@@ -964,7 +917,7 @@ static node_t *parse_stmt(parser_t *p) {
       return n;
     }
     default: {
-      GENERATE_ERROR(UNEXPECTED_TOKEN, CUR_TOK, "statement (return, if, while, for, variable declaration, assignment, or function call)", "statement");
+      GENERATE_ERROR(ERR_UNEXPECTED_TOKEN, CUR_TOK, "statement (return, if, while, for, variable declaration, assignment, or function call)", "statement");
       return NULL;
     }
   }
@@ -1082,7 +1035,7 @@ static node_t *parse_toplevel(parser_t *p) {
       return parse_global_var_decl(p);
 
     default:
-      GENERATE_ERROR(UNEXPECTED_TOKEN, tok, "top-level declaration (fn, reg, or type name for a global variable)", "top-level parse");
+      GENERATE_ERROR(ERR_UNEXPECTED_TOKEN, tok, "top-level declaration (fn, reg, or type name for a global variable)", "top-level parse");
       return NULL;
   }
 }
@@ -1099,7 +1052,7 @@ ast_t parse(parser_t *p, token_t *tokens, unsigned num_tokens) {
     scratch_push(&scratch, parse_toplevel(p), p);
 
     if (p->has_errored) {
-      print_parse_error(p->err);
+      print_error(p->err);
 
       free(scratch.items);
       free(p->err);

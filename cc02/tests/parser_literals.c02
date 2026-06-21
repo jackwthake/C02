@@ -1,0 +1,48 @@
+// parser_literals.c02
+// Exercises literal formats: decimal, hex, binary, true/false/null,
+// string literals, and literals used in various expression contexts.
+
+u8 dec = 42;
+u8 zero = 0;
+u16 big = 65535;
+
+u8 hex_lower = 0xff;
+u8 hex_upper = 0xFF;
+u16 hex_addr = 0x6000;
+u8 hex_zero = 0x0;
+
+u8 bin_basic = 0b1010;
+u8 bin_byte = 0b11111111;
+u8 bin_zero = 0b0;
+
+u8 t = true;
+u8 f = false;
+u8 *n = null;
+
+u8 *greeting = "hello world";
+u8 *empty = "";
+
+fn main() -> void {
+  // literals in expressions
+  u8 a = 0xFF & 0x0F;
+  u8 b = 0b1100 | 0b0011;
+  u8 c = 1 << 4;
+  u16 d = 0x1000 + 0x0FFF;
+
+  // boolean literals in conditionals
+  if (true) {
+    u8 x = 1;
+  }
+
+  while (false) {
+    u8 y = 0;
+  }
+
+  // null pointer comparison
+  u8 *ptr = null;
+  if (ptr == null) {
+    ptr = &a;
+  }
+
+  return;
+}

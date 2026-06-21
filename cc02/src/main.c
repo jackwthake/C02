@@ -10,12 +10,18 @@
 
 #include "tokenizer.h"
 #include "parser.h"
+#include "analyzer.h"
 
-#define UNUSED(x) (void)(x)
+#define PARAM_ERROR_RET_CODE 1
+#define FILE_LOAD_ERROR_RET_CODE 2
+#define TOKEN_ERROR_RET_CODE 3
+#define PARSER_ERROR_RET_CODE 4
+#define ANALYZER_ERROR_RET_CODE 5
 
 typedef struct params_t {
   int dump_tokens;
   int dump_ast;
+  int dump_symbols;
   int syntax_only;
   int time_report;
   char *output;
@@ -29,6 +35,7 @@ static void print_help(const char *prog_name) {
   fprintf(stderr, "  -h, --help           Show this help message\n");
   fprintf(stderr, "  --token-dump         Dump the token list after tokenization\n");
   fprintf(stderr, "  --ast-dump           Dump the AST using print_ast after parsing\n");
+  fprintf(stderr, "  --symbol-dump        Dump the Symbol Table after analysis\n");
   fprintf(stderr, "  --syntax-check-only  Stop after syntax and semantic checks\n");
   fprintf(stderr, "  --time-report        Prints a report showing how long each stage of compilation took\n");
   fprintf(stderr, "  -o, --output         Specify output file (not implemented yet)\n");
@@ -40,8 +47,9 @@ static int read_params(int argc, char * const *argv, params_t *params) {
     {"help", no_argument, 0, 'h'},
     {"token-dump", no_argument, 0, 1},
     {"ast-dump", no_argument, 0, 2},
-    {"syntax-check-only", no_argument, 0, 3},
-    {"time-report", no_argument, 0, 4},
+    {"symbol-dump", no_argument, 0, 3},
+    {"syntax-check-only", no_argument, 0, 4},
+    {"time-report", no_argument, 0, 5},
     {"output", required_argument, 0, 'o'},
     {0, 0, 0, 0},
   };
@@ -64,9 +72,12 @@ static int read_params(int argc, char * const *argv, params_t *params) {
         params->dump_ast = 1;
         break;
       case 3:
-        params->syntax_only = 1;
+        params->dump_symbols = 1;
         break;
       case 4:
+        params->syntax_only = 1;
+        break;
+      case 5:
         params->time_report = 1;
         break;
       default:
@@ -160,32 +171,37 @@ int main(int argc, char * const *argv) {
   /* Read command-line parameters */
   int parse_status = read_params(argc, argv, &params);
   if (parse_status != 0) {
-    return parse_status == 2 ? 0 : 1;
+    return parse_status == 2 ? 0 : PARAM_ERROR_RET_CODE;
   }
+
+  int status = 0;
 
   /* Timing variables */
   double t_total_start = get_time_ms();
   double t_step_start;
   double t_load = 0.0, t_lex = 0.0, t_parse = 0.0, t_sema = 0.0, t_codegen = 0.0, t_cleanup = 0.0;
 
+  char *source_code = NULL;
+  token_t *tokens = NULL;
+  unsigned num_tokens = 0;
+  parser_t parser = {0};
+  analyzer_t analyzer = {0};
+
   /* Load the input file */
   t_step_start = get_time_ms();
-  char *source_code;
   long fsize;
   if ((fsize = load_file(params.input, &source_code)) < 0) {
-    return 1;
+    status = FILE_LOAD_ERROR_RET_CODE; goto finish;
   }
   t_load = get_time_ms() - t_step_start;
-  
+
   /* tokenize the source code */
   t_step_start = get_time_ms();
-  unsigned num_tokens;
-  token_t *tokens = tokenize(params.input, source_code, fsize, &num_tokens);
-  t_lex = get_time_ms() - t_step_start; /* Exclude I/O dump time */
-  
+  tokens = tokenize(params.input, source_code, fsize, &num_tokens);
+  t_lex = get_time_ms() - t_step_start;
+
   if (!tokens) {
-    free(source_code);
-    return 1;
+    status = TOKEN_ERROR_RET_CODE; goto finish;
   }
 
   if (params.dump_tokens) {
@@ -194,35 +210,45 @@ int main(int argc, char * const *argv) {
 
   /* parse the tokens into an AST */
   t_step_start = get_time_ms();
-  
-  parser_t parser;
+
   if (!parser_init(&parser)) {
     fprintf(stderr, "Parser allocation failed.");
-    free(source_code);
-    free_tokens(tokens, num_tokens);
-    return 1;
+    status = PARSER_ERROR_RET_CODE; goto finish;
   }
 
   ast_t ast = parse(&parser, tokens, num_tokens);
-  t_parse = get_time_ms() - t_step_start; /* Exclude I/O dump time */
+  t_parse = get_time_ms() - t_step_start;
 
   if (!ast) {
-    free(source_code);
-    free_tokens(tokens, num_tokens);
-    parser_free(&parser);
-    return 1;
+    status = PARSER_ERROR_RET_CODE; goto finish;
   }
 
   if (params.dump_ast) {
     print_ast(ast);
   }
-  
+
   /* Semantic analysis */
   t_step_start = get_time_ms();
-  /* After analysis, source code is no longer needed */
-  free(source_code);
+
+  if (!analyzer_init(&analyzer)) {
+    status = ANALYZER_ERROR_RET_CODE; goto finish;
+  }
+
+  symtab_t *symbol_table = analyze(&analyzer, ast);
+  if (!symbol_table || analyzer.errors || is_symtab_empty(symbol_table)) {
+    if (analyzer.errors > 0) { // could fail without errors from source code
+      fprintf(stderr, RED "\nSemantic analysis failed with " BOLD_RED "%u" RESET RED " errors.\n" RESET, analyzer.errors);
+    }
+
+    status = ANALYZER_ERROR_RET_CODE; goto finish;
+  }
+
   t_sema = get_time_ms() - t_step_start;
-  
+
+  if (params.dump_symbols) {
+    print_symtab(symbol_table);
+  }
+
   if (params.syntax_only) {
     goto finish;
   }
@@ -233,10 +259,11 @@ int main(int argc, char * const *argv) {
   t_codegen = get_time_ms() - t_step_start;
 
 finish:
-
   t_step_start = get_time_ms();
-  free_tokens(tokens, num_tokens);
+  free(source_code);
+  if (tokens) free_tokens(tokens, num_tokens);
   parser_free(&parser);
+  analyzer_free(&analyzer);
   t_cleanup = get_time_ms() - t_step_start;
 
   /* Print Timing Report if flag was passed */
@@ -259,5 +286,5 @@ finish:
     printf("===============================\n\n");
   }
 
-  return 0;
+  return status;
 }

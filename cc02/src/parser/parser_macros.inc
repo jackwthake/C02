@@ -11,17 +11,21 @@
  *   Sets up an error structure in the parser, storing the error type, the
  *   token that was found, what was expected, and the context where the
  *   error occurred. Sets p->has_errored flag to prevent further parsing.
+ *   TYPE is one of the ERR_* parser kinds from errors.h (ERR_UNEXPECTED_EOF,
+ *   ERR_UNEXPECTED_TOKEN, ERR_ALLOCATION_FAILED) - e->loc is taken from
+ *   TOKEN's own loc, since for parser errors the token IS the location.
  *
  * GENERATE_ALLOCATOR_ERROR()
- *   Generates an ALLOCATION_FAILED error when malloc/realloc fails.
+ *   Generates an ERR_ALLOCATION_FAILED error when malloc/realloc fails.
 */
 #define GENERATE_ERROR(TYPE, TOKEN, EXPECTED, CTX)                          \
   do {                                                                      \
     p->err = malloc(sizeof(error_t));                                       \
     p->err->type = TYPE;                                                    \
-    p->err->found = TOKEN;                                                  \
-    p->err->expected = EXPECTED;                                            \
-    p->err->context = CTX;                                                  \
+    p->err->loc = (TOKEN).loc;                                              \
+    p->err->parse.found = TOKEN;                                            \
+    p->err->parse.expected = EXPECTED;                                      \
+    p->err->parse.context = CTX;                                            \
     p->has_errored = 1;                                                     \
   } while(0)                                                                \
 
@@ -30,11 +34,12 @@
   do {                                                                      \
     token_t err = {                                                         \
       .type = t_eof,                                                        \
-      .line = __LINE__,                                                     \
-      .column = 0,                                                          \
-      .length = 0,                                                          \
-      .file_path = "parser.c" };                                            \
-    GENERATE_ERROR(ALLOCATION_FAILED, err, "", "");                         \
+      .loc = {                                                              \
+        .line = __LINE__,                                                   \
+        .column = 0,                                                        \
+        .length = 0,                                                        \
+        .file_path = "parser.c" } };                                        \
+    GENERATE_ERROR(ERR_ALLOCATION_FAILED, err, "", "");                     \
   } while(0);
 
 
@@ -82,10 +87,10 @@ static void NAME##_push(NAME##_t *s, node_t *val, parser_t *p) {            \
   s->items[s->count++] = val;                                               \
 }                                                                           \
                                                                             \
-static node_list_t NAME##_commit(NAME##_t *s, parser_arena_t *arena) {      \
+static node_list_t NAME##_commit(NAME##_t *s, arena_t *arena) {             \
   node_list_t list = { NULL, 0 };                                           \
   if (s->count > 0) {                                                       \
-    node_t **items = parser_alloc(arena, sizeof(node_t*) * s->count);       \
+    node_t **items = arena_alloc(arena, sizeof(node_t*) * s->count);        \
     memcpy(items, s->items, sizeof(node_t*) * s->count);                    \
     list.items = items;                                                     \
     list.count = s->count;                                                  \
@@ -115,10 +120,10 @@ static void NAME##_push(NAME##_t *s, ELEM_TYPE val, parser_t *p) {          \
   s->items[s->count++] = val;                                               \
 }                                                                           \
                                                                             \
-static LIST_TYPE NAME##_commit(NAME##_t *s, parser_arena_t *arena) {        \
+static LIST_TYPE NAME##_commit(NAME##_t *s, arena_t *arena) {               \
   LIST_TYPE list = { NULL, 0 };                                             \
   if (s->count > 0) {                                                       \
-    ELEM_TYPE *items = parser_alloc(arena, sizeof(ELEM_TYPE) * s->count);   \
+    ELEM_TYPE *items = arena_alloc(arena, sizeof(ELEM_TYPE) * s->count);    \
     memcpy(items, s->items, sizeof(ELEM_TYPE) * s->count);                  \
     list.items = items;                                                     \
     list.count = s->count;                                                  \
@@ -137,7 +142,7 @@ static LIST_TYPE NAME##_commit(NAME##_t *s, parser_arena_t *arena) {        \
 #define EXPECT_SYMBOL(EXPECTED, ERR_EXPECTED, ERR_CTX)                      \
   do {                                                                      \
     if (CUR_TOK.type != EXPECTED) {                                         \
-      GENERATE_ERROR(UNEXPECTED_TOKEN, CUR_TOK, ERR_EXPECTED, ERR_CTX);     \
+      GENERATE_ERROR(ERR_UNEXPECTED_TOKEN, CUR_TOK, ERR_EXPECTED, ERR_CTX); \
     }                                                                       \
   } while(0);
 

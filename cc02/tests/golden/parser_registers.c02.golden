@@ -2,4 +2,6 @@
    |- RegDecl PORTB : u8 @ 6000
    |- RegDecl PORTA : u8 @ 6001
    |- RegDecl DDRB : u8 @ 6002
-   `- RegDecl DDRA : u8 @ 6003
+   |- RegDecl DDRA : u8 @ 6003
+   `- FunctionDecl main() -> void
+      `- CompoundStmt
