@@ -619,6 +619,12 @@ static node_t *parse_struct_decl(parser_t *p) {
   GUARD(p);
   ++p->pos; // consume }
 
+  // A trailing ';' is optional: the README writes `struct Foo { ... };`, but
+  // the existing corpus omits it, so accept either rather than forcing one.
+  // This is the single entry point for struct decls, so it covers both
+  // top-level and in-block declarations.
+  if (CUR_TOK.type == s_semicolon) ++p->pos;
+
   return decl;
 }
 

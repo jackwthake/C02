@@ -446,11 +446,13 @@ static int tokenize_string(token_t *tokens, unsigned *token_count, char **ptr, u
   (*ptr)++; // Skip opening quote
   (*column)++;
 
-  const char *start = *ptr;
-  unsigned length = 0;
+  // First scan to the closing quote, advancing line/column. A backslash
+  // escapes the next character, so an escaped quote (\") doesn't end the
+  // string.
+  const char *content_start = *ptr;
   while (**ptr != '\0' && **ptr != '"' && **ptr != '\n') {
     if (**ptr == '\\') {
-      (*ptr)++; // Skip escape character
+      (*ptr)++; // skip the backslash; the escaped char is consumed below
       (*column)++;
       if (**ptr == '\0') {
         break;
@@ -458,13 +460,6 @@ static int tokenize_string(token_t *tokens, unsigned *token_count, char **ptr, u
     }
     (*ptr)++;
     (*column)++;
-    length++;
-  }
-
-  char *string_literal = strndup(start, length);
-  if (!string_literal) {
-    perror("Failed to allocate memory for string literal");
-    return -1;
   }
 
   if (**ptr != '"') {
@@ -472,15 +467,49 @@ static int tokenize_string(token_t *tokens, unsigned *token_count, char **ptr, u
     PRINT_ERROR_HEADER(file_path, err_line, string_column);
     fprintf(stderr, "Unterminated string literal\n");
     print_error_line((token_location_t){ .line = err_line, .column = string_column, .length = 1, .file_path = file_path });
-
-    free(string_literal);
     return -1;
   }
+
+  // Decode the raw [content_start, *ptr) span into a fresh buffer, translating
+  // escape sequences. The decoded form is never longer than the raw span (each
+  // escape collapses two source bytes into one), so raw_span + 1 always fits -
+  // copying the raw span directly (the old strndup of a logical length that
+  // undercounted escapes) dropped one trailing byte per escape.
+  size_t raw_span = (size_t)(*ptr - content_start);
+  char *string_literal = malloc(raw_span + 1);
+  if (!string_literal) {
+    perror("Failed to allocate memory for string literal");
+    return -1;
+  }
+
+  size_t out_len = 0;
+  for (const char *s = content_start; s < *ptr; ++s) {
+    if (*s == '\\' && (s + 1) < *ptr) {
+      ++s; // consume the escaped character
+      switch (*s) {
+        case 'n':  string_literal[out_len++] = '\n'; break;
+        case 't':  string_literal[out_len++] = '\t'; break;
+        case 'r':  string_literal[out_len++] = '\r'; break;
+        case '0':  string_literal[out_len++] = '\0'; break;
+        case '\\': string_literal[out_len++] = '\\'; break;
+        case '"':  string_literal[out_len++] = '"';  break;
+        case '\'': string_literal[out_len++] = '\''; break;
+        default:   string_literal[out_len++] = *s;   break; // unknown escape: keep the char verbatim
+      }
+    } else {
+      string_literal[out_len++] = *s;
+    }
+  }
+  string_literal[out_len] = '\0';
 
   (*ptr)++; // Skip closing quote
   (*column)++;
 
-  token_t *tok = add_token(tokens, token_count, l_string, line, *column - length - 2, length + 2, file_path);
+  // loc spans the whole literal including both quotes, anchored at the opening
+  // quote - derived from source offsets so it stays correct no matter how many
+  // escapes shortened the decoded string.
+  const unsigned literal_length = (unsigned)(*ptr - string_start);
+  token_t *tok = add_token(tokens, token_count, l_string, line, string_column, literal_length, file_path);
   tok->string_val = string_literal;
   return 1;
 }
