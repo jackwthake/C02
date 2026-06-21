@@ -90,6 +90,8 @@ typedef enum {
 
   // unary
   TAC_NEG, TAC_NOT, TAC_BNOT,
+  TAC_INC,          // dst = dst + 1  (maps to 6502 INC/INX/INY)
+  TAC_DEC,          // dst = dst - 1  (maps to 6502 DEC/DEX/DEY)
 
   // memory / pointers
   TAC_ADDR_OF,      // dst = &src1

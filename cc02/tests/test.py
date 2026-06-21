@@ -200,9 +200,12 @@ TESTS_REL = os.path.join("cc02", "tests")
 
 IGNORED_DIRS = {".git", "bin", "build", "node_modules", "__pycache__"}
 
+COMPILER_SRC_DIR = os.path.join("cc02", "src")
+
 def count_lines():
     compiler_counts = {}
     harness_counts = {}
+    folder_counts = {}
     for dirpath, dirnames, filenames in os.walk(REPO_ROOT):
         dirnames[:] = [d for d in dirnames if d not in IGNORED_DIRS]
         for f in filenames:
@@ -223,25 +226,35 @@ def count_lines():
                 harness_counts[ext] = harness_counts.get(ext, 0) + lines
             elif ext in COMPILER_EXTS:
                 compiler_counts[ext] = compiler_counts.get(ext, 0) + lines
+                if relpath.startswith(COMPILER_SRC_DIR):
+                    parts = relpath[len(COMPILER_SRC_DIR):].strip(os.sep).split(os.sep)
+                    folder = parts[0] if len(parts) > 1 else "driver"
+                    folder_counts[folder] = folder_counts.get(folder, 0) + lines
 
     if not compiler_counts and not harness_counts:
         print("no recognized source files found")
         return
 
-    def print_section(title, counts):
+    def print_section(title, counts, label_map=None):
         if not counts:
             return
         total = sum(counts.values())
-        max_label = max(len(EXTENSION_LABELS[e]) for e in counts)
+        if label_map:
+            max_label = max(len(label_map.get(k, k)) for k in counts)
+        else:
+            max_label = max(len(EXTENSION_LABELS[e]) for e in counts)
         max_digits = len(str(max(counts.values())))
         print(f"\n  {title}")
-        for ext in sorted(counts, key=lambda e: counts[e], reverse=True):
-            label = (EXTENSION_LABELS[ext] + ":").ljust(max_label + 1)
-            pct = counts[ext] / total * 100
-            print(f"    {label} {counts[ext]:<{max_digits}} lines ({pct:.1f}%)")
+        for key in sorted(counts, key=lambda k: counts[k], reverse=True):
+            label_str = label_map.get(key, key) if label_map else EXTENSION_LABELS[key]
+            label = (label_str + ":").ljust(max_label + 1)
+            pct = counts[key] / total * 100
+            print(f"    {label} {counts[key]:<{max_digits}} lines ({pct:.1f}%)")
         print(f"    {'Total:'.ljust(max_label + 1)} {total} lines")
 
     print_section("Compiler", compiler_counts)
+    if folder_counts:
+        print_section("Compiler (by module)", folder_counts, label_map={k: k for k in folder_counts})
     print_section("Test Harness", harness_counts)
 
     grand_total = sum(compiler_counts.values()) + sum(harness_counts.values())

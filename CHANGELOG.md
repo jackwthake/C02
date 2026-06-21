@@ -21,11 +21,28 @@ releases are reserved for bug fixes only.
     populates register definitions (name, type, hardware address), global
     variables (with integer or string initialiser support), and struct layouts
     with sequential field offsets.
-  - TAC instruction set and operand types defined; CFG / basic block
-    structures in place. Function body lowering (pass 2) is not yet
-    implemented.
+  - Pass 2 (function lowering): complete expression lowering into TAC —
+    numbers, strings, identifiers, binary ops, unary ops (including
+    `TAC_INC`/`TAC_DEC` mapped to 6502 `INC`/`DEC`), address-of, pointer
+    dereference (`TAC_LOAD`), casts, function calls with arguments, struct
+    field access (`TAC_FIELD_LOAD`), and struct initialiser literals
+    (`TAC_FIELD_STORE` per field). Statement lowering (var decl, assignment,
+    control flow) is not yet implemented.
   - `--ir-dump` CLI flag for inspecting the IR module after lowering.
   - IR generation timing integrated into `--time-report`.
+- Smoke test for IR generation covering the full pipeline (tokenize → parse
+  → analyse → IR gen → free) with assertion coverage for declarations,
+  CFG creation, and expression lowering.
+- Per-module line count breakdown in `test.py --cloc` output.
+
+### Changed
+
+- `NODE_IDENTIFIER` refactored from a bare `char *` to a struct carrying
+  the name and a `resolved_type` stamped by the analyzer during semantic
+  analysis. Required for IR generation to know variable types without
+  re-walking scopes.
+- `NODE_CALL` extended with `resolved_return_type`, stamped by the analyzer.
+- `NODE_FIELD_ACCESS` extended with `resolved_type`, stamped by the analyzer.
 
 ## [0.2.0] - 2026-06-21
 

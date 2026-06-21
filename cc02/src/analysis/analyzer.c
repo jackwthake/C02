@@ -308,17 +308,18 @@ static type_t resolve_expr_type(analyzer_t *a, node_t *expr) {
       return (type_t){ .kind = TYPE_U8, .is_ptr = 1, .ptr_depth = 1 };
 
     case NODE_IDENTIFIER: {
-      symbol_t *sym = analyzer_lookup(a, expr->identifier);
+      symbol_t *sym = analyzer_lookup(a, expr->identifier.name);
       if (!sym) {
-        EMIT_NAME_ERROR(ERR_UNDECLARED_IDENTIFIER, expr->loc, expr->identifier);
+        EMIT_NAME_ERROR(ERR_UNDECLARED_IDENTIFIER, expr->loc, expr->identifier.name);
         return TYPE_ERROR;
       }
 
       if (sym->kind != SYMBOL_VARIABLE) {
-        EMIT_NAME_ERROR(ERR_NOT_ASSIGNABLE, expr->loc, expr->identifier);
+        EMIT_NAME_ERROR(ERR_NOT_ASSIGNABLE, expr->loc, expr->identifier.name);
         return TYPE_ERROR;
       }
 
+      expr->identifier.resolved_type = sym->variable.type;
       return sym->variable.type;
     }
 
@@ -357,6 +358,7 @@ static type_t resolve_expr_type(analyzer_t *a, node_t *expr) {
         }
       }
 
+      expr->call.resolved_return_type = sym->function.return_type;
       return sym->function.return_type;
     }
 
@@ -463,6 +465,7 @@ static type_t resolve_expr_type(analyzer_t *a, node_t *expr) {
 
       for (unsigned i = 0; i < decl->struct_decl.fields.count; i++) {
         if (strcmp(decl->struct_decl.fields.items[i].name, expr->field_access.field) == 0) {
+          expr->field_access.resolved_type = decl->struct_decl.fields.items[i].type;
           return decl->struct_decl.fields.items[i].type;
         }
       }

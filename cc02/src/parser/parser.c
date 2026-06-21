@@ -276,7 +276,7 @@ static node_t *primary(parser_t *p) {
       } else {
         node_t *ident = ALLOC_NODE(p);
         ident->kind = NODE_IDENTIFIER;
-        ident->identifier = tok.string_val;
+        ident->identifier.name = tok.string_val;
         expr = ident;
         break;
       }

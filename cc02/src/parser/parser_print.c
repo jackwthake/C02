@@ -109,7 +109,7 @@ static void print_ast_label(node_t *node) {
       printf("%s \"%s\"", node_kind_name(node->kind), node->value);
       break;
     case NODE_IDENTIFIER:
-      printf("%s %s", node_kind_name(node->kind), node->identifier ? node->identifier : "<anon>");
+      printf("%s %s", node_kind_name(node->kind), node->identifier.name ? node->identifier.name : "<anon>");
       break;
     case NODE_BINOP:
       printf("%s %s", node_kind_name(node->kind), op_name(node->binop.op));
