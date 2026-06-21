@@ -134,12 +134,12 @@ unsigned token_has_value(token_type_t type) {
 
 char *token_val_to_string(const token_t tok, unsigned *should_free) {
   if (!token_has_value(tok.type)) {
-    should_free = 0;
+    *should_free = 0;
     return NULL;
   }
 
   if (tok.type == l_identifier || tok.type == l_string) {
-    should_free = 0;
+    *should_free = 0;
     return (char *)tok.string_val;
   }
 
@@ -149,7 +149,7 @@ char *token_val_to_string(const token_t tok, unsigned *should_free) {
       return NULL;
     }
 
-    snprintf(str, 32, "%ld", *(long *)tok.string_val);
+    snprintf(str, 32, "%ld", tok.num_val);
     *should_free = 1;
     return str;
   }

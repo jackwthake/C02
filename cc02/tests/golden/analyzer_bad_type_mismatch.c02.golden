@@ -1,0 +1,15 @@
+[1;37manalyzer_bad_type_mismatch.c02[0m:[1;37m15[0m:[1;37m3: [1;31merror: [0mtype mismatch in narrow: expected u8, found u16
+[1;34m15 |[0m   u8 narrow = wide;
+[1;34m   |[1;31m   ^~[0m
+[1;37manalyzer_bad_type_mismatch.c02[0m:[1;37m18[0m:[1;37m3: [1;31merror: [0mtype mismatch in ptr: expected u8*, found u8
+[1;34m18 |[0m   u8 *ptr = 10;
+[1;34m   |[1;31m   ^~[0m
+[1;37manalyzer_bad_type_mismatch.c02[0m:[1;37m25[0m:[1;37m24: [1;31merror: [0m'bad_return' is not assignable
+[1;34m25 |[0m   u8 *ptr = &bad_return;
+[1;34m   |[1;31m                        ^[0m
+[1;37manalyzer_bad_type_mismatch.c02[0m:[1;37m26[0m:[1;37m3: [1;31merror: [0mtype mismatch in return: expected u8, found u8*
+[1;34m26 |[0m   return ptr;
+[1;34m   |[1;31m   ^~~~~~[0m
+[31m
+Semantic analysis failed with [1;31m4[0m[31m errors.
+[0m

@@ -35,12 +35,16 @@ void *arena_alloc(arena_t *a, size_t size) {
       memset(chunk->data, 0, size);
       return chunk->data;
     } else {
-      // Standard allocation: create a new chunk and advance current
+      // Standard allocation: create a new chunk and advance current.
+      // Splice it in *after* current rather than assuming current is the
+      // tail - an earlier oversized allocation may have inserted a chunk
+      // after current without advancing it, and overwriting current->next
+      // here would orphan that chunk (and leak it past arena_free).
       arena_chunk_t *chunk = malloc(sizeof(arena_chunk_t) + a->chunk_size);
       if (!chunk) exit(1);
       chunk->used = size;
       chunk->capacity = a->chunk_size;
-      chunk->next = NULL; // Assuming it goes at the end
+      chunk->next = a->current->next;
 
       a->current->next = chunk;
       a->current = chunk;
