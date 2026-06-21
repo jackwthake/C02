@@ -20,7 +20,6 @@
 1. **Source Tracking Tokenizer:** Maps characters to discrete tokens while maintaining source locations (file, line, column) for robust compilation errors.
 2. **Recursive Descent Parser:** Transforms the token stream into a structured AST, treating hardware registers and standard controls as first-class grammatical constructs.
 3. **Lexically Scoped Semantic Analyzer:** Implements a type synthesizer and validation engine. It enforces a hierarchical symbol table structure to handle block scoping (`if/else`, `while`, `for`), tracking variable lifetimes, validating function signatures, and trapping type mismatches before code generation.
-> To be implemented!!
 5. **Optimized Code Generator:** Generates valid 65C02 binaries. It avoids slow stack execution by mapping parameters and expression scratchpads directly onto a high-performance zero-page register design.
 > To be implemented!!
 
@@ -30,14 +29,13 @@
 
 ## Current Status & Limitations
 
-C02 is under active, early development. This is a **frontend-only** release — the tokenizer, parser, and AST printer are functional and tested, but nothing downstream of parsing exists yet:
+C02 is under active, early development. This is a **frontend-only** release — the tokenizer, parser, and analyzer are functional and tested, but nothing downstream of analysis exists yet:
 
-- **Semantic analysis is not implemented.** The parser accepts syntactically valid but semantically meaningless programs (undeclared struct types, mismatched types, unknown fields, etc.) without complaint. Nothing is type-checked yet.
 - **Code generation is not implemented.** `cc02` will not currently produce a working 65C02 binary. The zero-page register layout below is a design target for the code generator, not yet a reality.
 - **No arrays.** There's no array type or subscript syntax (`a[i]`) yet. Strings work as `u8*` and pointer arithmetic covers some of the same ground in the meantime, but fixed-size arrays with bounds/length tracking are unimplemented.
 - **No `struct` field access through a pointer is auto-dereferenced**, but there's no `->` operator — `.` is used uniformly and indirection is intended to be resolved during semantic analysis, which doesn't exist yet, so this is currently unverified in practice.
 
-If you're exploring the codebase: the parser, [parser.c](cc02/src/parser.c) and its design notes in the header comment are the most complete and representative part of the project right now. Issues and PRs around parser bugs, grammar gaps, or AST design are welcome; semantic analysis and codegen are actively being worked on next.
+If you're exploring the codebase: the parser, [parser.c](cc02/src/parser.c) and its design notes in the header comment are the most complete and representative part of the project right now. Issues and PRs around parser bugs, grammar gaps, or AST design are welcome; IR / codegen is actively being worked on next.
 
 ## Toolchain Usage
 
