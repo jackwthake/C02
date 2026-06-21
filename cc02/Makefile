@@ -2,7 +2,7 @@ BIN_DIR = ../bin
 BUILD_DIR = build
 BIN = $(BIN_DIR)/cc02
 CC = gcc
-CFLAGS = -Wall -Wextra -ggdb \
+CFLAGS = -Wall -Wextra -O3 \
          -Wshadow \
          -Wstrict-prototypes \
          -Wmissing-prototypes \

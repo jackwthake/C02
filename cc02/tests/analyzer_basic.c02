@@ -14,8 +14,8 @@ fn sum(u8 a, u8 b) -> u8 {
 
 fn main() -> void {
   u8 x = 20;
-  ux y = 10;
-  
+  u8 y = 10;
+
   u8 res = sum(x, y);
-  test_struct tester = tester_struct { .x = res, .y = y };
+  test_struct tester = test_struct { .x = res, .y = y };
 }

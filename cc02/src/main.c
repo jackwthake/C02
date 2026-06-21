@@ -235,7 +235,11 @@ int main(int argc, char * const *argv) {
   }
 
   symtab_t *symbol_table = analyze(&analyzer, ast);
-  if (!symbol_table || analyzer.has_errored || is_symtab_empty(symbol_table)) {
+  if (!symbol_table || analyzer.errors || is_symtab_empty(symbol_table)) {
+    if (analyzer.errors > 0) { // could fail without errors from source code
+      fprintf(stderr, RED "\nSemantic analysis failed with " BOLD_RED "%u" RESET RED " errors.\n" RESET, analyzer.errors);
+    }
+
     status = ANALYZER_ERROR_RET_CODE; goto finish;
   }
 

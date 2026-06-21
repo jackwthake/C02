@@ -9,15 +9,47 @@ releases are reserved for bug fixes only.
 
 ## [Unreleased]
 
+### Added
+
+- **Semantic analysis** — two-pass analyzer that validates the full AST:
+  - Pass 1: registers all top-level declarations (functions, structs,
+    registers, global variables) into the global symbol table with
+    redeclaration checking.
+  - Pass 2: recursive walk of function bodies with scoped symbol tables,
+    checking for undeclared identifiers, type mismatches, wrong argument
+    counts/types, unknown struct fields, and redeclarations.
+  - `resolve_expr_type()` for full expression type resolution: literals
+    (with smallest-fitting integer type), identifiers, function calls,
+    binary/unary operators, dereferences, address-of, casts, field access,
+    and struct initializers.
+  - Integer widening: `u8` → `u16` is allowed implicitly; narrowing
+    requires an explicit cast.
+  - `null`/`0` is compatible with both pointer and integer types.
+  - For-loops get their own scope so loop variables don't leak.
+  - `main` function existence check after pass 1.
+- `analyzer_print.c` — symbol table printer, invoked via `--symbol-dump`.
+- `analyzer_t` struct owning its own arena (mirroring `parser_t`), with
+  `analyzer_init()`/`analyzer_free()` lifecycle.
+- Smoke tests for the analyzer's scope stack, symbol insertion, lookup,
+  and shadowing behavior.
+- Compiler test cases: `analyzer_basic.c02`, `analyzer_bad_no_main.c02`,
+  `analyzer_bad_redecl.c02`, `analyzer_bad_empty_translation_unit.c02`.
+
 ### Changed
 
-- Added command-line option for printing symbol table: `--symbol-dump`
-- Refactored program error codes so each failure stage gets it's own exit code
+- Renamed `scope_stack_t` → `analyzer_t` and all associated functions
+  to `analyzer_*` prefix for consistency with `parser_t`.
+- Consolidated cleanup in `main.c` into a single `goto finish` exit path,
+  eliminating repeated free-lists at each error point.
+- Test harness now routes `--ast-dump` to parser tests and `--symbol-dump`
+  to analyzer tests based on filename prefix.
+- Added command-line option for printing symbol table: `--symbol-dump`.
+- Refactored program error codes so each failure stage gets its own exit code.
 - Generalized error handling and printing for parsing onwards
   (including sem. analysis). Moved source location tracking to a
   dedicated type, `token_location_t` to support pretty error messages
-  after tokens aren't directly accessible
-- Addded smoke tests for parts of the code that don't produce visual
+  after tokens aren't directly accessible.
+- Added smoke tests for parts of the code that don't produce visual
   output in the compiler. Updated test harness to run these and check
   for memory leaks.
 - Generalized the arena allocator out of `parser.c` into shared

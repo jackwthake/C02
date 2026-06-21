@@ -12,13 +12,13 @@ int main(void) {
   // insert into global
   symbol_t g = { .name = "g", .kind = SYMBOL_VARIABLE };
   g.variable.type.kind = TYPE_U8;
-  assert(analyzer_insert_local(&a, "g", g) == 1);
+  assert(analyzer_insert_symbol(&a, "g", g) == 1);
 
   // push a function scope, insert a param
   analyzer_scope_push(&a);
   symbol_t p = { .name = "p", .kind = SYMBOL_VARIABLE };
   p.variable.type.kind = TYPE_U16;
-  assert(analyzer_insert_local(&a, "p", p) == 1);
+  assert(analyzer_insert_symbol(&a, "p", p) == 1);
 
   // lookup from inner scope sees both inner and outer
   assert(analyzer_lookup(&a, "p") != NULL);
@@ -29,7 +29,7 @@ int main(void) {
   analyzer_scope_push(&a);
   symbol_t shadow = { .name = "g", .kind = SYMBOL_VARIABLE };
   shadow.variable.type.kind = TYPE_I16;
-  assert(analyzer_insert_local(&a, "g", shadow) == 1); // allowed - different scope than outer "g"
+  assert(analyzer_insert_symbol(&a, "g", shadow) == 1); // allowed - different scope than outer "g"
   assert(analyzer_lookup(&a, "g")->variable.type.kind == TYPE_I16); // inner wins
   analyzer_scope_pop(&a);
   assert(analyzer_lookup(&a, "g")->variable.type.kind == TYPE_U8); // back to outer
@@ -37,7 +37,7 @@ int main(void) {
   // redeclaration within the SAME scope is rejected
   symbol_t dup = { .name = "p", .kind = SYMBOL_VARIABLE };
   dup.variable.type.kind = TYPE_U8;
-  assert(analyzer_insert_local(&a, "p", dup) == 0);
+  assert(analyzer_insert_symbol(&a, "p", dup) == 0);
 
   analyzer_scope_pop(&a); // back to just global
   assert(a.depth == 1);

@@ -35,7 +35,8 @@ typedef struct {
   unsigned depth;       // number of scopes currently pushed (>= 1 once initialised - index 0 is global)
   unsigned capacity;    // allocated slots in `scopes`
   arena_t arena;        // backing arena for both scope growth and symtab entries
-  unsigned has_errored;
+  unsigned errors;
+  type_t current_return_type;   // set by pass2 when entering a function body
 } analyzer_t;
 
 #define ANALYZER_SCOPE_ALLOC_SIZE sizeof(symtab_entry_t) * 64
@@ -49,7 +50,7 @@ int analyzer_init(analyzer_t *a);
 void analyzer_free(analyzer_t *a);
 
 // Pushes a new, empty scope onto the stack (growing the backing array if
-// needed). The new scope becomes the target of analyzer_insert_local()
+// needed). The new scope becomes the target of analyzer_insert_symbol()
 // until the next push or pop.
 void analyzer_scope_push(analyzer_t *a);
 
@@ -61,7 +62,7 @@ void analyzer_scope_pop(analyzer_t *a);
 // Returns 1 on success, 0 if `key` is already declared in *this* scope
 // (shadowing an outer scope is allowed - only redeclaration within the
 // same scope is rejected).
-int analyzer_insert_local(analyzer_t *a, char *key, symbol_t value);
+int analyzer_insert_symbol(analyzer_t *a, char *key, symbol_t value);
 
 // Looks up `key` starting at the innermost scope and walking outward to
 // global. Returns the first match, or NULL if undeclared anywhere visible.
