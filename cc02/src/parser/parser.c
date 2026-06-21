@@ -1040,8 +1040,24 @@ static node_t *parse_toplevel(parser_t *p) {
     case t_u8: case t_i8: case t_u16: case t_i16: case Kw_void:
       return parse_global_var_decl(p);
 
+    case l_identifier: {
+      // a struct-typed global ("Point p;", "Engine *e;"): a type-name
+      // identifier followed (past any '*') by another identifier - the same
+      // disambiguation parse_stmt uses for struct-typed locals. The struct's
+      // existence is checked later, in semantic analysis.
+      unsigned lookahead = p->pos + 1;
+      while (lookahead < p->count && p->tokens[lookahead].type == s_star) {
+        ++lookahead;
+      }
+      if (lookahead < p->count && p->tokens[lookahead].type == l_identifier) {
+        return parse_global_var_decl(p);
+      }
+      GENERATE_ERROR(ERR_UNEXPECTED_TOKEN, tok, "top-level declaration (fn, reg, struct, or a typed global variable)", "top-level parse");
+      return NULL;
+    }
+
     default:
-      GENERATE_ERROR(ERR_UNEXPECTED_TOKEN, tok, "top-level declaration (fn, reg, or type name for a global variable)", "top-level parse");
+      GENERATE_ERROR(ERR_UNEXPECTED_TOKEN, tok, "top-level declaration (fn, reg, struct, or a typed global variable)", "top-level parse");
       return NULL;
   }
 }

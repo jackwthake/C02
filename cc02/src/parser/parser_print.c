@@ -85,9 +85,12 @@ static const char *node_kind_name(node_kind_t kind) {
 
 static void print_type_suffix(type_t type) {
   if (type.kind == TYPE_STRUCT) {
-    printf("%s%s", type.struct_name ? type.struct_name : "<anon struct>", type.is_ptr ? "*" : "");
+    printf("%s", type.struct_name ? type.struct_name : "<anon struct>");
   } else {
-    printf("%s%s", type_name(type.kind), type.is_ptr ? "*" : "");
+    printf("%s", type_name(type.kind));
+  }
+  for (unsigned i = 0; i < type.ptr_depth; i++) {  // one '*' per level (u16** not u16*)
+    putchar('*');
   }
 }
 
@@ -201,11 +204,14 @@ static void print_ast_list(node_list_t list, const char *prefix) {
 
 static void print_ast_labeled(const char *label, node_t *node, int is_last, const char *prefix) {
   printf("%s%s%s\n", prefix, is_last ? "`- " : "|- ", label);
-  
+
   char child_prefix[AST_PRINT_MAX_DEPTH];
+  if (strlen(prefix) + 4 >= AST_PRINT_MAX_DEPTH) {  // same depth guard as print_ast_
+    return;
+  }
   strcpy(child_prefix, prefix);
   strcat(child_prefix, is_last ? "   " : "|  ");
-  
+
   if (node) print_ast_(node, 1, child_prefix);
 }
 

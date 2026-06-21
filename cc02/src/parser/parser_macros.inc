@@ -21,6 +21,10 @@
 #define GENERATE_ERROR(TYPE, TOKEN, EXPECTED, CTX)                          \
   do {                                                                      \
     p->err = malloc(sizeof(error_t));                                       \
+    if (!p->err) {                                                          \
+      fprintf(stderr, "fatal: out of memory while reporting a parse error\n"); \
+      exit(1);                                                              \
+    }                                                                       \
     p->err->type = TYPE;                                                    \
     p->err->loc = (TOKEN).loc;                                              \
     p->err->parse.found = TOKEN;                                            \

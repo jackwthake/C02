@@ -1,6 +1,7 @@
 #include "tokenizer.h"
 
 #include <ctype.h>
+#include <errno.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -553,23 +554,34 @@ static int tokenize_number(token_t *tokens, unsigned *token_count, char **ptr, u
   }
 
   if (end == literal_start) {
+    // no valid digits (e.g. "0x" with nothing after) - consume the prefix so
+    // tokenizing makes forward progress instead of re-reporting the same spot
     unsigned prefix_len = (base != 10) ? 2 : 1;
     PRINT_ERROR_HEADER(file_path, line, *column);
     fprintf(stderr, "Invalid number literal\n");
     print_error_line((token_location_t){ .line = line, .column = *column, .length = prefix_len, .file_path = file_path });
-    return -1;
-  }
-
-  char *endptr = NULL;
-  long value = strtol(literal_start, &endptr, base);
-  if (endptr != (char *)end) {
-    PRINT_ERROR_HEADER(file_path, line, *column);
-    fprintf(stderr, "Invalid number literal\n");
-    print_error_line((token_location_t){ .line = line, .column = *column, .length = (unsigned)(end - *ptr), .file_path = file_path });
+    *ptr += prefix_len;
+    *column += prefix_len;
     return -1;
   }
 
   const unsigned literal_length = (unsigned)(end - *ptr);
+
+  char *endptr = NULL;
+  errno = 0;
+  long value = strtol(literal_start, &endptr, base);
+  if (endptr != (char *)end || errno == ERANGE) {
+    PRINT_ERROR_HEADER(file_path, line, *column);
+    fprintf(stderr, errno == ERANGE ? "Integer literal is too large to represent\n"
+                                    : "Invalid number literal\n");
+    print_error_line((token_location_t){ .line = line, .column = *column, .length = literal_length, .file_path = file_path });
+    // consume the whole malformed literal so it's reported exactly once, not
+    // re-scanned digit by digit
+    *ptr = (char *)end;
+    *column += literal_length;
+    return -1;
+  }
+
   token_t *tok = add_token(tokens, token_count, l_num, line, *column, literal_length, file_path);
   tok->num_val = value;
 
@@ -613,9 +625,7 @@ token_t *tokenize(const char *file_path, const char *source_code, const long fil
     int is_number_result = tokenize_number(tokens, &token_count, &ptr, line, &column, (char *)file_path);
     if (is_number_result < 0) {
       error_count++;
-      if (*ptr == '\n') { line++; column = 1; } else { column++; }
-      ptr++;
-      continue;
+      continue; // tokenize_number consumed the offending characters itself
     } else if (is_number_result > 0) {
       continue;
     }

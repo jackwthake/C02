@@ -4,9 +4,9 @@
    |- GlobalVarDecl signed_global : i8
    |  `- BinaryOperator /
    |     |- BinaryOperator *
-   |     |  |- IntegerLiteral (69)
-   |     |  `- IntegerLiteral (420)
-   |     `- IntegerLiteral (67)
+   |     |  |- IntegerLiteral (8)
+   |     |  `- IntegerLiteral (9)
+   |     `- IntegerLiteral (6)
    |- GlobalVarDecl casted : u16
    |  `- CStyleCastExpr u16
    |     `- Identifier signed_global
@@ -23,6 +23,9 @@
    |- GlobalVarDecl global_ptr : u16*
    |  `- UnaryOperator &
    |     `- Identifier casted
+   |- GlobalVarDecl double_ptr : u16**
+   |  `- UnaryOperator &
+   |     `- Identifier global_ptr
    |- GlobalVarDecl signed_global_ptr : i16*
    |- GlobalVarDecl void_ptr : void*
    |- GlobalVarDecl dereffed : u16
