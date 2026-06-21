@@ -27,13 +27,15 @@ releases are reserved for bug fixes only.
   - `null`/`0` is compatible with both pointer and integer types.
   - For-loops get their own scope so loop variables don't leak.
   - `main` function existence check after pass 1.
-- `analyzer_print.c` — symbol table printer, invoked via `--symbol-dump`.
+- `analyzer_print.c` and `--symbol-dump` CLI flag for printing the
+  global symbol table after analysis.
 - `analyzer_t` struct owning its own arena (mirroring `parser_t`), with
   `analyzer_init()`/`analyzer_free()` lifecycle.
 - Smoke tests for the analyzer's scope stack, symbol insertion, lookup,
   and shadowing behavior.
-- Compiler test cases: `analyzer_basic.c02`, `analyzer_bad_no_main.c02`,
-  `analyzer_bad_redecl.c02`, `analyzer_bad_empty_translation_unit.c02`.
+- Compiler test cases covering analyzer error paths (undeclared
+  identifiers, type mismatches, call errors, struct errors) and
+  success paths (scoping, widening, pointers, basic analysis).
 
 ### Changed
 
@@ -43,15 +45,12 @@ releases are reserved for bug fixes only.
   eliminating repeated free-lists at each error point.
 - Test harness now routes `--ast-dump` to parser tests and `--symbol-dump`
   to analyzer tests based on filename prefix.
-- Added command-line option for printing symbol table: `--symbol-dump`.
 - Refactored program error codes so each failure stage gets its own exit code.
 - Generalized error handling and printing for parsing onwards
   (including sem. analysis). Moved source location tracking to a
   dedicated type, `token_location_t` to support pretty error messages
   after tokens aren't directly accessible.
-- Added smoke tests for parts of the code that don't produce visual
-  output in the compiler. Updated test harness to run these and check
-  for memory leaks.
+- Updated test harness to run smoke binaries and check for memory leaks.
 - Generalized the arena allocator out of `parser.c` into shared
   infrastructure, so semantic analysis can reuse it for its own
   allocations.
