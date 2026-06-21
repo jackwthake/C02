@@ -10,11 +10,18 @@
  * in symtab.h/symtab.c - this file owns the analysis logic and the scope
  * stack that sits on top of that storage.
  *
+ * TWO-PASS DESIGN
+ * ---------------
+ * Pass 1 walks top-level declarations and registers them into the global
+ * scope so forward references work. Pass 2 recursively walks function
+ * bodies, pushing/popping scopes for blocks and checking types via
+ * resolve_expr_type().
+ *
  * SCOPE STACK
  * -----------
  * A translation unit has one global symtab_t (functions, registers, global
  * vars, struct decls) plus a new symtab_t pushed for every nested block
- * (function body, if/while/for body). scope_stack_t is a growable,
+ * (function body, if/while/for body). analyzer_t holds a growable,
  * arena-backed array of symtab_t - growable so there's no hardcoded nesting
  * depth limit, arena-backed so popping a scope is just decrementing a
  * count (the popped scope's entries stay harmlessly dead in the arena
@@ -71,6 +78,10 @@ symbol_t *analyzer_lookup(analyzer_t *a, const char *key);
 // Convenience accessor for the global scope (index 0).
 symtab_t *analyzer_global_scope(analyzer_t *a);
 
+// Runs both analysis passes on `ast`. Returns the global symbol table
+// on success, or NULL for an empty/invalid translation unit. Check
+// a->errors after the call - a non-NULL return with a->errors > 0
+// means errors were found but the table was still populated.
 symtab_t *analyze(analyzer_t *a, ast_t ast);
 
 // Prints every symbol in `table` to stdout, one per line.

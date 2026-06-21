@@ -93,27 +93,78 @@ symbol_t *analyzer_lookup(analyzer_t *a, const char *key) {
     break;                                                                                 \
   }
 
+
+/*
+ * Inserts SYM into the current scope via analyzer_insert_symbol().
+ * Emits ERR_REDECLARATION if the name already exists in this scope.
+ * Assumes `a` (analyzer_t *) is in scope.
+ */
 #define INSERT_SYMBOL(NODE, SYM)                                                           \
   do {                                                                                     \
     if (!analyzer_insert_symbol(a, SYM.name, SYM)) {                                       \
-      error_t e = (error_t) {                                                              \
-        .type = ERR_REDECLARATION,                                                         \
-        .loc = NODE->loc,                                                                  \
-        .name_error = { .name = SYM.name }                                                 \
-      };                                                                                   \
-                                                                                           \
-      ++a->errors;                                                                         \
-      print_error(&e);                                                                     \
+      EMIT_NAME_ERROR(ERR_REDECLARATION, NODE->loc, SYM.name);                             \
     }                                                                                      \
-  } while(0);
+  } while(0)
+
+
+/*
+ * Emits a name-based error (undeclared identifier, not-a-function,
+ * unknown struct, redeclaration, not-assignable). These all share the
+ * same error_t shape: a type, a location, and a single name string.
+ * Assumes `a` (analyzer_t *) is in scope.
+ */
+#define EMIT_NAME_ERROR(ERR_TYPE, LOC, NAME)                                               \
+  do {                                                                                     \
+    error_t _e = (error_t){                                                                \
+      .type = ERR_TYPE, .loc = LOC,                                                        \
+      .name_error = { .name = NAME }                                                       \
+    };                                                                                     \
+    ++a->errors;                                                                           \
+    print_error(&_e);                                                                      \
+  } while(0)
+
+
+/*
+ * Emits a type mismatch error with expected/actual types and a context
+ * string (e.g. "assignment", "return", a variable name). Covers
+ * narrowing, pointer/int mismatches, and incompatible operands.
+ * Assumes `a` (analyzer_t *) is in scope.
+ */
+#define EMIT_TYPE_ERROR(LOC, EXPECTED, ACTUAL, CTX)                                        \
+  do {                                                                                     \
+    error_t _e = (error_t){                                                                \
+      .type = ERR_TYPE_MISMATCH, .loc = LOC,                                               \
+      .type_mismatch = { .expected = EXPECTED, .actual = ACTUAL, .context = CTX }          \
+    };                                                                                     \
+    ++a->errors;                                                                           \
+    print_error(&_e);                                                                      \
+  } while(0)
+
+
+/*
+ * Emits an unknown-field error for struct field access or struct
+ * initializer when a named field doesn't exist in the declaration.
+ * Assumes `a` (analyzer_t *) is in scope.
+ */
+#define EMIT_FIELD_ERROR(LOC, SNAME, FNAME)                                                \
+  do {                                                                                     \
+    error_t _e = (error_t){                                                                \
+      .type = ERR_UNKNOWN_FIELD, .loc = LOC,                                               \
+      .unknown_field = { .struct_name = SNAME, .field_name = FNAME }                       \
+    };                                                                                     \
+    ++a->errors;                                                                           \
+    print_error(&_e);                                                                      \
+  } while(0)
 
 
 static const type_t TYPE_ERROR = { .kind = TYPE_VOID, .is_ptr = 0, .ptr_depth = 0 };
 static const type_t TYPE_NULL  = { .kind = TYPE_VOID, .is_ptr = 1, .ptr_depth = 1 };
 
+
 static int is_type_error(type_t t) {
   return t.kind == TYPE_VOID && !t.is_ptr && !t.ptr_depth;
 }
+
 
 static int type_width(type_kind_t kind) {
   switch (kind) {
@@ -123,9 +174,11 @@ static int type_width(type_kind_t kind) {
   }
 }
 
+
 static int is_null_type(type_t t) {
   return t.kind == TYPE_VOID && t.is_ptr && t.ptr_depth == 1;
 }
+
 
 static int is_types_compatible(type_t expected, type_t actual) {
   // null/0 is compatible with any pointer or integer type
@@ -170,24 +223,12 @@ static type_t resolve_expr_type(analyzer_t *a, node_t *expr) {
     case NODE_IDENTIFIER: {
       symbol_t *sym = analyzer_lookup(a, expr->identifier);
       if (!sym) {
-        error_t e = (error_t){
-          .type = ERR_UNDECLARED_IDENTIFIER,
-          .loc = expr->loc,
-          .name_error = { .name = expr->identifier }
-        };
-        ++a->errors;
-        print_error(&e);
+        EMIT_NAME_ERROR(ERR_UNDECLARED_IDENTIFIER, expr->loc, expr->identifier);
         return TYPE_ERROR;
       }
 
       if (sym->kind != SYMBOL_VARIABLE) {
-        error_t e = (error_t){
-          .type = ERR_NOT_ASSIGNABLE,
-          .loc = expr->loc,
-          .name_error = { .name = expr->identifier }
-        };
-        ++a->errors;
-        print_error(&e);
+        EMIT_NAME_ERROR(ERR_NOT_ASSIGNABLE, expr->loc, expr->identifier);
         return TYPE_ERROR;
       }
 
@@ -197,31 +238,18 @@ static type_t resolve_expr_type(analyzer_t *a, node_t *expr) {
     case NODE_CALL: {
       symbol_t *sym = analyzer_lookup(a, expr->call.name);
       if (!sym) {
-        error_t e = (error_t){
-          .type = ERR_UNDECLARED_IDENTIFIER,
-          .loc = expr->loc,
-          .name_error = { .name = expr->call.name }
-        };
-        ++a->errors;
-        print_error(&e);
+        EMIT_NAME_ERROR(ERR_UNDECLARED_IDENTIFIER, expr->loc, expr->call.name);
         return TYPE_ERROR;
       }
 
       if (sym->kind != SYMBOL_FUNCTION) {
-        error_t e = (error_t){
-          .type = ERR_NOT_A_FUNCTION,
-          .loc = expr->loc,
-          .name_error = { .name = expr->call.name }
-        };
-        ++a->errors;
-        print_error(&e);
+        EMIT_NAME_ERROR(ERR_NOT_A_FUNCTION, expr->loc, expr->call.name);
         return TYPE_ERROR;
       }
 
       if (expr->call.args.count != sym->function.params.count) {
-        error_t e = (error_t){
-          .type = ERR_WRONG_ARG_COUNT,
-          .loc = expr->loc,
+        error_t _e = (error_t){
+          .type = ERR_WRONG_ARG_COUNT, .loc = expr->loc,
           .arg_count = {
             .fn_name = expr->call.name,
             .expected_count = sym->function.params.count,
@@ -229,24 +257,14 @@ static type_t resolve_expr_type(analyzer_t *a, node_t *expr) {
           }
         };
         ++a->errors;
-        print_error(&e);
+        print_error(&_e);
         return TYPE_ERROR;
       }
 
       for (unsigned i = 0; i < expr->call.args.count; ++i) {
         type_t found = resolve_expr_type(a, expr->call.args.items[i]);
         if (!is_types_compatible(sym->function.params.items[i].type, found)) {
-          error_t e = (error_t){
-            .type = ERR_TYPE_MISMATCH,
-            .loc = expr->loc,
-            .type_mismatch = {
-              .expected = sym->function.params.items[i].type,
-              .actual = found,
-              .context = "function call"
-            }
-          };
-          ++a->errors;
-          print_error(&e);
+          EMIT_TYPE_ERROR(expr->loc, sym->function.params.items[i].type, found, "function call");
           return TYPE_ERROR;
         }
       }
@@ -263,17 +281,9 @@ static type_t resolve_expr_type(analyzer_t *a, node_t *expr) {
       if (is_type_error(inner)) return TYPE_ERROR;
 
       if (!inner.is_ptr || inner.ptr_depth == 0) {
-        error_t e = (error_t){
-          .type = ERR_TYPE_MISMATCH,
-          .loc = expr->loc,
-          .type_mismatch = {
-            .expected = { .kind = inner.kind, .is_ptr = 1, .ptr_depth = 1 },
-            .actual = inner,
-            .context = "dereference"
-          }
-        };
-        print_error(&e);
-        ++a->errors;
+        EMIT_TYPE_ERROR(expr->loc,
+          ((type_t){ .kind = inner.kind, .is_ptr = 1, .ptr_depth = 1 }),
+          inner, "dereference");
         return TYPE_ERROR;
       }
 
@@ -303,18 +313,7 @@ static type_t resolve_expr_type(analyzer_t *a, node_t *expr) {
       if (is_type_error(left) || is_type_error(right)) return TYPE_ERROR;
 
       if (!is_types_compatible(left, right) && !is_types_compatible(right, left)) {
-        error_t e = (error_t) {
-          .type = ERR_TYPE_MISMATCH,
-          .loc = expr->loc,
-          .type_mismatch = {
-            .expected = left,
-            .actual = right,
-            .context = "binary operation"
-          }
-        };
-
-        print_error(&e);
-        ++a->errors;
+        EMIT_TYPE_ERROR(expr->loc, left, right, "binary operation");
         return TYPE_ERROR;
       }
 
@@ -329,29 +328,13 @@ static type_t resolve_expr_type(analyzer_t *a, node_t *expr) {
       if (is_type_error(base_type)) return TYPE_ERROR;
 
       if (base_type.kind != TYPE_STRUCT || base_type.is_ptr) {
-        error_t e = (error_t){
-          .type = ERR_TYPE_MISMATCH,
-          .loc = expr->loc,
-          .type_mismatch = {
-            .expected = { .kind = TYPE_STRUCT },
-            .actual = base_type,
-            .context = "field access"
-          }
-        };
-        ++a->errors;
-        print_error(&e);
+        EMIT_TYPE_ERROR(expr->loc, ((type_t){ .kind = TYPE_STRUCT }), base_type, "field access");
         return TYPE_ERROR;
       }
 
       symbol_t *decl = analyzer_lookup(a, base_type.struct_name);
       if (!decl || decl->kind != SYMBOL_STRUCT) {
-        error_t e = (error_t){
-          .type = ERR_UNKNOWN_STRUCT,
-          .loc = expr->loc,
-          .name_error = { .name = base_type.struct_name }
-        };
-        ++a->errors;
-        print_error(&e);
+        EMIT_NAME_ERROR(ERR_UNKNOWN_STRUCT, expr->loc, base_type.struct_name);
         return TYPE_ERROR;
       }
 
@@ -361,36 +344,20 @@ static type_t resolve_expr_type(analyzer_t *a, node_t *expr) {
         }
       }
 
-      error_t e = (error_t){
-        .type = ERR_UNKNOWN_FIELD,
-        .loc = expr->loc,
-        .unknown_field = {
-          .struct_name = base_type.struct_name,
-          .field_name = expr->field_access.field
-        }
-      };
-      ++a->errors;
-      print_error(&e);
+      EMIT_FIELD_ERROR(expr->loc, base_type.struct_name, expr->field_access.field);
       return TYPE_ERROR;
     }
 
     case NODE_STRUCT_INIT: {
       symbol_t *decl = analyzer_lookup(a, expr->struct_init.struct_name);
       if (!decl || decl->kind != SYMBOL_STRUCT) {
-        error_t e = (error_t){
-          .type = ERR_UNKNOWN_STRUCT,
-          .loc = expr->loc,
-          .name_error = { .name = expr->struct_init.struct_name }
-        };
-        ++a->errors;
-        print_error(&e);
+        EMIT_NAME_ERROR(ERR_UNKNOWN_STRUCT, expr->loc, expr->struct_init.struct_name);
         return TYPE_ERROR;
       }
 
       for (unsigned i = 0; i < expr->struct_init.inits.count; i++) {
         field_init_t *init = &expr->struct_init.inits.items[i];
 
-        // find the matching field in the struct declaration
         int found = 0;
         for (unsigned j = 0; j < decl->struct_decl.fields.count; j++) {
           if (strcmp(decl->struct_decl.fields.items[j].name, init->field_name) == 0) {
@@ -398,33 +365,14 @@ static type_t resolve_expr_type(analyzer_t *a, node_t *expr) {
             type_t field_type = decl->struct_decl.fields.items[j].type;
             type_t init_type = resolve_expr_type(a, init->value);
             if (!is_type_error(init_type) && !is_types_compatible(field_type, init_type)) {
-              error_t e = (error_t){
-                .type = ERR_TYPE_MISMATCH,
-                .loc = init->value->loc,
-                .type_mismatch = {
-                  .expected = field_type,
-                  .actual = init_type,
-                  .context = init->field_name
-                }
-              };
-              ++a->errors;
-              print_error(&e);
+              EMIT_TYPE_ERROR(init->value->loc, field_type, init_type, init->field_name);
             }
             break;
           }
         }
 
         if (!found) {
-          error_t e = (error_t){
-            .type = ERR_UNKNOWN_FIELD,
-            .loc = expr->loc,
-            .unknown_field = {
-              .struct_name = expr->struct_init.struct_name,
-              .field_name = init->field_name
-            }
-          };
-          ++a->errors;
-          print_error(&e);
+          EMIT_FIELD_ERROR(expr->loc, expr->struct_init.struct_name, init->field_name);
         }
       }
 
@@ -463,17 +411,7 @@ static void analyze_stmt(analyzer_t *a, node_t *node) {
       if (node->var_decl.initialiser) {
         type_t init_type = resolve_expr_type(a, node->var_decl.initialiser);
         if (!is_type_error(init_type) && !is_types_compatible(node->var_decl.type, init_type)) {
-          error_t e = (error_t){
-            .type = ERR_TYPE_MISMATCH,
-            .loc = node->loc,
-            .type_mismatch = {
-              .expected = node->var_decl.type,
-              .actual = init_type,
-              .context = node->var_decl.name
-            }
-          };
-          ++a->errors;
-          print_error(&e);
+          EMIT_TYPE_ERROR(node->loc, node->var_decl.type, init_type, node->var_decl.name);
         }
       }
 
@@ -496,17 +434,7 @@ static void analyze_stmt(analyzer_t *a, node_t *node) {
       type_t value_type = resolve_expr_type(a, node->assign.value);
       if (!is_type_error(target_type) && !is_type_error(value_type)
           && !is_types_compatible(target_type, value_type)) {
-        error_t e = (error_t){
-          .type = ERR_TYPE_MISMATCH,
-          .loc = node->loc,
-          .type_mismatch = {
-            .expected = target_type,
-            .actual = value_type,
-            .context = "assignment"
-          }
-        };
-        ++a->errors;
-        print_error(&e);
+        EMIT_TYPE_ERROR(node->loc, target_type, value_type, "assignment");
       }
       break;
     }
@@ -515,17 +443,7 @@ static void analyze_stmt(analyzer_t *a, node_t *node) {
       if (node->return_val) {
         type_t ret_type = resolve_expr_type(a, node->return_val);
         if (!is_type_error(ret_type) && !is_types_compatible(a->current_return_type, ret_type)) {
-          error_t e = (error_t){
-            .type = ERR_TYPE_MISMATCH,
-            .loc = node->loc,
-            .type_mismatch = {
-              .expected = a->current_return_type,
-              .actual = ret_type,
-              .context = "return"
-            }
-          };
-          ++a->errors;
-          print_error(&e);
+          EMIT_TYPE_ERROR(node->loc, a->current_return_type, ret_type, "return");
         }
       }
       break;
@@ -621,14 +539,7 @@ static void pass2_entry(analyzer_t *a, ast_t program) {
         };
 
         if (!analyzer_insert_symbol(a, sym.name, sym)) {
-          error_t e = (error_t){
-            .type = ERR_REDECLARATION,
-            .loc = node->loc,
-            .name_error = { .name = sym.name }
-          };
-
-          ++a->errors;
-          print_error(&e);
+          EMIT_NAME_ERROR(ERR_REDECLARATION, node->loc, sym.name);
         }
       }
 
@@ -655,17 +566,11 @@ symtab_t *analyze(analyzer_t *a, ast_t ast) {
 
   pass1_register_globals(a, ast);
 
-  // if no main function found, error
   symbol_t *main;
   if (!(main = analyzer_lookup(a, "main")) || main->kind != SYMBOL_FUNCTION) {
-    error_t e = (error_t) {
-      .type = ERR_UNDECLARED_IDENTIFIER,
-      .loc = { .file_path = ast->loc.file_path, .column = 0, .line = 1, .length = 0 },
-      .name_error = { .name = "main" }
-    };
-
-    ++a->errors;
-    print_error(&e);
+    EMIT_NAME_ERROR(ERR_UNDECLARED_IDENTIFIER,
+      ((token_location_t){ .file_path = ast->loc.file_path, .column = 0, .line = 1, .length = 0 }),
+      "main");
   }
 
   pass2_entry(a, ast);
