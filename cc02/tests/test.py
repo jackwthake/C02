@@ -188,15 +188,21 @@ REPO_ROOT = os.path.join(SCRIPT_DIR, "../..")
 EXTENSION_LABELS = {
     ".c": "C",
     ".h": "C Header",
+    ".inc": "C Include",
     ".c02": "C02",
     ".py": "Python",
     ".mk": "Makefile",
 }
 
+COMPILER_EXTS = {".c", ".h", ".inc", ".mk"}
+HARNESS_EXTS = {".py", ".c02"}
+TESTS_REL = os.path.join("cc02", "tests")
+
 IGNORED_DIRS = {".git", "bin", "build", "node_modules", "__pycache__"}
 
 def count_lines():
-    counts = {}
+    compiler_counts = {}
+    harness_counts = {}
     for dirpath, dirnames, filenames in os.walk(REPO_ROOT):
         dirnames[:] = [d for d in dirnames if d not in IGNORED_DIRS]
         for f in filenames:
@@ -208,23 +214,38 @@ def count_lines():
             filepath = os.path.join(dirpath, f)
             try:
                 with open(filepath) as fh:
-                    counts[ext] = counts.get(ext, 0) + sum(1 for _ in fh)
+                    lines = sum(1 for _ in fh)
             except (OSError, UnicodeDecodeError):
-                pass
+                continue
+            relpath = os.path.relpath(filepath, REPO_ROOT)
+            in_tests = relpath.startswith(TESTS_REL)
+            if in_tests or ext in HARNESS_EXTS:
+                harness_counts[ext] = harness_counts.get(ext, 0) + lines
+            elif ext in COMPILER_EXTS:
+                compiler_counts[ext] = compiler_counts.get(ext, 0) + lines
 
-    if not counts:
+    if not compiler_counts and not harness_counts:
         print("no recognized source files found")
         return
 
-    total = sum(counts.values())
-    max_label = max(len(EXTENSION_LABELS[e]) for e in counts)
-    max_digits = len(str(max(counts.values())))
-    for ext in sorted(counts, key=lambda e: counts[e], reverse=True):
-        label = (EXTENSION_LABELS[ext] + ":").ljust(max_label + 1)
-        pct = counts[ext] / total * 100
-        print(f"  {label} {counts[ext]:<{max_digits}} lines ({pct:.1f}%)")
+    def print_section(title, counts):
+        if not counts:
+            return
+        total = sum(counts.values())
+        max_label = max(len(EXTENSION_LABELS[e]) for e in counts)
+        max_digits = len(str(max(counts.values())))
+        print(f"\n  {title}")
+        for ext in sorted(counts, key=lambda e: counts[e], reverse=True):
+            label = (EXTENSION_LABELS[ext] + ":").ljust(max_label + 1)
+            pct = counts[ext] / total * 100
+            print(f"    {label} {counts[ext]:<{max_digits}} lines ({pct:.1f}%)")
+        print(f"    {'Total:'.ljust(max_label + 1)} {total} lines")
 
-    print(f"\n  Total: {total} lines")
+    print_section("Compiler", compiler_counts)
+    print_section("Test Harness", harness_counts)
+
+    grand_total = sum(compiler_counts.values()) + sum(harness_counts.values())
+    print(f"\n  Grand Total: {grand_total} lines")
 
 if __name__ == "__main__":
     if "--cloc" in sys.argv:
