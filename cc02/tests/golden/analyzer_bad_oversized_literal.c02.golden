@@ -1,0 +1,9 @@
+[1;37manalyzer_bad_oversized_literal.c02[0m:[1;37m6[0m:[1;37m18: [1;31merror: [0minteger literal is out of range (must fit in -32768..65535)
+[1;34m6 |[0m   u16 big = 70000;                // > 65535
+[1;34m  |[1;31m                  ^[0m
+[1;37manalyzer_bad_oversized_literal.c02[0m:[1;37m7[0m:[1;37m21: [1;31merror: [0minteger literal is out of range (must fit in -32768..65535)
+[1;34m7 |[0m   i16 small = -70000;             // < -32768
+[1;34m  |[1;31m                     ^[0m
+[31m
+Semantic analysis failed with [1;31m2[0m[31m errors.
+[0m

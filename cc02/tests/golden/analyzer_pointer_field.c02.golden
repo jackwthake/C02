@@ -1,0 +1,2 @@
+  [36mmain      [0m function () -> void
+  [36mPoint     [0m struct { u8 x, u8 y }

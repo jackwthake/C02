@@ -1,0 +1,8 @@
+// Negative integer literals are typed from their (negative) value: -5 is i8,
+// -300 is i16. A narrower negative still widens into a wider signed type.
+
+fn main() -> void {
+  i8 a = -5;
+  i16 b = -300;
+  i16 c = -5;        // i8 literal widens into i16
+}

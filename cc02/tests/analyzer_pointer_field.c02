@@ -1,0 +1,17 @@
+// Field access auto-derefs a single-level struct pointer (there is no ->
+// operator; '.' is uniform). Exercises it as both an assignment target and an
+// rvalue.
+
+struct Point {
+  u8 x;
+  u8 y;
+}
+
+fn main() -> void {
+  Point p;
+  Point *pp = &p;
+
+  pp.x = 1;          // auto-deref pp, then assign field x
+  pp.y = 2;
+  u8 v = pp.x;       // auto-deref as an rvalue too
+}

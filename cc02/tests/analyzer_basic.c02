@@ -7,6 +7,8 @@ struct test_struct {
   i8 y;
 }
 
+test_struct global_instance;   // struct-typed global (resolves to test_struct)
+
 
 fn sum(u8 a, u8 b) -> u8 {
   return a + b;

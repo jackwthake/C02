@@ -1,0 +1,9 @@
+[1;37manalyzer_bad_missing_return.c02[0m:[1;37m6[0m:[1;37m4: [1;31merror: [0mnon-void function 'empty' may reach its end without returning a value
+[1;34m6 |[0m fn empty() -> u8 {
+[1;34m  |[1;31m    ^~~~~[0m
+[1;37manalyzer_bad_missing_return.c02[0m:[1;37m9[0m:[1;37m4: [1;31merror: [0mnon-void function 'falls_through' may reach its end without returning a value
+[1;34m9 |[0m fn falls_through() -> u16 {
+[1;34m  |[1;31m    ^~~~~~~~~~~~~[0m
+[31m
+Semantic analysis failed with [1;31m2[0m[31m errors.
+[0m
