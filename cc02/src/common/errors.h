@@ -48,6 +48,7 @@ typedef enum {
   ERR_WRONG_ARG_COUNT,
   ERR_UNKNOWN_FIELD,
   ERR_NOT_ASSIGNABLE,
+  ERR_MISSING_MAIN,         // no main, or a `main` that isn't a function
 } error_type_t;
 
 typedef struct {

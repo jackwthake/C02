@@ -13,7 +13,9 @@
  */
 
 typedef enum {
-  TYPE_U8, TYPE_I8, TYPE_U16, TYPE_I16, TYPE_VOID, TYPE_STRUCT
+  TYPE_U8, TYPE_I8, TYPE_U16, TYPE_I16, TYPE_VOID, TYPE_STRUCT,
+  TYPE_INVALID   // error sentinel - distinct from every real type so a failed
+                 // resolution can never be mistaken for a legitimate `void`
 } type_kind_t;
 
 typedef struct {

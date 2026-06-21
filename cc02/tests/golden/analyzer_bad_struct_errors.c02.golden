@@ -1,15 +1,18 @@
-[1;37manalyzer_bad_struct_errors.c02[0m:[1;37m11[0m:[1;37m33: [1;31merror: [0munknown struct 'Nonexistent'
-[1;34m11 |[0m   Nonexistent bad = Nonexistent {};
+[1;37manalyzer_bad_struct_errors.c02[0m:[1;37m15[0m:[1;37m33: [1;31merror: [0munknown struct 'Nonexistent'
+[1;34m15 |[0m   Nonexistent bad = Nonexistent {};
 [1;34m   |[1;31m                                 ^[0m
-[1;37manalyzer_bad_struct_errors.c02[0m:[1;37m14[0m:[1;37m19: [1;31merror: [0mstruct 'Point' has no field 'z'
-[1;34m14 |[0m   Point p = Point { .x = 1, .z = 2 };
+[1;37manalyzer_bad_struct_errors.c02[0m:[1;37m18[0m:[1;37m19: [1;31merror: [0mstruct 'Point' has no field 'z'
+[1;34m18 |[0m   Point p = Point { .x = 1, .z = 2 };
 [1;34m   |[1;31m                   ^[0m
-[1;37manalyzer_bad_struct_errors.c02[0m:[1;37m18[0m:[1;37m14: [1;31merror: [0mtype mismatch in field access: expected <anon struct>, found u8
-[1;34m18 |[0m   u8 r = val.x;
+[1;37manalyzer_bad_struct_errors.c02[0m:[1;37m22[0m:[1;37m14: [1;31merror: [0mtype mismatch in field access: expected <anon struct>, found u8
+[1;34m22 |[0m   u8 r = val.x;
 [1;34m   |[1;31m              ^[0m
-[1;37manalyzer_bad_struct_errors.c02[0m:[1;37m22[0m:[1;37m13: [1;31merror: [0mstruct 'Point' has no field 'z'
-[1;34m22 |[0m   u8 q = p2.z;
+[1;37manalyzer_bad_struct_errors.c02[0m:[1;37m26[0m:[1;37m13: [1;31merror: [0mstruct 'Point' has no field 'z'
+[1;34m26 |[0m   u8 q = p2.z;
 [1;34m   |[1;31m             ^[0m
+[1;37manalyzer_bad_struct_errors.c02[0m:[1;37m31[0m:[1;37m8: [1;31merror: [0mtype mismatch in assignment: expected Point, found Other
+[1;34m31 |[0m   p3 = o;
+[1;34m   |[1;31m        ^[0m
 [31m
-Semantic analysis failed with [1;31m4[0m[31m errors.
+Semantic analysis failed with [1;31m5[0m[31m errors.
 [0m

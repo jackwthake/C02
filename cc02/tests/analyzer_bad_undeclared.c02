@@ -3,4 +3,10 @@
 fn main() -> void {
   u8 x = y;
   foo();
+
+  // regression: an undeclared name that starts with "main" must report an
+  // ordinary "undeclared identifier" error - not the special missing-main
+  // message (the old printer pattern-matched the "main" prefix and would
+  // mislabel anything like 'mainframe' as a missing main function).
+  u8 z = mainframe;
 }

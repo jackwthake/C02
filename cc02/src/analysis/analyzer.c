@@ -157,12 +157,12 @@ symbol_t *analyzer_lookup(analyzer_t *a, const char *key) {
   } while(0)
 
 
-static const type_t TYPE_ERROR = { .kind = TYPE_VOID, .is_ptr = 0, .ptr_depth = 0 };
+static const type_t TYPE_ERROR = { .kind = TYPE_INVALID, .is_ptr = 0, .ptr_depth = 0 };
 static const type_t TYPE_NULL  = { .kind = TYPE_VOID, .is_ptr = 1, .ptr_depth = 1 };
 
 
 static int is_type_error(type_t t) {
-  return t.kind == TYPE_VOID && !t.is_ptr && !t.ptr_depth;
+  return t.kind == TYPE_INVALID;
 }
 
 
@@ -187,6 +187,13 @@ static int is_types_compatible(type_t expected, type_t actual) {
 
   if (expected.is_ptr != actual.is_ptr) return 0;
   if (expected.ptr_depth != actual.ptr_depth) return 0;
+
+  // two struct types match only if they name the same struct - sharing the
+  // TYPE_STRUCT kind isn't enough, or Point and Line would be interchangeable
+  if (expected.kind == TYPE_STRUCT && actual.kind == TYPE_STRUCT) {
+    return expected.struct_name && actual.struct_name
+        && strcmp(expected.struct_name, actual.struct_name) == 0;
+  }
 
   if (expected.kind == actual.kind) return 1;
 
@@ -263,6 +270,7 @@ static type_t resolve_expr_type(analyzer_t *a, node_t *expr) {
 
       for (unsigned i = 0; i < expr->call.args.count; ++i) {
         type_t found = resolve_expr_type(a, expr->call.args.items[i]);
+        if (is_type_error(found)) continue;   // arg already reported its own error
         if (!is_types_compatible(sym->function.params.items[i].type, found)) {
           EMIT_TYPE_ERROR(expr->loc, sym->function.params.items[i].type, found, "function call");
           return TYPE_ERROR;
@@ -566,11 +574,14 @@ symtab_t *analyze(analyzer_t *a, ast_t ast) {
 
   pass1_register_globals(a, ast);
 
-  symbol_t *main;
-  if (!(main = analyzer_lookup(a, "main")) || main->kind != SYMBOL_FUNCTION) {
-    EMIT_NAME_ERROR(ERR_UNDECLARED_IDENTIFIER,
-      ((token_location_t){ .file_path = ast->loc.file_path, .column = 0, .line = 1, .length = 0 }),
-      "main");
+  symbol_t *main_sym = analyzer_lookup(a, "main");
+  if (!main_sym || main_sym->kind != SYMBOL_FUNCTION) {
+    error_t _e = (error_t){
+      .type = ERR_MISSING_MAIN,
+      .loc = (token_location_t){ .file_path = ast->loc.file_path }
+    };
+    ++a->errors;
+    print_error(&_e);
   }
 
   pass2_entry(a, ast);
