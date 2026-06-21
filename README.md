@@ -19,8 +19,8 @@
 
 1. **Source Tracking Tokenizer:** Maps characters to discrete tokens while maintaining source locations (file, line, column) for robust compilation errors.
 2. **Recursive Descent Parser:** Transforms the token stream into a structured AST, treating hardware registers and standard controls as first-class grammatical constructs.
-3. **Lexically Scoped Semantic Analyzer:** Implements a type synthesizer and validation engine. It enforces a hierarchical symbol table structure to handle block scoping (`if/else`, `while`, `for`), tracking variable lifetimes, validating function signatures, and trapping type mismatches before code generation.
-5. **Optimized Code Generator:** Generates valid 65C02 binaries. It avoids slow stack execution by mapping parameters and expression scratchpads directly onto a high-performance zero-page register design.
+3. **Lexically Scoped Semantic Analyzer:** Two-pass validation engine over the AST. Pass 1 registers all top-level declarations (functions, structs, registers, globals) into the global symbol table. Pass 2 walks function bodies with a scoped symbol table, checking undeclared identifiers, type mismatches, argument counts/types, struct field access, lvalue validity, and return-type consistency. Invalid declarations are poisoned to prevent cascading diagnostics.
+4. **Optimized Code Generator:** Generates valid 65C02 binaries. It avoids slow stack execution by mapping parameters and expression scratchpads directly onto a high-performance zero-page register design.
 > To be implemented!!
 
 #### c02-objdump Disassembler
@@ -29,13 +29,14 @@
 
 ## Current Status & Limitations
 
-C02 is under active, early development. This is a **frontend-only** release — the tokenizer, parser, and analyzer are functional and tested, but nothing downstream of analysis exists yet:
+C02 is under active, early development. The **complete frontend** - tokenizer, parser, and semantic analyzer - is functional and tested, but nothing downstream of analysis exists yet:
 
 - **Code generation is not implemented.** `cc02` will not currently produce a working 65C02 binary. The zero-page register layout below is a design target for the code generator, not yet a reality.
 - **No arrays.** There's no array type or subscript syntax (`a[i]`) yet. Strings work as `u8*` and pointer arithmetic covers some of the same ground in the meantime, but fixed-size arrays with bounds/length tracking are unimplemented.
-- **No `struct` field access through a pointer is auto-dereferenced**, but there's no `->` operator — `.` is used uniformly and indirection is intended to be resolved during semantic analysis, which doesn't exist yet, so this is currently unverified in practice.
+- **Struct field access through a pointer is auto-dereferenced** - there's no `->` operator; `.` is used uniformly and the analyzer resolves single-level pointer indirection automatically (e.g. `ptr.field` where `ptr` is a `Struct*`).
+- **Missing-return detection is shallow.** A non-void function with no `return` at the end is flagged, but the analyzer does not perform full path-coverage analysis - a one-armed `if` that falls through, or an `if`/`else` where only some branches return, is not caught.
 
-If you're exploring the codebase: the parser, [parser.c](cc02/src/parser.c) and its design notes in the header comment are the most complete and representative part of the project right now. Issues and PRs around parser bugs, grammar gaps, or AST design are welcome; IR / codegen is actively being worked on next.
+If you're exploring the codebase: the parser ([parser.c](cc02/src/parser/parser.c)) and the analyzer ([analyzer.c](cc02/src/analysis/analyzer.c)) are the most complete parts of the project. Issues and PRs around parser bugs, grammar gaps, or analyzer edge cases are welcome; IR / codegen is actively being worked on next.
 
 ## Toolchain Usage
 
@@ -63,7 +64,8 @@ cc02 [OPTIONS] <FILE>
 - `<FILE>`:               The input source file (.c02).
 - `-h, --help`:           Show help message
 - `--token-dump`:         Dump the token list after tokenization
-- `--ast-dump`:           Dump the AST using print_ast after parsing
+- `--ast-dump`:           Dump the AST after parsing
+- `--symbol-dump`:        Dump the global symbol table after analysis
 - `--syntax-check-only`:  Stop after syntax and semantic checks
 - `--time-report`:        Prints a report showing how long each stage of compilation took
 - `-o, --output`:         Specify output file
@@ -86,7 +88,7 @@ All generated error messages are presented in a clang like format with concise s
 
 ## Language Specifications
 
-> The grammar below reflects what the tokenizer and parser currently accept. Semantic analysis and code generation are not implemented yet, so none of this is type-checked or compiled to 65C02 yet — see [Getting Started](#getting-started-key-features--architecture) above.
+> The grammar below reflects what the tokenizer and parser currently accept. Semantic analysis validates the full AST after parsing - see [Getting Started](#getting-started-key-features--architecture) above. Code generation is not implemented yet.
 
 ### Basic Types
 
@@ -136,19 +138,22 @@ reg u8 PORTB @ 0x6000;
 struct Point {
   u8 x;
   u8 y;
-};
+}
 ```
 
 - Body is a sequence of `type name;` fields, no nested initialisers.
+- A trailing `;` after the closing `}` is optional.
 
 #### Global Variables
 
 ```c
 u8 *msg = "Hello C02!";
 u16 counter;
+Point origin;
 ```
 
 - Same form as a local variable declaration: `type name;` or `type name = expr;`.
+- Struct-typed globals are supported (`Point p;`).
 
 ### Statements
 
@@ -203,7 +208,7 @@ Precedence, lowest to highest:
 ```
 
 - **Unary (prefix):** `!` (logical not), `-` (negate), `&` (address-of), `~` (bitwise not), `++` / `--`, `*` and `@` (dereference).
-- **Postfix:** `.field` field access, chainable (`a.b.c`).
+- **Postfix:** `.field` field access, chainable (`a.b.c`). Auto-dereferences struct pointers (`ptr.field` where `ptr` is a `Struct*`).
 - **Calls:** `name(arg1, arg2, ...)`.
 - **Casts:** `(type)expr`, e.g. `(u16)x`.
 - **Grouping:** `(expr)`.
