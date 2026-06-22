@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/) - while
 the project is in `0.x`, breaking changes may land in MINOR releases; PATCH
 releases are reserved for bug fixes only.
 
-## [Unreleased]
+## [0.2.8] 2026-06-22
 
 - **Driver refactor** — extracted the compilation pipeline from `main.c` into
   `driver.c`/`driver.h`. Each stage (file loading, frontend, IR, codegen) is
@@ -19,6 +19,25 @@ releases are reserved for bug fixes only.
   output. Dump flags (`--ast-dump`, `--symbol-dump`, `--ir-dump`) now skip
   codegen since they are for inspecting compiler internals, not building
   binaries.
+- **Bootstrap runtime** — the code generator emits a 65C02 reset stub at the
+  start of ROM: `SEI`, `CLD`, hardware stack init (`$01FF`), frame pointer
+  init (`FP` at ZP `$00`), `JSR main`, and an infinite halt loop. Interrupt
+  vectors are written at `$FFFA–$FFFF` with the reset vector pointing to
+  ROM start.
+- **Label resolution and fixup system** — function calls (`JSR`) record a
+  fixup with a placeholder address at emit time. Function entry points are
+  registered in a label table as they are emitted. After all code is emitted,
+  fixups are resolved by patching the placeholder addresses. A parallel
+  per-function system (`local_labels` / `local_fixups`) is in place for
+  control-flow labels (`TAC_LABEL` / `TAC_JUMP` / `TAC_COND_JUMP`).
+- **Opcode emitter macros** — `OP_EMITTER_NO_ARG`, `OP_EMITTER_SINGLE_ARG`,
+  and `OP_EMITTER_ABS` generate typed emit functions from an opcode constant,
+  keeping the codegen readable without raw hex throughout.
+- **Zero-page layout revised** — scratch registers now span `$04–$EE`
+  (compiler-managed temporaries, locals, and globals), with `$EF–$FF`
+  reserved for function ABI parameter passing. The previous user-space
+  carve-out (`$30–$FF`) is removed; all variable placement is
+  compiler-managed.
 
 ## [0.2.7] 2026-06-22
 

@@ -287,8 +287,7 @@ To maximize compilation density and execution speed, the code generator reserves
 | :--- | :--- | :--- |
 | **`$00`** | `FP` | **Frame Pointer:** Tracks multi-byte local variable frames in main RAM. |
 | **`$02`** | `RET` | **Return Register:** Where every function or conditional puts its return value. |
-| **`$04` – `$1D`** | `r0` – `r13` | **Virtual Registers:** General 16-bit high-speed scratchpads for nested expression evaluation. |
-| **`$1E` – `$2F`** | `args0` – `args9` | **Function ABI Zone:** Rapid parameter passing into function bounds without stack overhead. |
-| **`$30` – `$FF`** | `usr_space` | **User Space:** Globals and variable caching at the programmer's discretion. |
+| **`$04` – `$EE`** | `r0` – `r117` | **Scratch Registers:** Compiler-managed 16-bit scratchpads for expression temporaries, local variables, and globals. Allocated per-function from `$04` upward. |
+| **`$EF` – `$FF`** | `a0` – `a8` | **Function ABI Zone:** Rapid parameter passing without stack overhead. Supports up to 8 sixteen-bit parameters. |
 
 ---
