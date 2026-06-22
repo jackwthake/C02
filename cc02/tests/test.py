@@ -314,5 +314,22 @@ if __name__ == "__main__":
         else:
             print(f"  directory {SMOKE_BIN_DIR} not found, skipping smoke tests.")
 
+        # Emulator tests (requires py65)
+        try:
+            from emu_test import TESTS as EMU_TESTS, main as emu_main
+            print("\n--- Emulator Tests ---")
+            for name, fn in EMU_TESTS:
+                ok, detail = fn()
+                if ok:
+                    print(f"  {PASS} {name}")
+                    passed += 1
+                else:
+                    print(f"  {FAIL} {name}")
+                    print(f"         {detail}")
+                    failed += 1
+        except ImportError:
+            print("\n--- Emulator Tests ---")
+            print("  skipped (py65 not installed)")
+
         print(f"\n{passed} passed, {failed} failed")
         sys.exit(1 if failed else 0)

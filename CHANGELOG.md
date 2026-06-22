@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/) - while
 the project is in `0.x`, breaking changes may land in MINOR releases; PATCH
 releases are reserved for bug fixes only.
 
+## [Unreleased]
+
+- Added emulator tests for generated binaries using py65.
+
 ## [0.2.8] 2026-06-22
 
 - **Driver refactor** — extracted the compilation pipeline from `main.c` into

@@ -44,10 +44,13 @@ If you're exploring the codebase: the parser ([parser.c](cc02/src/parser/parser.
 ### Compiling the Toolchain
 
 ```shell
-sudo apt install build-essential curl -y
+sudo apt install build-essential curl python3 python3-pip -y
 
-# Official Rust install script
+# Official Rust install script (for c02-objdump)
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+# py65 6502 emulator (for runtime tests)
+pip install py65
 
 git clone https://github.com/jackwthake/C02.git
 cd C02
@@ -291,3 +294,10 @@ To maximize compilation density and execution speed, the code generator reserves
 | **`$EF` – `$FF`** | `a0` – `a8` | **Function ABI Zone:** Rapid parameter passing without stack overhead. Supports up to 8 sixteen-bit parameters. |
 
 ---
+
+### Third-Party Licenses
+
+| Dependency | License | Used By |
+| :--- | :--- | :--- |
+| [clap](https://github.com/clap-rs/clap) | MIT / Apache-2.0 | `c02-objdump` CLI argument parsing |
+| [py65](https://github.com/mnaberez/py65) | BSD | Test harness 65C02 emulator for runtime verification |
