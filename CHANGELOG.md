@@ -9,6 +9,8 @@ releases are reserved for bug fixes only.
 
 ## [Unreleased]
 
+## [0.2.5] 2026-06-22
+
 ### Added
 
 - **IR generation (in progress)** — new `src/ir-gen/` module for lowering the
