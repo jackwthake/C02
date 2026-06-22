@@ -47,6 +47,8 @@ def get_flags(filename):
         return ["--symbol-dump"]
     if filename.startswith("parser"):
         return ["--ast-dump"]
+    if filename.startswith("ir"):
+        return ["--ir-dump"]
     return []
 
 def compare_golden(filename, actual, stream_label, require_golden):

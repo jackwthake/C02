@@ -1,0 +1,15 @@
+
+--- Functions ---
+fn main() -> void
+  block0:
+    y = 2
+    i = 0
+    L0:
+    t0 = i < 255
+    t1 = !t0
+    if t1 goto L1
+    inc y
+    inc i
+    goto L0
+    L1:
+

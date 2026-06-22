@@ -125,6 +125,70 @@ int main(void) {
   parser_free(&parser2);
   free_tokens(tokens, num_tokens);
 
+  // --- statement lowering coverage ---
+  static const char *stmt_src =
+    "reg u8 PORTA @ 0x6001;\n"
+    "fn main() -> void {\n"
+    "  u8 x = 5;\n"
+    "  u8 y = 10;\n"
+    "  PORTA = x;\n"
+    "  if (x == y) {\n"
+    "    y = 1;\n"
+    "  } else {\n"
+    "    y = 2;\n"
+    "  }\n"
+    "  while (x != 0) {\n"
+    "    --x;\n"
+    "  }\n"
+    "  for (u8 i = 0; i != 3; ++i) {\n"
+    "    PORTA = i;\n"
+    "  }\n"
+    "}\n";
+
+  num_tokens = 0;
+  len = (long)strlen(stmt_src) + 1;
+  tokens = tokenize("ir_smoke_stmt", stmt_src, len, &num_tokens);
+  assert(tokens);
+
+  parser_t parser3 = {0};
+  assert(parser_init(&parser3));
+  ast = parse(&parser3, tokens, num_tokens);
+  assert(ast);
+
+  analyzer_t analyzer3 = {0};
+  assert(analyzer_init(&analyzer3));
+  sym = analyze(&analyzer3, ast);
+  assert(sym);
+  assert(analyzer3.errors == 0);
+
+  ir_gen_t gen3 = {0};
+  assert(ir_gen_init(&gen3));
+  assert(ir_gen_run(&gen3, ast, &analyzer3));
+
+  assert(gen3.module.reg_count == 1);
+  assert(gen3.module.cfg_count == 1);
+
+  cfg_t *main_cfg = &gen3.module.cfgs[0];
+  assert(main_cfg->entry->instr_count > 0);
+
+  // var decls: x = 5, y = 10
+  assert(main_cfg->entry->instrs[0].op == TAC_COPY);
+  assert(main_cfg->entry->instrs[1].op == TAC_COPY);
+
+  // register store: PORTA = x
+  assert(main_cfg->entry->instrs[2].op == TAC_STORE);
+  assert(main_cfg->entry->instrs[2].dst.int_val == 0x6001);
+
+  // if: condition (EQ) + negate (NOT) + conditional jump
+  assert(main_cfg->entry->instrs[3].op == TAC_EQ);
+  assert(main_cfg->entry->instrs[4].op == TAC_NOT);
+  assert(main_cfg->entry->instrs[5].op == TAC_COND_JUMP);
+
+  ir_gen_free(&gen3);
+  analyzer_free(&analyzer3);
+  parser_free(&parser3);
+  free_tokens(tokens, num_tokens);
+
   printf("all ir smoke tests passed\n");
   return 0;
 }

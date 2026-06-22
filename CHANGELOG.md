@@ -26,13 +26,22 @@ releases are reserved for bug fixes only.
     `TAC_INC`/`TAC_DEC` mapped to 6502 `INC`/`DEC`), address-of, pointer
     dereference (`TAC_LOAD`), casts, function calls with arguments, struct
     field access (`TAC_FIELD_LOAD`), and struct initialiser literals
-    (`TAC_FIELD_STORE` per field). Statement lowering (var decl, assignment,
-    control flow) is not yet implemented.
-  - `--ir-dump` CLI flag for inspecting the IR module after lowering.
+    (`TAC_FIELD_STORE` per field).
+  - Complete statement lowering: variable declarations, assignments
+    (to variables, pointer derefs, struct fields, and hardware registers
+    via `TAC_STORE` at fixed addresses), `return`, `if`/`else if`/`else`
+    (with negate-and-skip conditional jumps), `while` loops, `for` loops
+    (with optional init/cond/increment), and nested blocks.
+  - `--ir-dump` CLI flag for inspecting the IR module after lowering,
+    with full TAC instruction printer showing readable output for all
+    instruction types (hex addresses for register stores, labelled
+    jumps for control flow).
   - IR generation timing integrated into `--time-report`.
-- Smoke test for IR generation covering the full pipeline (tokenize → parse
-  → analyse → IR gen → free) with assertion coverage for declarations,
-  CFG creation, and expression lowering.
+  - Test harness properly generates goldens for ir test files.
+- Smoke tests for IR generation covering the full pipeline (tokenize →
+  parse → analyse → IR gen → free) with assertion coverage for
+  declarations, CFG creation, expression lowering, and statement lowering
+  (var decl, register store, if/else, while, for).
 - Per-module line count breakdown in `test.py --cloc` output.
 
 ### Changed

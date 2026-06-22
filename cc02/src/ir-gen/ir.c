@@ -222,10 +222,15 @@ static tac_op_t op_to_tac(op_t op) {
 // ----------------------------------------------------------------
 // Pass 2: lower functions to TAC
 // ----------------------------------------------------------------
-// Each function gets a cfg_t. During lowering, instructions are
-// emitted into a single flat block. Once the function body is fully
-// lowered, this flat list will be carved into basic blocks at label
-// and jump boundaries (not yet implemented).
+// Each function gets a cfg_t. The AST is recursively walked and
+// flattened into a linear sequence of TAC instructions in a single
+// block. Control flow (if/while/for) is expressed with labels and
+// jumps — the instruction list stays flat, and branches skip over
+// or loop back to labelled positions.
+//
+// lower_expr returns a tac_operand_t (the value the expression
+// produced — a temp, variable, or constant). lower_stmt is void
+// and just emits instructions.
 
 #define INSTR_INITIAL_CAPACITY 32
 
@@ -424,13 +429,13 @@ static tac_operand_t lower_expr(ir_gen_t *gen, cfg_t *cfg, node_t *node) {
     }
 
     default:
-      (void)new_label;
       return new_temp(cfg, (type_t){ .kind = TYPE_VOID });
   }
 }
 
 
-// Stub: lower a statement node into TAC instructions.
+static void lower_block(ir_gen_t *gen, cfg_t *cfg, node_t *block);
+
 // Dispatches on node kind — to be filled in case by case.
 static void lower_stmt(ir_gen_t *gen, cfg_t *cfg, node_t *node) {
   switch (node->kind) {
@@ -442,8 +447,193 @@ static void lower_stmt(ir_gen_t *gen, cfg_t *cfg, node_t *node) {
       break;
     }
 
+    case NODE_VAR_DECL: {
+      if (!node->var_decl.initialiser) break; // no initializer -> nothing to emit
+
+      tac_operand_t initter = lower_expr(gen, cfg, node->var_decl.initialiser);
+      emit(gen, cfg, (tac_instr_t) {
+        .op = TAC_COPY,
+        .dst = { .kind = OPERAND_VAR, .type = node->var_decl.type, .name = node->var_decl.name },
+        .src1 = initter,
+      });
+
+      break;
+    }
+
+    // The right side is always lowered as an expression. The left side
+    // (target) determines what kind of write to emit: a plain copy for
+    // variables, a TAC_STORE for pointer derefs and hardware registers,
+    // or a TAC_FIELD_STORE for struct fields.
+    case NODE_ASSIGN: {
+      tac_operand_t val = lower_expr(gen, cfg, node->assign.value);
+      node_t *target = node->assign.target;
+
+      switch (target->kind) {
+        case NODE_IDENTIFIER: {
+          // check if it's a register — emit a store to the fixed address
+          ir_reg_def_t *reg = NULL;
+          for (unsigned i = 0; i < gen->module.reg_count; i++) {
+            if (strcmp(gen->module.regs[i].name, target->identifier.name) == 0) {
+              reg = &gen->module.regs[i];
+              break;
+            }
+          }
+
+          if (reg) {
+            tac_operand_t addr = {
+              .kind = OPERAND_CONST_INT,
+              .type = { .kind = TYPE_U16 },
+              .int_val = (long)reg->addr,
+            };
+            emit(gen, cfg, (tac_instr_t){ .op = TAC_STORE, .dst = addr, .src1 = val });
+          } else {
+            tac_operand_t var = {
+              .kind = OPERAND_VAR,
+              .type = target->identifier.resolved_type,
+              .name = target->identifier.name,
+            };
+            emit(gen, cfg, (tac_instr_t){ .op = TAC_COPY, .dst = var, .src1 = val });
+          }
+          break;
+        }
+
+        case NODE_DEREF: {
+          tac_operand_t ptr = lower_expr(gen, cfg, target->deref_target);
+          emit(gen, cfg, (tac_instr_t){ .op = TAC_STORE, .dst = ptr, .src1 = val });
+          break;
+        }
+
+        case NODE_FIELD_ACCESS: {
+          tac_operand_t base = lower_expr(gen, cfg, target->field_access.base);
+          emit(gen, cfg, (tac_instr_t){
+            .op = TAC_FIELD_STORE,
+            .dst = base,
+            .src1 = val,
+            .field_name = target->field_access.field,
+          });
+          break;
+        }
+
+        default:
+          break;
+      }
+      break;
+    }
+
+    // TAC_COND_JUMP jumps when its operand is *true* (nonzero), but we
+    // want to skip the then-body when the condition is *false*. So we
+    // negate the condition and jump on the negated value — if the
+    // original condition was false, the negated value is true, and the
+    // jump fires, skipping the body. If the condition was true, the
+    // negated value is false, the jump doesn't fire, and execution
+    // falls through into the then-body.
+    case NODE_IF: {
+      unsigned block_count = node->if_stmt.blocks.count;
+      int has_else = block_count > 1;
+
+      tac_operand_t cond = lower_expr(gen, cfg, node->if_stmt.cond);
+      tac_operand_t neg = new_temp(cfg, cond.type);
+      emit(gen, cfg, (tac_instr_t){ .op = TAC_NOT, .dst = neg, .src1 = cond });
+
+      unsigned else_label = new_label(cfg);
+      unsigned end_label = has_else ? new_label(cfg) : else_label;
+
+      emit(gen, cfg, (tac_instr_t){ .op = TAC_COND_JUMP, .src1 = neg, .label = else_label });
+
+      lower_block(gen, cfg, node->if_stmt.blocks.items[0]);
+
+      if (has_else) {
+        emit(gen, cfg, (tac_instr_t){ .op = TAC_JUMP, .label = end_label });
+        emit(gen, cfg, (tac_instr_t){ .op = TAC_LABEL, .label = else_label });
+
+        for (unsigned i = 1; i < block_count; i++) {
+          node_t *branch = node->if_stmt.blocks.items[i];
+          if (branch->kind == NODE_IF) {
+            lower_stmt(gen, cfg, branch);
+          } else {
+            lower_block(gen, cfg, branch);
+          }
+        }
+
+        emit(gen, cfg, (tac_instr_t){ .op = TAC_LABEL, .label = end_label });
+      } else {
+        emit(gen, cfg, (tac_instr_t){ .op = TAC_LABEL, .label = else_label });
+      }
+      break;
+    }
+
+    case NODE_WHILE: {
+      unsigned cond_label = new_label(cfg); // while
+      unsigned end_label = new_label(cfg);
+
+      // point to jump back to loop condition check
+      emit(gen, cfg, (tac_instr_t){ .op = TAC_LABEL, .label = cond_label });
+
+      // evaluate condition
+      tac_operand_t cond = lower_expr(gen, cfg, node->while_stmt.cond);
+      tac_operand_t neg = new_temp(cfg, cond.type);
+
+      // if !condition -> jump to end
+      emit(gen, cfg, (tac_instr_t){ .op = TAC_NOT, .dst = neg, .src1 = cond });
+      emit(gen, cfg, (tac_instr_t){ .op = TAC_COND_JUMP, .src1 = neg, .label = end_label });
+
+      // otherwise fall through to actual while block
+      if (node->while_stmt.body)
+        lower_block(gen, cfg, node->while_stmt.body);
+
+      // jump back to re-evaluate conditional
+      emit(gen, cfg, (tac_instr_t){ .op = TAC_JUMP, .label = cond_label });
+
+      // where we jump to when cond is false
+      emit(gen, cfg, (tac_instr_t){ .op = TAC_LABEL, .label = end_label });
+      break;
+    }
+
+    case NODE_FOR: {
+      unsigned cond_label = new_label(cfg); // for (<initter>; <condition>; <incrementer>) <body>
+      unsigned end_label = new_label(cfg);
+
+      // initter
+      if (node->for_stmt.initialiser)
+        lower_stmt(gen, cfg, node->for_stmt.initialiser);
+
+      // point to jump back to loop condition check
+      emit(gen, cfg, (tac_instr_t){ .op = TAC_LABEL, .label = cond_label });
+
+       // evaluate condition
+      if (node->for_stmt.cond) {
+        tac_operand_t cond = lower_expr(gen, cfg, node->for_stmt.cond);
+        tac_operand_t neg = new_temp(cfg, cond.type);
+
+        // if !condition -> jump to end
+        emit(gen, cfg, (tac_instr_t){ .op = TAC_NOT, .dst = neg, .src1 = cond });
+        emit(gen, cfg, (tac_instr_t){ .op = TAC_COND_JUMP, .src1 = neg, .label = end_label });
+      }
+
+      // otherwise fall through to actual for block
+      if (node->for_stmt.body)
+        lower_block(gen, cfg, node->for_stmt.body);
+
+      // after body runs, do incrementer
+      if (node->for_stmt.incrementer)
+        lower_expr(gen, cfg, node->for_stmt.incrementer);
+
+      // jump back to re-evaluate conditional
+      emit(gen, cfg, (tac_instr_t){ .op = TAC_JUMP, .label = cond_label });
+
+      // where we jump to when cond is false, don't need it if no conditional
+      if (node->for_stmt.cond)
+        emit(gen, cfg, (tac_instr_t){ .op = TAC_LABEL, .label = end_label });
+      break;
+    }
+
+    case NODE_BLOCK:
+      lower_block(gen, cfg, node);
+      break;
 
     default:
+      // expression statements (bare function calls like lcd_init())
+      lower_expr(gen, cfg, node);
       break;
   }
 }
