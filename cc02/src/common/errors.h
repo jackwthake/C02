@@ -54,6 +54,7 @@ typedef enum {
   ERR_VOID_VARIABLE,        // variable/param/field/global declared with non-pointer void type
   ERR_NOT_A_STRUCT,         // field access ('.') on a non-struct type
   ERR_MISSING_RETURN,       // a non-void function may fall off the end without returning
+  ERR_INCOMPLETE_STRUCT_FIELD, // by-value struct field references an incomplete/forward-declared or self-referential struct
 } error_type_t;
 
 typedef struct {

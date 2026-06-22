@@ -9,6 +9,32 @@ releases are reserved for bug fixes only.
 
 ## [Unreleased]
 
+## [0.2.6] 2026-06-22
+
+### Fixed
+
+- **Register reads now lower to `TAC_LOAD`** — reading a hardware register
+  (e.g. `x = PORTA`) previously leaked the register name as a plain variable
+  in the IR. The `NODE_IDENTIFIER` case in `lower_expr` now mirrors the
+  existing register-write path: it looks up the name in `module.regs` and
+  emits a `TAC_LOAD` from the fixed hardware address.
+- **Out-of-order struct declarations rejected** — a by-value struct field
+  referencing a struct declared later in the source (or referencing itself)
+  previously produced silently wrong field offsets. The analyzer now checks
+  that every by-value `TYPE_STRUCT` field names a struct already declared
+  earlier in the source, and rejects self-referential structs with a clear
+  diagnostic. New error kind `ERR_INCOMPLETE_STRUCT_FIELD`.
+- **`&&` and `||` now short-circuit** — logical AND/OR previously lowered as
+  flat binary TAC ops that unconditionally evaluated both operands. On a
+  memory-mapped 6502 target this is a semantic bug (e.g. `flag && *p` would
+  dereference `p` even when `flag` is false). Both operators now lower to
+  conditional jumps so the right-hand side is only evaluated when needed.
+- **Number literal types match the analyzer** — `NODE_NUMBER` previously
+  recomputed its type in IR gen (`<= 0xFF → u8, else → u16`), discarding
+  the analyzer's `resolved_type`. Negated literals like `-5` appeared as
+  `u8` instead of `i8`. `NODE_NUMBER` now carries a `resolved_type` field
+  stamped during semantic analysis, and IR gen uses it directly.
+
 ## [0.2.5] 2026-06-22
 
 ### Added

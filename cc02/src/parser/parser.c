@@ -224,7 +224,7 @@ static node_t *primary(parser_t *p) {
     case l_num: { // literal
       expr = ALLOC_NODE(p);
       expr->kind = NODE_NUMBER;
-      expr->number = tok.num_val;
+      expr->number.value = tok.num_val;
       break;
     }
 

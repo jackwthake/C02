@@ -295,11 +295,12 @@ static type_t resolve_expr_type(analyzer_t *a, node_t *expr) {
   switch (expr->kind) {
     case NODE_NUMBER: {
       int out_of_range = 0;
-      type_t t = type_for_int_literal(expr->number, &out_of_range);
+      type_t t = type_for_int_literal(expr->number.value, &out_of_range);
       if (out_of_range) {
         EMIT_PLAIN_ERROR(ERR_LITERAL_OUT_OF_RANGE, expr->loc);
         return TYPE_ERROR;
       }
+      expr->number.resolved_type = is_null_type(t) ? (type_t){ .kind = TYPE_U8 } : t;
       return t;
     }
 
@@ -390,11 +391,12 @@ static type_t resolve_expr_type(analyzer_t *a, node_t *expr) {
       if (expr->unary.op == OP_NEGATE && expr->unary.operand
           && expr->unary.operand->kind == NODE_NUMBER) {
         int out_of_range = 0;
-        type_t t = type_for_int_literal(-expr->unary.operand->number, &out_of_range);
+        type_t t = type_for_int_literal(-expr->unary.operand->number.value, &out_of_range);
         if (out_of_range) {
           EMIT_PLAIN_ERROR(ERR_LITERAL_OUT_OF_RANGE, expr->loc);
           return TYPE_ERROR;
         }
+        expr->unary.operand->number.resolved_type = t;
         return t;
       }
 
@@ -694,7 +696,38 @@ static void validate_toplevel_types(analyzer_t *a, ast_t program) {
       case NODE_STRUCT_DECL:
         for (unsigned f = 0; f < decl->struct_decl.fields.count; ++f) {
           field_t field = decl->struct_decl.fields.items[f];
-          validate_decl_type(a, field.type, decl->loc, field.name, 0);
+          if (!validate_decl_type(a, field.type, decl->loc, field.name, 0))
+            continue;
+          if (field.type.kind == TYPE_STRUCT && !field.type.is_ptr) {
+            if (strcmp(field.type.struct_name, decl->struct_decl.name) == 0) {
+              error_t _e = (error_t){
+                .type = ERR_INCOMPLETE_STRUCT_FIELD, .loc = decl->loc,
+                .unknown_field = { .struct_name = decl->struct_decl.name,
+                                   .field_name = field.type.struct_name }
+              };
+              ++a->errors;
+              print_error(&_e);
+            } else {
+              int found_before = 0;
+              for (unsigned j = 0; j < i; j++) {
+                node_t *prior = program->program.items[j];
+                if (prior->kind == NODE_STRUCT_DECL &&
+                    strcmp(prior->struct_decl.name, field.type.struct_name) == 0) {
+                  found_before = 1;
+                  break;
+                }
+              }
+              if (!found_before) {
+                error_t _e = (error_t){
+                  .type = ERR_INCOMPLETE_STRUCT_FIELD, .loc = decl->loc,
+                  .unknown_field = { .struct_name = decl->struct_decl.name,
+                                     .field_name = field.type.struct_name }
+                };
+                ++a->errors;
+                print_error(&_e);
+              }
+            }
+          }
         }
         break;
       case NODE_FUNCTION:

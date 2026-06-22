@@ -114,7 +114,10 @@ struct node_t {
   token_location_t loc;   // where this node started in the source - stamped by ALLOC_NODE from CUR_TOK
   union {
     // --- expressions ---
-    long   number;                        // NODE_NUMBER
+    struct {
+      long   value;
+      type_t resolved_type;               // stamped by the analyzer
+    } number;                             // NODE_NUMBER
     char  *value;                         // NODE_STRING
     struct {
       char  *name;

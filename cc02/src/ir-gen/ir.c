@@ -129,7 +129,7 @@ static void collect_global(ir_gen_t *gen, node_t *node) {
     switch (node->global_var.initialiser->kind) {
       case NODE_NUMBER:
         g->init_kind = IR_INIT_INT;
-        g->int_val = node->global_var.initialiser->number;
+        g->int_val = node->global_var.initialiser->number.value;
         break;
       case NODE_STRING:
         g->init_kind = IR_INIT_STR;
@@ -293,8 +293,8 @@ static tac_operand_t lower_expr(ir_gen_t *gen, cfg_t *cfg, node_t *node) {
     case NODE_NUMBER:
       return (tac_operand_t){
         .kind = OPERAND_CONST_INT,
-        .type = { .kind = node->number <= 0xFF ? TYPE_U8 : TYPE_U16 },
-        .int_val = node->number
+        .type = node->number.resolved_type,
+        .int_val = node->number.value
       };
     
     case NODE_STRING:
@@ -304,23 +304,79 @@ static tac_operand_t lower_expr(ir_gen_t *gen, cfg_t *cfg, node_t *node) {
         .str_val = node->value
       };
     
-    case NODE_IDENTIFIER:
+    case NODE_IDENTIFIER: {
+      for (unsigned i = 0; i < gen->module.reg_count; i++) {
+        if (strcmp(gen->module.regs[i].name, node->identifier.name) == 0) {
+          ir_reg_def_t *reg = &gen->module.regs[i];
+          tac_operand_t addr = {
+            .kind = OPERAND_CONST_INT,
+            .type = { .kind = TYPE_U16 },
+            .int_val = (long)reg->addr,
+          };
+          tac_operand_t dst = new_temp(cfg, reg->type);
+          emit(gen, cfg, (tac_instr_t){ .op = TAC_LOAD, .dst = dst, .src1 = addr });
+          return dst;
+        }
+      }
       return (tac_operand_t){
         .kind = OPERAND_VAR,
         .type = node->identifier.resolved_type,
         .name = node->identifier.name,
       };
+    }
     
     case NODE_BINOP: {
+      if (node->binop.op == OP_AND) {
+        tac_operand_t result = new_temp(cfg, (type_t){ .kind = TYPE_U8 });
+        unsigned false_label = new_label(cfg);
+        unsigned end_label = new_label(cfg);
+
+        tac_operand_t left = lower_expr(gen, cfg, node->binop.left);
+        tac_operand_t neg = new_temp(cfg, left.type);
+        emit(gen, cfg, (tac_instr_t){ .op = TAC_NOT, .dst = neg, .src1 = left });
+        emit(gen, cfg, (tac_instr_t){ .op = TAC_COND_JUMP, .src1 = neg, .label = false_label });
+
+        tac_operand_t right = lower_expr(gen, cfg, node->binop.right);
+        emit(gen, cfg, (tac_instr_t){ .op = TAC_COPY, .dst = result, .src1 = right });
+        emit(gen, cfg, (tac_instr_t){ .op = TAC_JUMP, .label = end_label });
+
+        emit(gen, cfg, (tac_instr_t){ .op = TAC_LABEL, .label = false_label });
+        emit(gen, cfg, (tac_instr_t){ .op = TAC_COPY, .dst = result,
+          .src1 = { .kind = OPERAND_CONST_INT, .type = { .kind = TYPE_U8 }, .int_val = 0 } });
+
+        emit(gen, cfg, (tac_instr_t){ .op = TAC_LABEL, .label = end_label });
+        return result;
+      }
+
+      if (node->binop.op == OP_OR) {
+        tac_operand_t result = new_temp(cfg, (type_t){ .kind = TYPE_U8 });
+        unsigned true_label = new_label(cfg);
+        unsigned end_label = new_label(cfg);
+
+        tac_operand_t left = lower_expr(gen, cfg, node->binop.left);
+        emit(gen, cfg, (tac_instr_t){ .op = TAC_COND_JUMP, .src1 = left, .label = true_label });
+
+        tac_operand_t right = lower_expr(gen, cfg, node->binop.right);
+        emit(gen, cfg, (tac_instr_t){ .op = TAC_COPY, .dst = result, .src1 = right });
+        emit(gen, cfg, (tac_instr_t){ .op = TAC_JUMP, .label = end_label });
+
+        emit(gen, cfg, (tac_instr_t){ .op = TAC_LABEL, .label = true_label });
+        emit(gen, cfg, (tac_instr_t){ .op = TAC_COPY, .dst = result,
+          .src1 = { .kind = OPERAND_CONST_INT, .type = { .kind = TYPE_U8 }, .int_val = 1 } });
+
+        emit(gen, cfg, (tac_instr_t){ .op = TAC_LABEL, .label = end_label });
+        return result;
+      }
+
       tac_op_t op = op_to_tac(node->binop.op);
-      
+
       tac_operand_t left  = lower_expr(gen, cfg, node->binop.left);
       tac_operand_t right = lower_expr(gen, cfg, node->binop.right);
-      
+
       int is_cmp = op == TAC_LT || op == TAC_LTE ||
                    op == TAC_GT || op == TAC_GTE ||
                    op == TAC_EQ || op == TAC_NEQ;
-      
+
       type_t type = is_cmp ? (type_t){ .kind = TYPE_U8 } : left.type;
       tac_operand_t dst = new_temp(cfg, type);
 

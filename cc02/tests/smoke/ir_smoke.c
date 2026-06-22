@@ -229,6 +229,129 @@ int main(void) {
   ir_gen_free(&gen4);
   remove(tmp_path);
 
+  // --- register read coverage (issue 1) ---
+  static const char *regread_src =
+    "reg u8 PORTA @ 0x6001;\n"
+    "fn main() -> void {\n"
+    "  u8 x;\n"
+    "  x = PORTA;\n"
+    "}\n";
+
+  num_tokens = 0;
+  len = (long)strlen(regread_src) + 1;
+  tokens = tokenize("ir_smoke_regread", regread_src, len, &num_tokens);
+  assert(tokens);
+
+  parser_t parser5 = {0};
+  assert(parser_init(&parser5));
+  ast = parse(&parser5, tokens, num_tokens);
+  assert(ast);
+
+  analyzer_t analyzer5 = {0};
+  assert(analyzer_init(&analyzer5));
+  sym = analyze(&analyzer5, ast);
+  assert(sym && analyzer5.errors == 0);
+
+  ir_gen_t gen5 = {0};
+  assert(ir_gen_init(&gen5));
+  assert(ir_gen_run(&gen5, ast, &analyzer5));
+
+  cfg_t *regread_cfg = &gen5.module.cfgs[0];
+  // x = PORTA → TAC_LOAD from 0x6001 into a temp, then TAC_COPY temp → x
+  assert(regread_cfg->entry->instrs[0].op == TAC_LOAD);
+  assert(regread_cfg->entry->instrs[0].src1.int_val == 0x6001);
+  assert(regread_cfg->entry->instrs[1].op == TAC_COPY);
+
+  ir_gen_free(&gen5);
+  analyzer_free(&analyzer5);
+  parser_free(&parser5);
+  free_tokens(tokens, num_tokens);
+
+  // --- short-circuit && coverage (issue 3) ---
+  static const char *sc_src =
+    "fn main() -> void {\n"
+    "  u8 a = 0;\n"
+    "  u8 b = 1;\n"
+    "  u8 c = a && b;\n"
+    "}\n";
+
+  num_tokens = 0;
+  len = (long)strlen(sc_src) + 1;
+  tokens = tokenize("ir_smoke_sc", sc_src, len, &num_tokens);
+  assert(tokens);
+
+  parser_t parser6 = {0};
+  assert(parser_init(&parser6));
+  ast = parse(&parser6, tokens, num_tokens);
+  assert(ast);
+
+  analyzer_t analyzer6 = {0};
+  assert(analyzer_init(&analyzer6));
+  sym = analyze(&analyzer6, ast);
+  assert(sym && analyzer6.errors == 0);
+
+  ir_gen_t gen6 = {0};
+  assert(ir_gen_init(&gen6));
+  assert(ir_gen_run(&gen6, ast, &analyzer6));
+
+  cfg_t *sc_cfg = &gen6.module.cfgs[0];
+  // a = 0, b = 1, then short-circuit: NOT, COND_JUMP (b eval guarded)
+  assert(sc_cfg->entry->instrs[0].op == TAC_COPY); // a = 0
+  assert(sc_cfg->entry->instrs[1].op == TAC_COPY); // b = 1
+  // && lowering: a loaded, NOT, COND_JUMP — b is only evaluated after the jump
+  int found_cond_jump = 0;
+  int found_copy_after_jump = 0;
+  for (unsigned k = 2; k < sc_cfg->entry->instr_count; k++) {
+    if (sc_cfg->entry->instrs[k].op == TAC_COND_JUMP) found_cond_jump = 1;
+    if (found_cond_jump && sc_cfg->entry->instrs[k].op == TAC_COPY) {
+      found_copy_after_jump = 1;
+      break;
+    }
+  }
+  assert(found_cond_jump);
+  assert(found_copy_after_jump);
+
+  ir_gen_free(&gen6);
+  analyzer_free(&analyzer6);
+  parser_free(&parser6);
+  free_tokens(tokens, num_tokens);
+
+  // --- number literal resolved_type coverage (issue 4) ---
+  static const char *neglit_src =
+    "fn main() -> void {\n"
+    "  i8 x = -5;\n"
+    "}\n";
+
+  num_tokens = 0;
+  len = (long)strlen(neglit_src) + 1;
+  tokens = tokenize("ir_smoke_neglit", neglit_src, len, &num_tokens);
+  assert(tokens);
+
+  parser_t parser7 = {0};
+  assert(parser_init(&parser7));
+  ast = parse(&parser7, tokens, num_tokens);
+  assert(ast);
+
+  analyzer_t analyzer7 = {0};
+  assert(analyzer_init(&analyzer7));
+  sym = analyze(&analyzer7, ast);
+  assert(sym && analyzer7.errors == 0);
+
+  ir_gen_t gen7 = {0};
+  assert(ir_gen_init(&gen7));
+  assert(ir_gen_run(&gen7, ast, &analyzer7));
+
+  cfg_t *neglit_cfg = &gen7.module.cfgs[0];
+  // i8 x = -5 → TAC_NEG on a literal 5 typed i8, then TAC_COPY
+  assert(neglit_cfg->entry->instrs[0].op == TAC_NEG);
+  assert(neglit_cfg->entry->instrs[0].src1.type.kind == TYPE_I8);
+  assert(neglit_cfg->entry->instrs[1].op == TAC_COPY);
+
+  ir_gen_free(&gen7);
+  analyzer_free(&analyzer7);
+  parser_free(&parser7);
+  free_tokens(tokens, num_tokens);
+
   printf("all ir smoke tests passed\n");
   return 0;
 }

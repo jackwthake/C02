@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "colors.h"
 
@@ -175,6 +176,17 @@ static void print_semantic_kind_error(error_t *e) {
       PRINT_ERR_HEADER(e);
       fprintf(stderr, "non-void function '%s' may reach its end without returning a value\n",
               e->name_error.name);
+      break;
+
+    case ERR_INCOMPLETE_STRUCT_FIELD:
+      PRINT_ERR_HEADER(e);
+      if (strcmp(e->unknown_field.struct_name, e->unknown_field.field_name) == 0) {
+        fprintf(stderr, "struct '%s' cannot contain itself by value; use a pointer\n",
+                e->unknown_field.struct_name);
+      } else {
+        fprintf(stderr, "struct '%s' has field of incomplete type '%s' (not yet declared)\n",
+                e->unknown_field.struct_name, e->unknown_field.field_name);
+      }
       break;
 
     default:
