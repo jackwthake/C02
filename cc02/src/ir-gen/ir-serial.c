@@ -17,7 +17,7 @@
  */
 
 #define IR_MAGIC   0x43303249  /* "C02I" */
-#define IR_VERSION 1
+#define IR_VERSION 2
 
 
 // ----------------------------------------------------------------
@@ -160,6 +160,20 @@ int ir_write(ir_gen_t *gen, const char *path) {
   if (!write_u32(f, m->cfg_count)) goto fail;
   for (unsigned i = 0; i < m->cfg_count; i++) {
     if (!write_cfg(f, &m->cfgs[i])) goto fail;
+  }
+
+  // externs
+  if (!write_u32(f, m->extern_count)) goto fail;
+  for (unsigned i = 0; i < m->extern_count; i++) {
+    ir_extern_t *e = &m->externs[i];
+    if (!write_u32(f, (unsigned)e->is_function)) goto fail;
+    if (!write_str(f, e->name)) goto fail;
+    if (!write_type(f, e->type)) goto fail;
+    if (!write_u32(f, e->params.count)) goto fail;
+    for (unsigned j = 0; j < e->params.count; j++) {
+      if (!write_type(f, e->params.items[j].type)) goto fail;
+      if (!write_str(f, e->params.items[j].name)) goto fail;
+    }
   }
 
   fclose(f);
@@ -355,6 +369,29 @@ int ir_read(ir_gen_t *gen, const char *path) {
   gen->cfg_capacity = m->cfg_count;
   for (unsigned i = 0; i < m->cfg_count; i++) {
     if (!read_cfg(f, a, &m->cfgs[i])) goto fail;
+  }
+
+  // externs
+  if (!read_u32(f, &m->extern_count)) goto fail;
+  m->externs = arena_alloc(a, sizeof(ir_extern_t) * m->extern_count);
+  gen->extern_capacity = m->extern_count;
+  for (unsigned i = 0; i < m->extern_count; i++) {
+    ir_extern_t *e = &m->externs[i];
+    unsigned is_fn;
+    if (!read_u32(f, &is_fn)) goto fail;
+    e->is_function = (int)is_fn;
+    if (!read_str(f, a, &e->name)) goto fail;
+    if (!read_type(f, a, &e->type)) goto fail;
+    if (!read_u32(f, &e->params.count)) goto fail;
+    if (e->params.count > 0) {
+      e->params.items = arena_alloc(a, sizeof(param_t) * e->params.count);
+      for (unsigned j = 0; j < e->params.count; j++) {
+        if (!read_type(f, a, &e->params.items[j].type)) goto fail;
+        if (!read_str(f, a, &e->params.items[j].name)) goto fail;
+      }
+    } else {
+      e->params.items = NULL;
+    }
   }
 
   fclose(f);

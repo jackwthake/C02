@@ -216,6 +216,18 @@ typedef struct {
 
 
 // ----------------------------------------------------------------
+// External symbol (from forward declarations)
+// ----------------------------------------------------------------
+
+typedef struct {
+  int is_function;
+  char *name;
+  type_t type;                  // return type (fn) or variable type (global)
+  param_list_t params;          // only meaningful when is_function
+} ir_extern_t;
+
+
+// ----------------------------------------------------------------
 // IR module (complete output of IR generation)
 // ----------------------------------------------------------------
 
@@ -231,6 +243,9 @@ typedef struct {
 
   cfg_t *cfgs;                // arena-allocated, one per function
   unsigned cfg_count;
+
+  ir_extern_t *externs;       // arena-allocated, from decl statements
+  unsigned extern_count;
 } ir_module_t;
 
 
@@ -248,6 +263,7 @@ typedef struct {
   unsigned global_capacity;
   unsigned reg_capacity;
   unsigned cfg_capacity;
+  unsigned extern_capacity;
 } ir_gen_t;
 
 

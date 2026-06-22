@@ -1030,10 +1030,59 @@ static node_t *parse_global_var_decl(parser_t *p) {
 }
 
 
+static node_t *parse_fwd_decl(parser_t *p) {
+  ++p->pos; // consume decl keyword
+
+  node_t *n = ALLOC_NODE(p);
+  n->kind = NODE_FWD_DECL;
+
+  if (CUR_TOK.type == Kw_fn) {
+    ++p->pos; // consume fn
+    n->fwd_decl.is_function = 1;
+
+    EXPECT_SYMBOL(l_identifier, "function name", "forward declaration");
+    GUARD(p);
+
+    n->fwd_decl.name = CUR_TOK.string_val;
+    ++p->pos; // consume identifier
+
+    n->fwd_decl.params = parse_function_params(p);
+    GUARD(p);
+
+    EXPECT_SYMBOL(s_arrow, "'->' before return type", "forward declaration");
+    GUARD(p);
+    ++p->pos; // consume ->
+
+    n->fwd_decl.type = parse_type(p);
+    GUARD(p);
+  } else {
+    n->fwd_decl.is_function = 0;
+
+    n->fwd_decl.type = parse_type(p);
+    GUARD(p);
+
+    EXPECT_SYMBOL(l_identifier, "variable name", "forward declaration");
+    GUARD(p);
+
+    n->fwd_decl.name = CUR_TOK.string_val;
+    ++p->pos; // consume identifier
+
+    n->fwd_decl.params = (param_list_t){ 0 };
+  }
+
+  EXPECT_SYMBOL(s_semicolon, "';' after forward declaration", "forward declaration");
+  GUARD(p);
+  ++p->pos; // consume ;
+
+  return n;
+}
+
+
 static node_t *parse_toplevel(parser_t *p) {
-  token_t tok = CUR_TOK; 
+  token_t tok = CUR_TOK;
 
   switch (tok.type) {
+    case Kw_fwd_decl: return parse_fwd_decl(p);
     case Kw_fn:     return parse_function(p);
     case Kw_reg:    return parse_reg_decl(p);
     case Kw_struct: return parse_struct_decl(p);
@@ -1052,12 +1101,12 @@ static node_t *parse_toplevel(parser_t *p) {
       if (lookahead < p->count && p->tokens[lookahead].type == l_identifier) {
         return parse_global_var_decl(p);
       }
-      GENERATE_ERROR(ERR_UNEXPECTED_TOKEN, tok, "top-level declaration (fn, reg, struct, or a typed global variable)", "top-level parse");
+      GENERATE_ERROR(ERR_UNEXPECTED_TOKEN, tok, "top-level declaration (fn, decl, reg, struct, or a typed global variable)", "top-level parse");
       return NULL;
     }
 
     default:
-      GENERATE_ERROR(ERR_UNEXPECTED_TOKEN, tok, "top-level declaration (fn, reg, struct, or a typed global variable)", "top-level parse");
+      GENERATE_ERROR(ERR_UNEXPECTED_TOKEN, tok, "top-level declaration (fn, decl, reg, struct, or a typed global variable)", "top-level parse");
       return NULL;
   }
 }

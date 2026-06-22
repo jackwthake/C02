@@ -395,6 +395,7 @@ void print_error_line(token_location_t loc) {
 
 static int tokenize_keyword_or_identifier(token_t *tokens, unsigned *token_count, char **ptr, unsigned line, unsigned *column, char *file_path) {
   MATCH_KEYWORD("fn",     Kw_fn)
+  MATCH_KEYWORD("decl",   Kw_fwd_decl)
   MATCH_KEYWORD("reg",    Kw_reg)
   MATCH_KEYWORD("return", Kw_return)
   MATCH_KEYWORD("struct", Kw_struct)

@@ -9,6 +9,13 @@ releases are reserved for bug fixes only.
 
 ## [Unreleased]
 
+- **Forward declarations (`decl`)** — added `decl fn name(...) -> type;` and
+  `decl type name;` syntax for declaring functions and globals defined in other
+  translation units. Forward declarations are registered in the symbol table
+  (redeclaration in the same file is an error), validated in the type-checking
+  pass, and collected into `ir_module_t.externs` for the linker. Extern symbols
+  are fully serialized in the `.o` format (IR_VERSION bumped to 2).
+
 ## [0.2.6] 2026-06-22
 
 ### Fixed

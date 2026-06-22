@@ -247,6 +247,29 @@ void ir_gen_print(ir_gen_t *gen) {
     printf("\n");
   }
 
+  if (m->extern_count > 0) {
+    printf("--- Externs ---\n");
+    for (unsigned i = 0; i < m->extern_count; i++) {
+      ir_extern_t *e = &m->externs[i];
+      if (e->is_function) {
+        printf("  decl fn %s(", e->name);
+        for (unsigned j = 0; j < e->params.count; j++) {
+          if (j > 0) printf(", ");
+          print_type(e->params.items[j].type);
+          printf(" %s", e->params.items[j].name);
+        }
+        printf(") -> ");
+        print_type(e->type);
+        printf("\n");
+      } else {
+        printf("  decl ");
+        print_type(e->type);
+        printf(" %s\n", e->name);
+      }
+    }
+    printf("\n");
+  }
+
   if (m->cfg_count > 0) {
     printf("--- Functions ---\n");
     for (unsigned i = 0; i < m->cfg_count; i++) {

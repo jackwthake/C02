@@ -316,6 +316,67 @@ int main(void) {
   parser_free(&parser6);
   free_tokens(tokens, num_tokens);
 
+  // --- forward declaration + extern round-trip ---
+  static const char *fwd_src =
+    "decl fn send_byte(u8 b) -> void;\n"
+    "decl u8 counter;\n"
+    "fn main() -> void {\n"
+    "  send_byte(42);\n"
+    "  u8 x = counter;\n"
+    "}\n";
+
+  num_tokens = 0;
+  len = (long)strlen(fwd_src) + 1;
+  tokens = tokenize("ir_smoke_fwd", fwd_src, len, &num_tokens);
+  assert(tokens);
+
+  parser_t parser_fwd = {0};
+  assert(parser_init(&parser_fwd));
+  ast = parse(&parser_fwd, tokens, num_tokens);
+  assert(ast);
+
+  analyzer_t analyzer_fwd = {0};
+  assert(analyzer_init(&analyzer_fwd));
+  sym = analyze(&analyzer_fwd, ast);
+  assert(sym && analyzer_fwd.errors == 0);
+
+  ir_gen_t gen_fwd = {0};
+  assert(ir_gen_init(&gen_fwd));
+  assert(ir_gen_run(&gen_fwd, ast, &analyzer_fwd));
+
+  assert(gen_fwd.module.extern_count == 2);
+  assert(gen_fwd.module.extern_count == 2);
+  assert(gen_fwd.module.externs[0].is_function == 1);
+  assert(strcmp(gen_fwd.module.externs[0].name, "send_byte") == 0);
+  assert(gen_fwd.module.externs[0].params.count == 1);
+  assert(gen_fwd.module.externs[1].is_function == 0);
+  assert(strcmp(gen_fwd.module.externs[1].name, "counter") == 0);
+
+  // round-trip: write then read back
+  const char *fwd_tmp = "/tmp/ir_smoke_fwd_roundtrip.o";
+  assert(ir_write(&gen_fwd, fwd_tmp));
+
+  ir_gen_free(&gen_fwd);
+  analyzer_free(&analyzer_fwd);
+  parser_free(&parser_fwd);
+  free_tokens(tokens, num_tokens);
+
+  ir_gen_t gen_fwd_rt = {0};
+  assert(ir_read(&gen_fwd_rt, fwd_tmp));
+
+  assert(gen_fwd_rt.module.extern_count == 2);
+  assert(gen_fwd_rt.module.externs[0].is_function == 1);
+  assert(strcmp(gen_fwd_rt.module.externs[0].name, "send_byte") == 0);
+  assert(gen_fwd_rt.module.externs[0].params.count == 1);
+  assert(strcmp(gen_fwd_rt.module.externs[0].params.items[0].name, "b") == 0);
+  assert(gen_fwd_rt.module.externs[0].type.kind == TYPE_VOID);
+  assert(gen_fwd_rt.module.externs[1].is_function == 0);
+  assert(strcmp(gen_fwd_rt.module.externs[1].name, "counter") == 0);
+  assert(gen_fwd_rt.module.externs[1].type.kind == TYPE_U8);
+
+  ir_gen_free(&gen_fwd_rt);
+  remove(fwd_tmp);
+
   // --- number literal resolved_type coverage (issue 4) ---
   static const char *neglit_src =
     "fn main() -> void {\n"

@@ -1,0 +1,6 @@
+[1;37manalyzer_bad_fwd_decl_redecl.c02[0m:[1;37m2[0m:[1;37m4: [1;31merror: [0mredeclaration of 'send_byte' in this scope
+[1;34m2 |[0m fn send_byte(u8 b) -> void {}
+[1;34m  |[1;31m    ^~~~~~~~~[0m
+[31m
+Semantic analysis failed with [1;31m1[0m[31m errors.
+[0m

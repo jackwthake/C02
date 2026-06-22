@@ -74,6 +74,7 @@ static const char *node_kind_name(node_kind_t kind) {
     case NODE_FUNCTION:     return "FunctionDecl";
     case NODE_REG_DECL:     return "RegDecl";
     case NODE_GLOBAL_VAR:   return "GlobalVarDecl";
+    case NODE_FWD_DECL:     return "ForwardDecl";
     case NODE_STRUCT_DECL:  return "StructDecl";
     case NODE_STRUCT_INIT:  return "StructInitExpr";
     case NODE_FIELD_ACCESS: return "FieldAccess";
@@ -174,6 +175,22 @@ static void print_ast_label(node_t *node) {
     case NODE_GLOBAL_VAR:
       printf("%s %s : ", node_kind_name(node->kind), node->global_var.name ? node->global_var.name : "<anon>");
       print_type_suffix(node->global_var.type);
+      break;
+    case NODE_FWD_DECL:
+      if (node->fwd_decl.is_function) {
+        printf("%s fn %s(", node_kind_name(node->kind), node->fwd_decl.name ? node->fwd_decl.name : "<anon>");
+        for (unsigned i = 0; i < node->fwd_decl.params.count; ++i) {
+          param_t *param = &node->fwd_decl.params.items[i];
+          if (i > 0) printf(", ");
+          print_type_suffix(param->type);
+          printf(" %s", param->name ? param->name : "<anon>");
+        }
+        printf(") -> ");
+        print_type_suffix(node->fwd_decl.type);
+      } else {
+        printf("%s %s : ", node_kind_name(node->kind), node->fwd_decl.name ? node->fwd_decl.name : "<anon>");
+        print_type_suffix(node->fwd_decl.type);
+      }
       break;
     case NODE_STRUCT_DECL:
       printf("%s %s {", node_kind_name(node->kind), node->struct_decl.name ? node->struct_decl.name : "<anon>");
@@ -369,6 +386,9 @@ static void print_ast_(node_t *node, int is_last, const char *prefix) {
       if (node->global_var.initialiser) {
         print_ast_(node->global_var.initialiser, 1, child_prefix);
       }
+      break;
+
+    case NODE_FWD_DECL:
       break;
 
     case NODE_PROGRAM:

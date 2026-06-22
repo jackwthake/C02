@@ -59,6 +59,7 @@ typedef enum {
   NODE_FUNCTION,
   NODE_REG_DECL,
   NODE_GLOBAL_VAR,
+  NODE_FWD_DECL,        // decl fn name(...) -> type;  OR  decl type name;
 
   NODE_STRUCT_DECL,
   NODE_FIELD_ACCESS,
@@ -207,6 +208,13 @@ struct node_t {
       char   *name;
       node_t *initialiser;                // NULL if absent
     } global_var;                         // NODE_GLOBAL_VAR
+
+    struct {
+      int is_function;
+      char *name;
+      type_t type;                          // return type (fn) or variable type (global)
+      param_list_t params;                  // only meaningful when is_function
+    } fwd_decl;                           // NODE_FWD_DECL
 
     struct {
       char *name;

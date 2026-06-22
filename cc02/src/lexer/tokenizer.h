@@ -4,6 +4,7 @@
 #define TOKEN_TYPES                            \
   /* token_t          printable     has_val */ \
   X(t_invalid,        "INVALID"    , 0)        \
+  X(Kw_fwd_decl,      "decl"       , 0)        \
   X(Kw_fn,            "fn"         , 0)        \
   X(Kw_reg,           "reg"        , 0)        \
   X(Kw_return,        "return"     , 0)        \

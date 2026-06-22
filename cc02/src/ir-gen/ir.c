@@ -40,6 +40,15 @@ static void grow_structs(ir_gen_t *gen) {
 }
 
 
+static void grow_externs(ir_gen_t *gen) {
+  unsigned new_cap = gen->extern_capacity * 2;
+  ir_extern_t *grown = arena_alloc(&gen->arena, sizeof(ir_extern_t) * new_cap);
+  memcpy(grown, gen->module.externs, sizeof(ir_extern_t) * gen->module.extern_count);
+  gen->module.externs = grown;
+  gen->extern_capacity = new_cap;
+}
+
+
 int ir_gen_init(ir_gen_t *gen) {
   if (!arena_init(&gen->arena, IR_ARENA_CHUNK_SIZE))
     return 0;
@@ -60,6 +69,10 @@ int ir_gen_init(ir_gen_t *gen) {
 
   gen->module.cfgs = arena_alloc(&gen->arena, sizeof(cfg_t) * gen->cfg_capacity);
   gen->module.cfg_count = 0;
+
+  gen->extern_capacity = INITIAL_CAPACITY;
+  gen->module.externs = arena_alloc(&gen->arena, sizeof(ir_extern_t) * gen->extern_capacity);
+  gen->module.extern_count = 0;
 
   return 1;
 }
@@ -173,6 +186,18 @@ static void grow_cfgs(ir_gen_t *gen) {
 }
 
 
+static void collect_extern(ir_gen_t *gen, node_t *node) {
+  if (gen->module.extern_count == gen->extern_capacity)
+    grow_externs(gen);
+
+  ir_extern_t *e = &gen->module.externs[gen->module.extern_count++];
+  e->is_function = node->fwd_decl.is_function;
+  e->name = node->fwd_decl.name;
+  e->type = node->fwd_decl.type;
+  e->params = node->fwd_decl.params;
+}
+
+
 static void collect_declarations(ir_gen_t *gen, ast_t ast) {
   for (unsigned i = 0; i < ast->program.count; i++) {
     node_t *node = ast->program.items[i];
@@ -180,6 +205,7 @@ static void collect_declarations(ir_gen_t *gen, ast_t ast) {
       case NODE_REG_DECL:    collect_reg(gen, node);    break;
       case NODE_GLOBAL_VAR:  collect_global(gen, node); break;
       case NODE_STRUCT_DECL: collect_struct(gen, node); break;
+      case NODE_FWD_DECL:    collect_extern(gen, node); break;
       default: break;
     }
   }

@@ -649,10 +649,34 @@ static void pass1_register_globals(analyzer_t *a, ast_t program) {
         .fields = decl->struct_decl.fields
       )
 
-      REGISTER_SYMBOL(NODE_FUNCTION, function, SYMBOL_FUNCTION, function, 
+      REGISTER_SYMBOL(NODE_FUNCTION, function, SYMBOL_FUNCTION, function,
         .params = decl->function.params,
         .return_type = decl->function.return_type
       )
+
+      case NODE_FWD_DECL: {
+        if (decl->fwd_decl.is_function) {
+          sym = (symbol_t){
+            .kind = SYMBOL_FUNCTION,
+            .name = decl->fwd_decl.name,
+            .function = {
+              .params = decl->fwd_decl.params,
+              .return_type = decl->fwd_decl.type,
+            }
+          };
+        } else {
+          sym = (symbol_t){
+            .kind = SYMBOL_VARIABLE,
+            .name = decl->fwd_decl.name,
+            .variable = {
+              .type = decl->fwd_decl.type,
+              .is_register = 0,
+              .addr = 0,
+            }
+          };
+        }
+        break;
+      }
 
       default: assert(0 && "Unreachable!");
     }
@@ -733,6 +757,20 @@ static void validate_toplevel_types(analyzer_t *a, ast_t program) {
       case NODE_FUNCTION:
         // return type may legitimately be void; params are validated in pass2
         validate_decl_type(a, decl->function.return_type, decl->loc, decl->function.name, 1);
+        break;
+      case NODE_FWD_DECL:
+        if (decl->fwd_decl.is_function) {
+          validate_decl_type(a, decl->fwd_decl.type, decl->loc, decl->fwd_decl.name, 1);
+          for (unsigned j = 0; j < decl->fwd_decl.params.count; ++j) {
+            validate_decl_type(a, decl->fwd_decl.params.items[j].type,
+                               decl->loc, decl->fwd_decl.params.items[j].name, 0);
+          }
+        } else {
+          if (!validate_decl_type(a, decl->fwd_decl.type, decl->loc, decl->fwd_decl.name, 0)) {
+            symbol_t *s = analyzer_lookup(a, decl->fwd_decl.name);
+            if (s && s->kind == SYMBOL_VARIABLE) s->variable.type = TYPE_ERROR;
+          }
+        }
         break;
       default:
         break;

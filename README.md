@@ -112,7 +112,7 @@ All generated error messages are presented in a clang like format with concise s
 
 ### Top-Level Declarations
 
-A `.c02` file is a sequence of top-level declarations: functions, `reg` declarations, `struct` declarations, and global variables.
+A `.c02` file is a sequence of top-level declarations: functions, `reg` declarations, `struct` declarations, global variables, and forward declarations (`decl`).
 
 #### Functions
 
@@ -156,6 +156,19 @@ Point origin;
 
 - Same form as a local variable declaration: `type name;` or `type name = expr;`.
 - Struct-typed globals are supported (`Point p;`).
+
+#### Forward Declarations (`decl`)
+
+Forward declarations introduce the signature of a function or global defined in another translation unit, allowing cross-file references with incremental compilation (`-c`).
+
+```c
+decl fn send_byte(u8 b) -> void;
+decl u8 counter;
+```
+
+- A `decl` for a function uses the same signature syntax as `fn` but has no body.
+- A `decl` for a global is `decl type name;` with no initialiser.
+- Redeclaring a name that already exists in the same file is an error.
 
 ### Statements
 
