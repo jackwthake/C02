@@ -754,9 +754,7 @@ static void lower_function(ir_gen_t *gen, node_t *node) {
 }
 
 
-int ir_gen_run(ir_gen_t *gen, ast_t ast, analyzer_t *analyzer) {
-  (void)analyzer;
-
+int ir_gen_run(ir_gen_t *gen, ast_t ast) {
   collect_declarations(gen, ast);
 
   // pass 2: lower each function into a CFG

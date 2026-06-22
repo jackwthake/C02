@@ -274,7 +274,7 @@ typedef struct {
 int  ir_gen_init(ir_gen_t *gen);
 void ir_gen_free(ir_gen_t *gen);
 
-int  ir_gen_run(ir_gen_t *gen, ast_t ast, analyzer_t *analyzer);
+int  ir_gen_run(ir_gen_t *gen, ast_t ast);
 
 void ir_gen_print(ir_gen_t *gen);
 

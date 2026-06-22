@@ -7,6 +7,7 @@
 #define PARSER_ERROR_RET_CODE 4
 #define ANALYZER_ERROR_RET_CODE 5
 #define IR_ERROR_RET_CODE 6
+#define CODE_GEN_ERROR_RET_CODE 7
 
 typedef struct {
   int dump_tokens;

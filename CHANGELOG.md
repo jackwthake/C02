@@ -9,6 +9,19 @@ releases are reserved for bug fixes only.
 
 ## [Unreleased]
 
+- **Driver refactor** — extracted the compilation pipeline from `main.c` into
+  `driver.c`/`driver.h`. Each stage (file loading, frontend, IR, codegen) is
+  now a separate function chained by return-code checks, replacing the previous
+  `goto finish` control flow. `main.c` is now just CLI parsing and the timing
+  report.
+- **Code generation stub** — added `generate_rom()` entry point in
+  `src/code-gen/generator.c` with `emitter_t` struct for flat ROM buffer
+  output. Dump flags (`--ast-dump`, `--symbol-dump`, `--ir-dump`) now skip
+  codegen since they are for inspecting compiler internals, not building
+  binaries.
+
+## [0.2.7] 2026-06-22
+
 - **Forward declarations (`decl`)** — added `decl fn name(...) -> type;` and
   `decl type name;` syntax for declaring functions and globals defined in other
   translation units. Forward declarations are registered in the symbol table

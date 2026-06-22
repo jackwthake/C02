@@ -38,7 +38,7 @@ int main(void) {
 
   ir_gen_t gen = {0};
   assert(ir_gen_init(&gen));
-  assert(ir_gen_run(&gen, ast, &analyzer));
+  assert(ir_gen_run(&gen, ast));
 
   // check declarations were collected
   assert(gen.module.reg_count == 1);
@@ -110,7 +110,7 @@ int main(void) {
 
   ir_gen_t gen2 = {0};
   assert(ir_gen_init(&gen2));
-  assert(ir_gen_run(&gen2, ast, &analyzer2));
+  assert(ir_gen_run(&gen2, ast));
 
   assert(gen2.module.struct_count == 1);
   assert(gen2.module.cfg_count == 2);
@@ -163,7 +163,7 @@ int main(void) {
 
   ir_gen_t gen3 = {0};
   assert(ir_gen_init(&gen3));
-  assert(ir_gen_run(&gen3, ast, &analyzer3));
+  assert(ir_gen_run(&gen3, ast));
 
   assert(gen3.module.reg_count == 1);
   assert(gen3.module.cfg_count == 1);
@@ -254,7 +254,7 @@ int main(void) {
 
   ir_gen_t gen5 = {0};
   assert(ir_gen_init(&gen5));
-  assert(ir_gen_run(&gen5, ast, &analyzer5));
+  assert(ir_gen_run(&gen5, ast));
 
   cfg_t *regread_cfg = &gen5.module.cfgs[0];
   // x = PORTA → TAC_LOAD from 0x6001 into a temp, then TAC_COPY temp → x
@@ -292,7 +292,7 @@ int main(void) {
 
   ir_gen_t gen6 = {0};
   assert(ir_gen_init(&gen6));
-  assert(ir_gen_run(&gen6, ast, &analyzer6));
+  assert(ir_gen_run(&gen6, ast));
 
   cfg_t *sc_cfg = &gen6.module.cfgs[0];
   // a = 0, b = 1, then short-circuit: NOT, COND_JUMP (b eval guarded)
@@ -342,7 +342,7 @@ int main(void) {
 
   ir_gen_t gen_fwd = {0};
   assert(ir_gen_init(&gen_fwd));
-  assert(ir_gen_run(&gen_fwd, ast, &analyzer_fwd));
+  assert(ir_gen_run(&gen_fwd, ast));
 
   assert(gen_fwd.module.extern_count == 2);
   assert(gen_fwd.module.extern_count == 2);
@@ -400,7 +400,7 @@ int main(void) {
 
   ir_gen_t gen7 = {0};
   assert(ir_gen_init(&gen7));
-  assert(ir_gen_run(&gen7, ast, &analyzer7));
+  assert(ir_gen_run(&gen7, ast));
 
   cfg_t *neglit_cfg = &gen7.module.cfgs[0];
   // i8 x = -5 → TAC_NEG on a literal 5 typed i8, then TAC_COPY

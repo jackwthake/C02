@@ -10,6 +10,7 @@
 #include "parser.h"
 #include "analyzer.h"
 #include "ir.h"
+#include "generator.h"
 
 
 typedef struct {
@@ -151,7 +152,7 @@ static int run_ir(params_t *params, compiler_t *c, timing_t *t) {
       t->ir = get_time_ms() - start;
       return IR_ERROR_RET_CODE;
     }
-    if (!ir_gen_run(&c->ir_gen, c->ast, &c->analyzer)) {
+    if (!ir_gen_run(&c->ir_gen, c->ast)) {
       fprintf(stderr, RED "IR generation failed.\n" RESET);
       t->ir = get_time_ms() - start;
       return IR_ERROR_RET_CODE;
@@ -173,6 +174,38 @@ static int run_ir(params_t *params, compiler_t *c, timing_t *t) {
 }
 
 
+static int run_codegen(params_t *params, compiler_t *c, timing_t *t) {
+  double start = get_time_ms();
+  int status = 0;
+
+  size_t rom_size;
+  uint8_t *rom = generate_rom(&c->ir_gen, &rom_size);
+  if (!rom) {
+    fprintf(stderr, RED "Code generation failed.\n" RESET);
+    t->codegen = get_time_ms() - start;
+    return CODE_GEN_ERROR_RET_CODE;
+  }
+
+  const char *out = params->output ? params->output : "a.bin";
+  FILE *file = fopen(out, "wb");
+  if (!file) {
+    fprintf(stderr, "Failed to open output file %s\n", out);
+    status = CODE_GEN_ERROR_RET_CODE;
+  } else {
+    size_t written = fwrite(rom, 1, rom_size, file);
+    fclose(file);
+    if (written != rom_size) {
+      fprintf(stderr, "Failed to write output file %s\n", out);
+      status = CODE_GEN_ERROR_RET_CODE;
+    }
+  }
+
+  free(rom);
+  t->codegen = get_time_ms() - start;
+  return status;
+}
+
+
 int run_compiler(params_t *params, timing_t *timing) {
   compiler_t c = {0};
 
@@ -184,11 +217,10 @@ int run_compiler(params_t *params, timing_t *timing) {
   if (status == 0 && !params->syntax_only)
     status = run_ir(params, &c, timing);
 
-  if (status == 0 && !params->syntax_only && !params->incremental_build) {
-    double start = get_time_ms();
-    /* codegen goes here */
-    timing->codegen = get_time_ms() - start;
-  }
+  int any_dump = params->dump_tokens || params->dump_ast
+               || params->dump_symbols || params->dump_ir;
+  if (status == 0 && !params->syntax_only && !params->incremental_build && !any_dump)
+    status = run_codegen(params, &c, timing);
 
   double cleanup_start = get_time_ms();
   compiler_cleanup(&c);

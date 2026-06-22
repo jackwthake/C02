@@ -10,9 +10,9 @@ CFLAGS = -Wall -Wextra -O3 \
          -Wno-sign-conversion \
          -Werror \
          -Wno-format-extra-args \
-         -Isrc/common -Isrc/lexer -Isrc/parser -Isrc/analysis -Isrc/ir-gen
+         -Isrc/common -Isrc/lexer -Isrc/parser -Isrc/analysis -Isrc/ir-gen -Isrc/code-gen
 
-SRC_DIRS = src src/common src/lexer src/parser src/analysis src/ir-gen
+SRC_DIRS = src src/common src/lexer src/parser src/analysis src/ir-gen src/code-gen
 SRCS = $(foreach dir,$(SRC_DIRS),$(wildcard $(dir)/*.c))
 OBJS = $(addprefix $(BUILD_DIR)/,$(notdir $(SRCS:.c=.o)))
 
