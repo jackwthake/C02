@@ -10,7 +10,7 @@ CFLAGS = -Wall -Wextra -ggdb \
          -Wno-sign-conversion \
          -Werror \
          -Wno-format-extra-args \
-         -I$(SRC_DIR)/common -I$(SRC_DIR)/lexer -I$(SRC_DIR)/parser -I$(SRC_DIR)/analysis
+         -I$(SRC_DIR)/common -I$(SRC_DIR)/lexer -I$(SRC_DIR)/parser -I$(SRC_DIR)/analysis -I$(SRC_DIR)/ir-gen
 
 SRCS = $(wildcard *.c)
 BINS = $(patsubst %.c,$(BIN_DIR)/%,$(SRCS))

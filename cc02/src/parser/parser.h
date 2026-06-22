@@ -116,7 +116,10 @@ struct node_t {
     // --- expressions ---
     long   number;                        // NODE_NUMBER
     char  *value;                         // NODE_STRING
-    char  *identifier;                    // NODE_IDENTIFIER
+    struct {
+      char  *name;
+      type_t resolved_type;               // stamped by the analyzer
+    } identifier;                         // NODE_IDENTIFIER
 
     struct {
       node_t *left;
@@ -131,7 +134,8 @@ struct node_t {
 
     struct {
       char       *name;
-      node_list_t args; 
+      node_list_t args;
+      type_t      resolved_return_type;   // stamped by the analyzer
     } call;                               // NODE_CALL
 
     node_t *deref_target;                 // NODE_DEREF
@@ -209,6 +213,7 @@ struct node_t {
     struct {
       node_t *base;     // the expression being accessed (identifier, call result, another field access, etc.)
       char   *field;    // field name token text
+      type_t  resolved_type;  // stamped by the analyzer
     } field_access;
 
     // --- root ---

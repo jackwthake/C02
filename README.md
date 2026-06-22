@@ -20,7 +20,8 @@
 1. **Source Tracking Tokenizer:** Maps characters to discrete tokens while maintaining source locations (file, line, column) for robust compilation errors.
 2. **Recursive Descent Parser:** Transforms the token stream into a structured AST, treating hardware registers and standard controls as first-class grammatical constructs.
 3. **Lexically Scoped Semantic Analyzer:** Two-pass validation engine over the AST. Pass 1 registers all top-level declarations (functions, structs, registers, globals) into the global symbol table. Pass 2 walks function bodies with a scoped symbol table, checking undeclared identifiers, type mismatches, argument counts/types, struct field access, lvalue validity, and return-type consistency. Invalid declarations are poisoned to prevent cascading diagnostics.
-4. **Optimized Code Generator:** Generates valid 65C02 binaries. It avoids slow stack execution by mapping parameters and expression scratchpads directly onto a high-performance zero-page register design.
+4. **IR Generator:** Lowers the analysed AST into a self-contained three-address code (TAC) intermediate representation. The IR module contains struct layouts with computed field offsets, global/register definitions with hardware addresses baked in, and one flat instruction stream per function - codegen can emit target code from the IR alone, without consulting the AST or symbol table. Supports incremental compilation: `-c` serializes the IR to a `.o` file that can be loaded back to skip the frontend entirely.
+5. **Optimized Code Generator:** Generates valid 65C02 binaries. It avoids slow stack execution by mapping parameters and expression scratchpads directly onto a high-performance zero-page register design.
 > To be implemented!!
 
 #### c02-objdump Disassembler
@@ -29,14 +30,14 @@
 
 ## Current Status & Limitations
 
-C02 is under active, early development. The **complete frontend** - tokenizer, parser, and semantic analyzer - is functional and tested, but nothing downstream of analysis exists yet:
+C02 is under active, early development. The **complete frontend** (tokenizer, parser, semantic analyzer) and **IR generation** are functional and tested, but code generation is not yet implemented:
 
-- **Code generation is not implemented.** `cc02` will not currently produce a working 65C02 binary. The zero-page register layout below is a design target for the code generator, not yet a reality.
+- **Code generation is not implemented.** `cc02` will not currently produce a working 65C02 binary. The IR is complete (use `--ir-dump` to inspect it), but the final lowering to 6502 machine code is the next milestone. The zero-page register layout below is a design target for the code generator, not yet a reality.
 - **No arrays.** There's no array type or subscript syntax (`a[i]`) yet. Strings work as `u8*` and pointer arithmetic covers some of the same ground in the meantime, but fixed-size arrays with bounds/length tracking are unimplemented.
 - **Struct field access through a pointer is auto-dereferenced** - there's no `->` operator; `.` is used uniformly and the analyzer resolves single-level pointer indirection automatically (e.g. `ptr.field` where `ptr` is a `Struct*`).
 - **Missing-return detection is shallow.** A non-void function with no `return` at the end is flagged, but the analyzer does not perform full path-coverage analysis - a one-armed `if` that falls through, or an `if`/`else` where only some branches return, is not caught.
 
-If you're exploring the codebase: the parser ([parser.c](cc02/src/parser/parser.c)) and the analyzer ([analyzer.c](cc02/src/analysis/analyzer.c)) are the most complete parts of the project. Issues and PRs around parser bugs, grammar gaps, or analyzer edge cases are welcome; IR / codegen is actively being worked on next.
+If you're exploring the codebase: the parser ([parser.c](cc02/src/parser/parser.c)), the analyzer ([analyzer.c](cc02/src/analysis/analyzer.c)), and the IR generator ([ir.c](cc02/src/ir-gen/ir.c)) are the most complete parts of the project. Issues and PRs around parser bugs, grammar gaps, analyzer edge cases, or IR lowering are welcome; codegen is actively being worked on next.
 
 ## Toolchain Usage
 
@@ -61,22 +62,23 @@ cc02 [OPTIONS] <FILE>
 
 #### Options
 
-- `<FILE>`:               The input source file (.c02).
+- `<FILE>`:               Input file (`.c02` source or `.o`/`.out` IR object)
 - `-h, --help`:           Show help message
+- `-c`:                   Incremental compile - emit a `.o` IR object file instead of a final binary
+- `-o, --output`:         Specify output file
 - `--token-dump`:         Dump the token list after tokenization
 - `--ast-dump`:           Dump the AST after parsing
 - `--symbol-dump`:        Dump the global symbol table after analysis
+- `--ir-dump`:            Dump the IR (TAC instructions) after lowering
 - `--syntax-check-only`:  Stop after syntax and semantic checks
-- `--time-report`:        Prints a report showing how long each stage of compilation took
-- `-o, --output`:         Specify output file
+- `--time-report`:        Print a report showing how long each stage of compilation took
 
-**Compile with:**
+**Incremental compilation:**
 
 ```bash
-cc02 hello_world.c02 -o hello_world.bin
+cc02 -c hello_world.c02 -o hello_world.o   # compile to IR object
+cc02 --ir-dump hello_world.o                # inspect the IR from the object file
 ```
-
-This will produce a binary with the above hello world program in `hello_world.bin`
 
 ### Pretty Error Messages
 
@@ -88,7 +90,7 @@ All generated error messages are presented in a clang like format with concise s
 
 ## Language Specifications
 
-> The grammar below reflects what the tokenizer and parser currently accept. Semantic analysis validates the full AST after parsing - see [Getting Started](#getting-started-key-features--architecture) above. Code generation is not implemented yet.
+> The grammar below reflects what the tokenizer and parser currently accept. Semantic analysis validates the full AST after parsing, and IR generation lowers it to TAC - see [Getting Started](#getting-started-key-features--architecture) above. Code generation is not implemented yet.
 
 ### Basic Types
 

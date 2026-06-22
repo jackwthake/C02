@@ -11,19 +11,25 @@
 #include "tokenizer.h"
 #include "parser.h"
 #include "analyzer.h"
+#include "ir.h"
 
 #define PARAM_ERROR_RET_CODE 1
 #define FILE_LOAD_ERROR_RET_CODE 2
 #define TOKEN_ERROR_RET_CODE 3
 #define PARSER_ERROR_RET_CODE 4
 #define ANALYZER_ERROR_RET_CODE 5
+#define IR_ERROR_RET_CODE 6
 
 typedef struct params_t {
   int dump_tokens;
   int dump_ast;
   int dump_symbols;
+  int dump_ir;
   int syntax_only;
   int time_report;
+  int incremental_build;
+
+  int is_input_bin;
   char *output;
   char *input;
 } params_t;
@@ -36,9 +42,11 @@ static void print_help(const char *prog_name) {
   fprintf(stderr, "  --token-dump         Dump the token list after tokenization\n");
   fprintf(stderr, "  --ast-dump           Dump the AST using print_ast after parsing\n");
   fprintf(stderr, "  --symbol-dump        Dump the Symbol Table after analysis\n");
+  fprintf(stderr, "  --ir-dump            Dump the IR after lowering\n");
   fprintf(stderr, "  --syntax-check-only  Stop after syntax and semantic checks\n");
   fprintf(stderr, "  --time-report        Prints a report showing how long each stage of compilation took\n");
-  fprintf(stderr, "  -o, --output         Specify output file (not implemented yet)\n");
+  fprintf(stderr, "  -c,                  Incremental compile, generate object file\n");
+  fprintf(stderr, "  -o, --output         Specify output file\n");
 }
 
 
@@ -48,6 +56,7 @@ static int read_params(int argc, char * const *argv, params_t *params) {
     {"token-dump", no_argument, 0, 1},
     {"ast-dump", no_argument, 0, 2},
     {"symbol-dump", no_argument, 0, 3},
+    {"ir-dump", no_argument, 0, 6},
     {"syntax-check-only", no_argument, 0, 4},
     {"time-report", no_argument, 0, 5},
     {"output", required_argument, 0, 'o'},
@@ -57,13 +66,16 @@ static int read_params(int argc, char * const *argv, params_t *params) {
   int opt;
   int option_index = 0;
 
-  while ((opt = getopt_long(argc, argv, "ho:", long_options, &option_index)) != -1) {
+  while ((opt = getopt_long(argc, argv, "ho:c", long_options, &option_index)) != -1) {
     switch (opt) {
       case 'h':
         print_help(argv[0]);
         return 2;
       case 'o':
         params->output = optarg;
+        break;
+      case 'c':
+        params->incremental_build = 1;
         break;
       case 1:
         params->dump_tokens = 1;
@@ -76,6 +88,9 @@ static int read_params(int argc, char * const *argv, params_t *params) {
         break;
       case 4:
         params->syntax_only = 1;
+        break;
+      case 6:
+        params->dump_ir = 1;
         break;
       case 5:
         params->time_report = 1;
@@ -91,9 +106,13 @@ static int read_params(int argc, char * const *argv, params_t *params) {
 
     // ensure file ends in .c02
     const char *ext = strrchr(params->input, '.');
-    if (!ext || strcmp(ext, ".c02") != 0) {
+    if (strcmp(ext, ".o") == 0 || strcmp(ext, ".out") == 0) {
+      params->is_input_bin = 1;
+    } else if (!ext || strcmp(ext, ".c02") != 0) {
       fprintf(stderr, "Input file must have .c02 extension\n");
       return -1;
+    } else { // c02 source
+      params->is_input_bin = 0;
     }
   } else {
     fprintf(stderr, "Bad options: use %s -h to display help message\n", argv[0]);
@@ -101,12 +120,27 @@ static int read_params(int argc, char * const *argv, params_t *params) {
     return -1;
   }
 
+  if (params->incremental_build && params->syntax_only) {
+    params->incremental_build = 0;
+    fprintf(stderr, "Warning: argument '-c' ignored because '--syntax-check-only' was specified\n");
+  }
+
+  if (params->output && params->syntax_only) {
+    fprintf(stderr, "Warning: argument '-o', '--output' ignored because '--syntax-check-only' was specified\n");
+  }
+
   return 0;
 }
 
 
-static long load_file(const char *file_path, char **out_content) {
-  FILE *f = fopen(file_path, "r");
+static long load_file(const char *file_path, char **out_content, unsigned is_bin) {
+  FILE *f; 
+  if (is_bin) {
+    f = fopen(file_path, "rb");
+  } else {
+    f = fopen(file_path, "r");
+  }
+
   if (!f) {
     perror("Failed to open input file");
     return -1;
@@ -179,21 +213,24 @@ int main(int argc, char * const *argv) {
   /* Timing variables */
   double t_total_start = get_time_ms();
   double t_step_start;
-  double t_load = 0.0, t_lex = 0.0, t_parse = 0.0, t_sema = 0.0, t_codegen = 0.0, t_cleanup = 0.0;
+  double t_load = 0.0, t_lex = 0.0, t_parse = 0.0, t_sema = 0.0, t_ir = 0.0, t_codegen = 0.0, t_cleanup = 0.0;
 
   char *source_code = NULL;
   token_t *tokens = NULL;
   unsigned num_tokens = 0;
   parser_t parser = {0};
   analyzer_t analyzer = {0};
+  ir_gen_t ir_gen = {0};
 
   /* Load the input file */
   t_step_start = get_time_ms();
   long fsize;
-  if ((fsize = load_file(params.input, &source_code)) < 0) {
+  if ((fsize = load_file(params.input, &source_code, params.is_input_bin)) < 0) {
     status = FILE_LOAD_ERROR_RET_CODE; goto finish;
   }
   t_load = get_time_ms() - t_step_start;
+
+  if (params.is_input_bin) goto ir_start;
 
   /* tokenize the source code */
   t_step_start = get_time_ms();
@@ -253,6 +290,49 @@ int main(int argc, char * const *argv) {
     goto finish;
   }
 
+  /* IR generation */
+ir_start:
+  t_step_start = get_time_ms();
+  
+  if (!params.is_input_bin) {
+    if (!ir_gen_init(&ir_gen)) {
+      fprintf(stderr, "IR generator allocation failed.\n");
+      status = IR_ERROR_RET_CODE; goto finish;
+    }
+    
+    if (!ir_gen_run(&ir_gen, ast, &analyzer)) {
+      fprintf(stderr, RED "IR generation failed.\n" RESET);
+      status = IR_ERROR_RET_CODE; goto finish;
+    }
+    
+    
+    if (params.incremental_build) {
+      const char *out = params.output ? params.output : "a.o";
+      if (!ir_write(&ir_gen, out)) {
+        fprintf(stderr, "Failed to write IR to %s\n", out);
+        status = IR_ERROR_RET_CODE;
+      }
+
+      if (params.dump_ir) {
+        ir_gen_print(&ir_gen);
+      }
+
+      t_ir = get_time_ms() - t_step_start;
+      goto finish;
+    }
+  } else {
+    if (!ir_read(&ir_gen, params.input)) {
+      fprintf(stderr, "Failed to read IR from %s\n", params.input);
+      status = IR_ERROR_RET_CODE; goto finish;
+    }
+  }
+  
+  t_ir = get_time_ms() - t_step_start;
+  
+  if (params.dump_ir) {
+    ir_gen_print(&ir_gen);
+  }
+
   /* Code generation */
   t_step_start = get_time_ms();
 
@@ -264,6 +344,7 @@ finish:
   if (tokens) free_tokens(tokens, num_tokens);
   parser_free(&parser);
   analyzer_free(&analyzer);
+  ir_gen_free(&ir_gen);
   t_cleanup = get_time_ms() - t_step_start;
 
   /* Print Timing Report if flag was passed */
@@ -271,10 +352,15 @@ finish:
     double t_total = get_time_ms() - t_total_start;
     printf("\n=== Compilation Time Report ===\n");
     printf("File Load:      %8.3f ms\n", t_load);
-    printf("Tokenization:   %8.3f ms\n", t_lex);
-    printf("Parsing:        %8.3f ms\n", t_parse);
-    printf("Sem. Analysis:  %8.3f ms\n", t_sema);
+
+    if (!params.is_input_bin) {
+      printf("Tokenization:   %8.3f ms\n", t_lex);
+      printf("Parsing:        %8.3f ms\n", t_parse);
+      printf("Sem. Analysis:  %8.3f ms\n", t_sema);
+    }
     
+    printf("IR Generation:  %8.3f ms\n", t_ir);
+
     if (params.syntax_only) {
       printf("Code Gen:       %8s\n", "Skipped");
     } else {
