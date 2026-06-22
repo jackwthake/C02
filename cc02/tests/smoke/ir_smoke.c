@@ -184,10 +184,50 @@ int main(void) {
   assert(main_cfg->entry->instrs[4].op == TAC_NOT);
   assert(main_cfg->entry->instrs[5].op == TAC_COND_JUMP);
 
+  // --- serialization round-trip ---
+  // Write gen3 to a temp file, read it back, and verify the module
+  // is identical. This catches dangling-pointer bugs because the
+  // token array is freed before reading — if any string wasn't
+  // properly serialized, the loaded module will have garbage.
+  const char *tmp_path = "/tmp/ir_smoke_roundtrip.o";
+  assert(ir_write(&gen3, tmp_path));
+
+  // save the instruction count before freeing gen3's arena
+  unsigned expected_instr_count = main_cfg->entry->instr_count;
+
   ir_gen_free(&gen3);
   analyzer_free(&analyzer3);
   parser_free(&parser3);
   free_tokens(tokens, num_tokens);
+
+  ir_gen_t gen4 = {0};
+  assert(ir_read(&gen4, tmp_path));
+
+  // declarations survived the round-trip
+  assert(gen4.module.reg_count == 1);
+  assert(gen4.module.regs[0].addr == 0x6001);
+  assert(strcmp(gen4.module.regs[0].name, "PORTA") == 0);
+  assert(gen4.module.cfg_count == 1);
+
+  // function metadata survived
+  cfg_t *rt_cfg = &gen4.module.cfgs[0];
+  assert(strcmp(rt_cfg->name, "main") == 0);
+  assert(rt_cfg->return_type.kind == TYPE_VOID);
+
+  // instruction stream survived
+  assert(rt_cfg->entry->instr_count == expected_instr_count);
+  assert(rt_cfg->entry->instrs[0].op == TAC_COPY);
+  assert(rt_cfg->entry->instrs[2].op == TAC_STORE);
+  assert(rt_cfg->entry->instrs[2].dst.int_val == 0x6001);
+  assert(rt_cfg->entry->instrs[3].op == TAC_EQ);
+  assert(rt_cfg->entry->instrs[5].op == TAC_COND_JUMP);
+
+  // string operands survived (not dangling pointers)
+  assert(rt_cfg->entry->instrs[0].dst.kind == OPERAND_VAR);
+  assert(strcmp(rt_cfg->entry->instrs[0].dst.name, "x") == 0);
+
+  ir_gen_free(&gen4);
+  remove(tmp_path);
 
   printf("all ir smoke tests passed\n");
   return 0;

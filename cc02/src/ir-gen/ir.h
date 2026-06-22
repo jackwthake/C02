@@ -262,4 +262,7 @@ int  ir_gen_run(ir_gen_t *gen, ast_t ast, analyzer_t *analyzer);
 
 void ir_gen_print(ir_gen_t *gen);
 
+int  ir_write(ir_gen_t *gen, const char *path);
+int  ir_read(ir_gen_t *gen, const char *path);
+
 #endif // __IR_H__

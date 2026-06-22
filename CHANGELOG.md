@@ -38,10 +38,21 @@ releases are reserved for bug fixes only.
     jumps for control flow).
   - IR generation timing integrated into `--time-report`.
   - Test harness properly generates goldens for ir test files.
+- **Incremental compilation** (`-c` flag) — compiles a `.c02` source file
+  through the full frontend and IR generation, then serializes the
+  `ir_module_t` to a binary `.o` file. The `.o` can be loaded back with
+  `cc02 file.o` to skip the frontend entirely and resume from the IR.
+  - Binary format uses length-prefixed strings, a magic header (`C02I` v1),
+    and allocates all data from the arena on read — no dangling pointers,
+    `ir_gen_free` works uniformly regardless of whether the IR came from
+    source or a `.o` file.
+  - `-o` flag specifies the output path (defaults to `a.o`).
 - Smoke tests for IR generation covering the full pipeline (tokenize →
   parse → analyse → IR gen → free) with assertion coverage for
-  declarations, CFG creation, expression lowering, and statement lowering
-  (var decl, register store, if/else, while, for).
+  declarations, CFG creation, expression lowering, statement lowering
+  (var decl, register store, if/else, while, for), and serialization
+  round-trip (write to `.o`, free all source data, read back, verify
+  contents match).
 - Per-module line count breakdown in `test.py --cloc` output.
 
 ### Changed
