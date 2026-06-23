@@ -270,6 +270,18 @@ test_cmp_neq = _test_cmp("emu_cmp_neq.c02", "10 != 5 takes if-body")
 test_cmp_lte = _test_cmp("emu_cmp_lte.c02", "10 <= 10 takes if-body (boundary)")
 
 
+def test_string_deref():
+    """Global string pointer, loop with *p deref, writes chars to PORTB."""
+    source = os.path.join(SCRIPT_DIR, "emu_string_deref.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != ord('!'):
+        return False, f"memory[$6000] = ${val:02X}, expected ${ord('!'):02X} ('!')"
+    return True, None
+
+
 # ----------------------------------------------------------------
 # Runner
 # ----------------------------------------------------------------
@@ -292,6 +304,7 @@ TESTS = [
     ("cmp_eq", test_cmp_eq),
     ("cmp_neq", test_cmp_neq),
     ("cmp_lte", test_cmp_lte),
+    ("string_deref", test_string_deref),
 ]
 
 

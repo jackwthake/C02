@@ -36,11 +36,24 @@ typedef struct {
 } zp_map_t;
 
 typedef struct {
+  char     *name;
+  uint16_t  ram_addr;
+  uint8_t   size;
+  type_t    type;
+} global_entry_t;
+
+typedef struct {
+  size_t   patch_pos;
+  unsigned global_idx;
+  uint8_t  byte;
+} data_fixup_t;
+
+typedef struct {
   uint8_t *rom;
   size_t   rom_size;
   size_t   code_pos;
   size_t   data_pos;
-  uint16_t ram_start;
+  uint16_t ram_pos;
   uint16_t zp_next;
 
   func_label_t *func_labels;
@@ -57,6 +70,13 @@ typedef struct {
   fixup_t *local_fixups;
   unsigned local_fixup_count;
   unsigned local_fixup_capacity;
+
+  global_entry_t *global_entries;
+  unsigned        global_entry_count;
+
+  data_fixup_t *data_fixups;
+  unsigned      data_fixup_count;
+  unsigned      data_fixup_capacity;
 } emitter_t;
 
 uint8_t *generate_rom(ir_gen_t *gen, size_t *final_rom_size);

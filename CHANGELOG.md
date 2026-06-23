@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/) - while
 the project is in `0.x`, breaking changes may land in MINOR releases; PATCH
 releases are reserved for bug fixes only.
 
+## [v0.2.11] 2026-06-23
+
+- **Implicit void return in IR** — `lower_function` now emits a trailing
+  `TAC_RETURN` when the last instruction isn't already a return, so void
+  functions without an explicit `return` produce correct IR.
+- **Data section & global variable support** — global variables are allocated
+  RAM addresses ($0200 upward) and initialized in the bootstrap before
+  `JSR main`. String literals are placed in ROM after all function code.
+  A `data_fixup_t` backpatching system resolves string ROM addresses into
+  the bootstrap init code after the data section is emitted.
+  - `allocate_globals` assigns RAM addresses with type-aware stride.
+  - `emit_global_init` emits `LDA #imm; STA abs` per global, with fixup
+    placeholders for string-initialized pointers.
+  - `emit_data_section` writes null-terminated string bytes into ROM and
+    resolves all data fixups.
+  - `emit_load_byte` / `emit_store_byte` detect globals and use absolute
+    addressing (`LDA abs` / `STA abs`) instead of zero-page.
+  - Bootstrap split into `emit_bootstrap` + `emit_call_main` so global init
+    code runs between hardware setup and `JSR main`.
+- **`TAC_LOAD` (pointer dereference & register reads)** — pointer dereference
+  via `LDA ($nn),Y` indirect indexed addressing. Hardware register reads use
+  `LDA abs`. Global pointers are copied from RAM to their ZP slot before
+  indirect access.
+- **16-bit `TAC_INC` / `TAC_DEC`** — `INC zpg; BNE +2; INC zpg+1` for
+  pointers and u16 values. DEC uses `LDA zpg; BNE +2; DEC zpg+1; DEC zpg`
+  to propagate borrow.
+- New opcode emitters: `lda_abs` ($AD), `lda_ind_y` ($B1), `ldy_imm` ($A0),
+  `bne_rel` ($D0).
+- Emulator test: `string_deref` — global string pointer, loop with `*p`
+  dereference and 16-bit `++p`, verifies correct characters reach PORTB.
+- **Hardware verified** — `lcd_hello_world_simplified.c02` prints "Hello C02!" on a
+  real 65C02 breadboard with HD44780 LCD.
+
 ## [v0.2.10] 2026-06-23
 
 - **Line count: disassembler section** — refactored `count_lines` into a
@@ -33,7 +66,7 @@ releases are reserved for bug fixes only.
     `dec_zpg`.
   - Emulator tests: `forward_jump`, `cmp_gt`, `cmp_gte`, `cmp_eq`, `cmp_neq`,
     `cmp_lte`.
-  - **Hardware verified** — `for_test.c02` (nested while + for loop cycling PORTB
+  - **Hardware verified** — `led_counter.c02` (nested while + for loop cycling PORTB
     through 0–254) compiled and flashed to real 65C02 breadboard.
 
 ### Known Limitations

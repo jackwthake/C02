@@ -174,6 +174,39 @@ static void add_local_fixup(emitter_t *e, unsigned label_id) {
 
 
 // ----------------------------------------------------------------
+// Global symbol support
+// ----------------------------------------------------------------
+
+static global_entry_t *lookup_global(emitter_t *e, char *name) {
+  for (unsigned i = 0; i < e->global_entry_count; i++) {
+    if (strcmp(e->global_entries[i].name, name) == 0)
+      return &e->global_entries[i];
+  }
+  return NULL;
+}
+
+
+static void allocate_globals(emitter_t *e, ir_gen_t *gen) {
+  unsigned count = gen->module.global_count;
+  if (count == 0) return;
+
+  e->global_entries = malloc(count * sizeof(global_entry_t));
+  e->global_entry_count = count;
+
+  for (unsigned i = 0; i < count; i++) {
+    ir_global_t *g = &gen->module.globals[i];
+    unsigned size = codegen_type_size(g->type);
+    global_entry_t *entry = &e->global_entries[i];
+    entry->name = g->name;
+    entry->ram_addr = e->ram_pos;
+    entry->size = (uint8_t)size;
+    entry->type = g->type;
+    e->ram_pos += (uint16_t)size;
+  }
+}
+
+
+// ----------------------------------------------------------------
 // Op code emitters
 // ----------------------------------------------------------------
 
@@ -199,12 +232,15 @@ static void add_local_fixup(emitter_t *e, unsigned label_id) {
 
 OP_EMITTER_SINGLE_ARG(lda_imm, 0xA9)
 OP_EMITTER_SINGLE_ARG(lda_zpg, 0xA5)
+OP_EMITTER_SINGLE_ARG(lda_ind_y, 0xB1)
 OP_EMITTER_SINGLE_ARG(ldx_imm, 0xA2)
+OP_EMITTER_SINGLE_ARG(ldy_imm, 0xA0)
 OP_EMITTER_SINGLE_ARG(sta_zpg, 0x85)
 
 OP_EMITTER_SINGLE_ARG(cmp_imm, 0xC9)
 OP_EMITTER_SINGLE_ARG(cmp_zpg, 0xC5)
 OP_EMITTER_SINGLE_ARG(beq_rel, 0xF0)
+OP_EMITTER_SINGLE_ARG(bne_rel, 0xD0)
 OP_EMITTER_SINGLE_ARG(eor_imm, 0x49)
 
 OP_EMITTER_SINGLE_ARG(inc_zpg, 0xE6)
@@ -216,6 +252,7 @@ OP_EMITTER_NO_ARG(rts, 0x60)
 
 OP_EMITTER_ABS(jmp_abs, 0x4C)
 OP_EMITTER_ABS(sta_abs, 0x8D)
+OP_EMITTER_ABS(lda_abs, 0xAD)
 
 #undef OP_EMITTER_SINGLE_ARG
 #undef OP_EMITTER_NO_ARG
@@ -227,6 +264,79 @@ static void jsr(emitter_t *e, char *func_name) {
   add_fixup(e, func_name);
   EMIT(0x00);
   EMIT(0x00);
+}
+
+
+// ----------------------------------------------------------------
+// Global init & data section
+// ----------------------------------------------------------------
+
+static void add_data_fixup(emitter_t *e, unsigned global_idx, uint8_t byte) {
+  if (e->data_fixup_count >= e->data_fixup_capacity) {
+    unsigned cap = e->data_fixup_capacity ? e->data_fixup_capacity * 2 : 8;
+    e->data_fixups = realloc(e->data_fixups, cap * sizeof(data_fixup_t));
+    e->data_fixup_capacity = cap;
+  }
+  data_fixup_t *f = &e->data_fixups[e->data_fixup_count++];
+  f->patch_pos = e->code_pos;
+  f->global_idx = global_idx;
+  f->byte = byte;
+}
+
+
+static void emit_global_init(emitter_t *e, ir_gen_t *gen) {
+  for (unsigned i = 0; i < gen->module.global_count; i++) {
+    ir_global_t *g = &gen->module.globals[i];
+    global_entry_t *entry = &e->global_entries[i];
+    unsigned width = entry->size;
+
+    switch (g->init_kind) {
+      case IR_INIT_INT:
+        for (unsigned b = 0; b < width; b++) {
+          lda_imm(e, (uint8_t)((g->int_val >> (8 * b)) & 0xFF));
+          sta_abs(e, (uint16_t)(entry->ram_addr + b));
+        }
+        break;
+      case IR_INIT_STR:
+        for (unsigned b = 0; b < width; b++) {
+          EMIT(0xA9);
+          add_data_fixup(e, i, (uint8_t)b);
+          EMIT(0x00);
+          sta_abs(e, (uint16_t)(entry->ram_addr + b));
+        }
+        break;
+      case IR_INIT_NONE:
+        break;
+    }
+  }
+}
+
+
+static void emit_data_section(emitter_t *e, ir_gen_t *gen) {
+  e->data_pos = e->code_pos;
+
+  uint16_t *str_addrs = malloc(gen->module.global_count * sizeof(uint16_t));
+
+  for (unsigned i = 0; i < gen->module.global_count; i++) {
+    ir_global_t *g = &gen->module.globals[i];
+    if (g->init_kind != IR_INIT_STR) {
+      str_addrs[i] = 0;
+      continue;
+    }
+    str_addrs[i] = (uint16_t)(ROM_START + e->code_pos);
+    size_t len = strlen(g->str_val);
+    for (size_t j = 0; j <= len; j++) {
+      EMIT((uint8_t)g->str_val[j]);
+    }
+  }
+
+  for (unsigned i = 0; i < e->data_fixup_count; i++) {
+    data_fixup_t *f = &e->data_fixups[i];
+    uint16_t addr = str_addrs[f->global_idx];
+    e->rom[f->patch_pos] = (uint8_t)((addr >> (8 * f->byte)) & 0xFF);
+  }
+
+  free(str_addrs);
 }
 
 
@@ -246,7 +356,7 @@ static void emit_vectors(emitter_t *e) {
 }
 
 
-static void emit_runtime(emitter_t *e) {
+static void emit_bootstrap(emitter_t *e) {
   EMIT(0x78); // SEI
   EMIT(0xD8); // CLD
 
@@ -257,7 +367,10 @@ static void emit_runtime(emitter_t *e) {
   sta_zpg(e, FP);
   lda_imm(e, 0x01);
   sta_zpg(e, FP + 1);
+}
 
+
+static void emit_call_main(emitter_t *e) {
   jsr(e, "main");
 
   // halt loop
@@ -272,12 +385,32 @@ static void emit_load_byte(emitter_t *e, zp_map_t *map,
     case OPERAND_CONST_INT:
       lda_imm(e, (uint8_t)((op->int_val >> (8 * byte)) & 0xFF));
       break;
-    case OPERAND_VAR:
+    case OPERAND_VAR: {
+      global_entry_t *g = lookup_global(e, op->name);
+      if (g)
+        lda_abs(e, (uint16_t)(g->ram_addr + byte));
+      else
+        lda_zpg(e, (uint8_t)(zp_map_lookup(map, op) + byte));
+      break;
+    }
     case OPERAND_TEMP:
       lda_zpg(e, (uint8_t)(zp_map_lookup(map, op) + byte));
       break;
     default: break;
   }
+}
+
+
+static void emit_store_byte(emitter_t *e, zp_map_t *map,
+                             tac_operand_t *dst, unsigned byte) {
+  if (dst->kind == OPERAND_VAR) {
+    global_entry_t *g = lookup_global(e, dst->name);
+    if (g) {
+      sta_abs(e, (uint16_t)(g->ram_addr + byte));
+      return;
+    }
+  }
+  sta_zpg(e, (uint8_t)(zp_map_lookup(map, dst) + byte));
 }
 
 
@@ -318,10 +451,41 @@ static void emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
 
         case TAC_COPY: {
           unsigned width = codegen_type_size(instruction->dst.type);
-          uint8_t dst_addr = zp_map_lookup(&map, &instruction->dst);
           for (unsigned b = 0; b < width; b++) {
             emit_load_byte(e, &map, &instruction->src1, b);
-            sta_zpg(e, (uint8_t)(dst_addr + b));
+            emit_store_byte(e, &map, &instruction->dst, b);
+          }
+          break;
+        }
+
+        case TAC_LOAD: {
+          unsigned width = codegen_type_size(instruction->dst.type);
+          uint8_t dst_addr = zp_map_lookup(&map, &instruction->dst);
+
+          if (instruction->src1.kind == OPERAND_CONST_INT) {
+            uint16_t addr = (uint16_t)instruction->src1.int_val;
+            for (unsigned b = 0; b < width; b++) {
+              lda_abs(e, (uint16_t)(addr + b));
+              sta_zpg(e, (uint8_t)(dst_addr + b));
+            }
+          } else {
+            uint8_t ptr_zp = zp_map_lookup(&map, &instruction->src1);
+
+            if (instruction->src1.kind == OPERAND_VAR) {
+              global_entry_t *g = lookup_global(e, instruction->src1.name);
+              if (g) {
+                for (unsigned b = 0; b < 2; b++) {
+                  lda_abs(e, (uint16_t)(g->ram_addr + b));
+                  sta_zpg(e, (uint8_t)(ptr_zp + b));
+                }
+              }
+            }
+
+            for (unsigned b = 0; b < width; b++) {
+              ldy_imm(e, (uint8_t)b);
+              lda_ind_y(e, ptr_zp);
+              sta_zpg(e, (uint8_t)(dst_addr + b));
+            }
           }
           break;
         }
@@ -406,12 +570,23 @@ static void emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
 
         case TAC_INC: {
           uint8_t dst_addr = zp_map_lookup(&map, &instruction->dst);
+          unsigned width = codegen_type_size(instruction->dst.type);
           inc_zpg(e, dst_addr);
+          if (width > 1) {
+            bne_rel(e, 2);
+            inc_zpg(e, (uint8_t)(dst_addr + 1));
+          }
           break;
         }
 
         case TAC_DEC: {
           uint8_t dst_addr = zp_map_lookup(&map, &instruction->dst);
+          unsigned width = codegen_type_size(instruction->dst.type);
+          if (width > 1) {
+            lda_zpg(e, dst_addr);
+            bne_rel(e, 2);
+            dec_zpg(e, (uint8_t)(dst_addr + 1));
+          }
           dec_zpg(e, dst_addr);
           break;
         }
@@ -434,6 +609,8 @@ static void emitter_free(emitter_t *e) {
   free(e->fixups);
   free(e->local_labels);
   free(e->local_fixups);
+  free(e->global_entries);
+  free(e->data_fixups);
 }
 
 
@@ -446,12 +623,14 @@ uint8_t *generate_rom(ir_gen_t *gen, size_t *final_rom_size) {
   memset(e.rom, 0xEA, ROM_SIZE);
   *final_rom_size = ROM_SIZE;
 
-  e.ram_start = RAM_START;
+  e.ram_pos = RAM_START;
   e.zp_next = REG_START;
 
-  emit_runtime(&e);
+  allocate_globals(&e, gen);
+  emit_bootstrap(&e);
+  emit_global_init(&e, gen);
+  emit_call_main(&e);
 
-  // walk cfg blocks and emit functions
   for (unsigned i = 0; i < gen->module.cfg_count; ++i) {
     emit_function_from_cfg(&e, &gen->module.cfgs[i]);
   }
@@ -463,6 +642,7 @@ uint8_t *generate_rom(ir_gen_t *gen, size_t *final_rom_size) {
     return NULL;
   }
 
+  emit_data_section(&e, gen);
   emit_vectors(&e);
   emitter_free(&e);
 

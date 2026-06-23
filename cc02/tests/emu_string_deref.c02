@@ -1,0 +1,9 @@
+reg u8 PORTB @ 0x6000;
+
+u8 *msg = "Hi!";
+
+fn main() -> void {
+  for (u8 *p = msg; *p != null; ++p) {
+    PORTB = *p;
+  }
+}
