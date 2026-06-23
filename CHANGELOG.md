@@ -7,9 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/) - while
 the project is in `0.x`, breaking changes may land in MINOR releases; PATCH
 releases are reserved for bug fixes only.
 
-## [Unreleased]
+## [0.2.9] 2026-06-22
 
-- Added emulator tests for generated binaries using py65.
+- **CFG walk** — `generate_rom()` now iterates over `ir_module_t.cfgs` and
+  emits real function bodies from the TAC instruction stream, replacing the
+  previous stub main.
+- **Zero-page operand map** — per-function allocation table that assigns each
+  variable and temporary a zero-page slot ($04 upward), striding by type size
+  (1 byte for u8/i8, 2 bytes for u16/i16/pointers). Params are seeded first
+  from the CFG's parameter list, then locals and temps are collected from all
+  instructions.
+- **TAC_COPY** — variable/temporary assignment via `LDA`/`STA` through the
+  operand map, with width-aware byte loops for 16-bit types.
+- **TAC_STORE** — writes to absolute addresses (hardware registers), supporting
+  both constant and variable sources with multi-byte emission for wider types.
+- **TAC_RETURN** — emits `RTS` for void returns; for value returns, copies the
+  result into the RET register ($02/$03) with width derived from the function's
+  return type signature.
+- **`emit_load_byte` helper** — byte-indexed operand loader that handles
+  constants (shift + mask), variables, and temporaries uniformly, used by all
+  TAC ops to avoid duplicating width logic.
+- New opcode emitters: `lda_zpg` ($A5), `sta_abs` ($8D).
+- Added emulator tests: `store_const_to_abs`, `copy_var_to_abs`,
+  `u16_copy_and_return`, plus the existing py65 bootstrap tests.
 
 ## [0.2.8] 2026-06-22
 

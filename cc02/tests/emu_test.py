@@ -197,6 +197,45 @@ def test_decimal_mode_clear():
     return True, None
 
 
+def test_store_const_to_abs():
+    """PORTB = 42 writes 42 to address $6000."""
+    source = os.path.join(SCRIPT_DIR, "emu_store_const.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 42:
+        return False, f"memory[$6000] = {val}, expected 42"
+    return True, None
+
+
+def test_copy_var_to_abs():
+    """u8 x = 42; PORTB = x; writes 42 to address $6000 via variable."""
+    source = os.path.join(SCRIPT_DIR, "emu_copy_var.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 42:
+        return False, f"memory[$6000] = {val}, expected 42"
+    return True, None
+
+
+def test_u16_copy_and_return():
+    """u16 x = 0x1234; return x; stores both bytes in RET."""
+    source = os.path.join(SCRIPT_DIR, "emu_u16_return.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    lo = mpu.memory[ZP_RET]
+    hi = mpu.memory[ZP_RET + 1]
+    if lo != 0x34:
+        return False, f"RET low = ${lo:02X}, expected $34"
+    if hi != 0x12:
+        return False, f"RET high = ${hi:02X}, expected $12"
+    return True, None
+
+
 # ----------------------------------------------------------------
 # Runner
 # ----------------------------------------------------------------
@@ -210,6 +249,9 @@ TESTS = [
     ("halt_loop", test_halt_loop),
     ("interrupts_disabled", test_interrupts_disabled),
     ("decimal_mode_clear", test_decimal_mode_clear),
+    ("store_const_to_abs", test_store_const_to_abs),
+    ("copy_var_to_abs", test_copy_var_to_abs),
+    ("u16_copy_and_return", test_u16_copy_and_return),
 ]
 
 

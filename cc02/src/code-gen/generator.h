@@ -17,6 +17,24 @@ typedef struct {
   char     *func_name;
 } fixup_t;
 
+#define ZP_MAP_MAX 112  // $04–$EE = 235 bytes, but max ~112 unique operands
+
+typedef struct {
+  tac_operand_kind_t kind;
+  union {
+    char    *name;
+    unsigned temp_id;
+  };
+  uint8_t zp_addr;
+  uint8_t size;
+} zp_entry_t;
+
+typedef struct {
+  zp_entry_t entries[ZP_MAP_MAX];
+  unsigned   count;
+  uint8_t    next_addr;
+} zp_map_t;
+
 typedef struct {
   uint8_t *rom;
   size_t   rom_size;

@@ -17,85 +17,84 @@
 #define REG_START   0x04
 #define PARAM_START 0xEF
 
+
 // ----------------------------------------------------------------
-// Op code emitters
+// Zero-page operand map
 // ----------------------------------------------------------------
 
-#define EMIT(OP_CODE) e->rom[e->code_pos++] = OP_CODE
-
-#define OP_EMITTER_SINGLE_ARG(NAME, OP_CODE)       \
-  static void NAME(emitter_t *e, uint8_t byte) {   \
-    EMIT(OP_CODE);                                 \
-    EMIT(byte);                                    \
+static unsigned codegen_type_size(type_t type) {
+  if (type.is_ptr) return 2;
+  switch (type.kind) {
+    case TYPE_U8:  case TYPE_I8:  return 1;
+    case TYPE_U16: case TYPE_I16: return 2;
+    default: return 1;
   }
-
-#define OP_EMITTER_NO_ARG(NAME, OP_CODE)           \
-  static void NAME(emitter_t *e) {                 \
-    EMIT(OP_CODE);                                 \
-  }
-
-#define OP_EMITTER_ABS(NAME, OP_CODE)              \
-  static void NAME(emitter_t *e, uint16_t addr) {  \
-    EMIT(OP_CODE);                                 \
-    EMIT((uint8_t)(addr & 0xFF));                  \
-    EMIT((uint8_t)(addr >> 8));                    \
-  }
-
-OP_EMITTER_SINGLE_ARG(lda_imm, 0xA9)
-OP_EMITTER_SINGLE_ARG(ldx_imm, 0xA2)
-OP_EMITTER_SINGLE_ARG(sta_zpg, 0x85)
-
-OP_EMITTER_NO_ARG(txs, 0x9A)
-OP_EMITTER_NO_ARG(rts, 0x60)
-
-OP_EMITTER_ABS(jmp_abs, 0x4C)
-
-
-static void add_fixup(emitter_t *e, char *func_name);
-static void jsr(emitter_t *e, char *func_name) {
-  EMIT(0x20);
-  add_fixup(e, func_name);
-  EMIT(0x00);
-  EMIT(0x00);
 }
 
 
-static void emit_vectors(emitter_t *e) {
-  unsigned pos = 0xFFFA - ROM_START;
-
-  e->rom[pos++] = 0x00;               // NMI low  (unused)
-  e->rom[pos++] = 0x00;               // NMI high (unused)
-  e->rom[pos++] = ROM_START & 0xFF;   // Reset low
-  e->rom[pos++] = ROM_START >> 8;     // Reset high
-  e->rom[pos++] = 0x00;               // IRQ low  (unused)
-  e->rom[pos++] = 0x00;               // IRQ high (unused)
+static uint8_t zp_map_lookup(zp_map_t *map, tac_operand_t *op) {
+  for (unsigned i = 0; i < map->count; i++) {
+    zp_entry_t *e = &map->entries[i];
+    if (e->kind != op->kind) continue;
+    if (e->kind == OPERAND_VAR && strcmp(e->name, op->name) == 0) return e->zp_addr;
+    if (e->kind == OPERAND_TEMP && e->temp_id == op->temp_id)    return e->zp_addr;
+  }
+  return 0;
 }
 
 
-static void emit_runtime(emitter_t *e) {
-  EMIT(0x78); // SEI
-  EMIT(0xD8); // CLD
+static void zp_map_add(zp_map_t *map, tac_operand_kind_t kind,
+                        char *name, unsigned temp_id, type_t type) {
+  tac_operand_t probe = { .kind = kind };
+  if (kind == OPERAND_VAR) probe.name = name;
+  else                     probe.temp_id = temp_id;
+  if (zp_map_lookup(map, &probe) != 0)
+    return;
+  if (map->count >= ZP_MAP_MAX) return;
 
-  ldx_imm(e, 0XFF); // Init hardware stack
-  txs(e);
+  unsigned size = codegen_type_size(type);
+  zp_entry_t *e = &map->entries[map->count++];
+  e->kind = kind;
+  if (kind == OPERAND_VAR) e->name = name;
+  else                     e->temp_id = temp_id;
+  e->zp_addr = map->next_addr;
+  e->size = (uint8_t)size;
+  map->next_addr += (uint8_t)size;
+}
 
-  lda_imm(e, 0xFF); // init fp to point to top of hardware stack
-  sta_zpg(e, FP);
-  lda_imm(e, 0x01);
-  sta_zpg(e, FP + 1);
 
-  jsr(e, "main");
+static void zp_map_add_operand(zp_map_t *map, tac_operand_t *op) {
+  if (op->kind == OPERAND_VAR)
+    zp_map_add(map, OPERAND_VAR, op->name, 0, op->type);
+  else if (op->kind == OPERAND_TEMP)
+    zp_map_add(map, OPERAND_TEMP, NULL, op->temp_id, op->type);
+}
 
-  // halt loop
-  uint16_t halt_addr = (uint16_t)(ROM_START + e->code_pos);
-  jmp_abs(e, halt_addr);
+
+static void zp_map_build(zp_map_t *map, cfg_t *cfg) {
+  map->count = 0;
+  map->next_addr = REG_START;
+
+  for (unsigned i = 0; i < cfg->params.count; i++) {
+    zp_map_add(map, OPERAND_VAR, cfg->params.items[i].name, 0,
+               cfg->params.items[i].type);
+  }
+
+  for (unsigned i = 0; i < cfg->block_count; i++) {
+    basic_block_t *block = cfg->blocks[i];
+    for (unsigned j = 0; j < block->instr_count; j++) {
+      tac_instr_t *inst = &block->instrs[j];
+      zp_map_add_operand(map, &inst->dst);
+      zp_map_add_operand(map, &inst->src1);
+      zp_map_add_operand(map, &inst->src2);
+    }
+  }
 }
 
 
 // ----------------------------------------------------------------
 // Label resolution
 // ----------------------------------------------------------------
-
 
 static void register_func_label(emitter_t *e, char *name, uint16_t addr) {
   if (e->func_label_count >= e->func_label_capacity) {
@@ -146,9 +145,159 @@ static void add_fixup(emitter_t *e, char *func_name) {
 
 
 // ----------------------------------------------------------------
-// Main code gen
+// Op code emitters
 // ----------------------------------------------------------------
 
+#define EMIT(OP_CODE) e->rom[e->code_pos++] = OP_CODE
+
+#define OP_EMITTER_SINGLE_ARG(NAME, OP_CODE)       \
+  static void NAME(emitter_t *e, uint8_t byte) {   \
+    EMIT(OP_CODE);                                 \
+    EMIT(byte);                                    \
+  }
+
+#define OP_EMITTER_NO_ARG(NAME, OP_CODE)           \
+  static void NAME(emitter_t *e) {                 \
+    EMIT(OP_CODE);                                 \
+  }
+
+#define OP_EMITTER_ABS(NAME, OP_CODE)              \
+  static void NAME(emitter_t *e, uint16_t addr) {  \
+    EMIT(OP_CODE);                                 \
+    EMIT((uint8_t)(addr & 0xFF));                  \
+    EMIT((uint8_t)(addr >> 8));                    \
+  }
+
+OP_EMITTER_SINGLE_ARG(lda_imm, 0xA9)
+OP_EMITTER_SINGLE_ARG(lda_zpg, 0xA5)
+OP_EMITTER_SINGLE_ARG(ldx_imm, 0xA2)
+OP_EMITTER_SINGLE_ARG(sta_zpg, 0x85)
+
+OP_EMITTER_NO_ARG(txs, 0x9A)
+OP_EMITTER_NO_ARG(rts, 0x60)
+
+OP_EMITTER_ABS(jmp_abs, 0x4C)
+OP_EMITTER_ABS(sta_abs, 0x8D)
+
+
+static void jsr(emitter_t *e, char *func_name) {
+  EMIT(0x20);
+  add_fixup(e, func_name);
+  EMIT(0x00);
+  EMIT(0x00);
+}
+
+
+// ----------------------------------------------------------------
+// High level emitters
+// ----------------------------------------------------------------
+
+static void emit_vectors(emitter_t *e) {
+  unsigned pos = 0xFFFA - ROM_START;
+
+  e->rom[pos++] = 0x00;               // NMI low  (unused)
+  e->rom[pos++] = 0x00;               // NMI high (unused)
+  e->rom[pos++] = ROM_START & 0xFF;   // Reset low
+  e->rom[pos++] = ROM_START >> 8;     // Reset high
+  e->rom[pos++] = 0x00;               // IRQ low  (unused)
+  e->rom[pos++] = 0x00;               // IRQ high (unused)
+}
+
+
+static void emit_runtime(emitter_t *e) {
+  EMIT(0x78); // SEI
+  EMIT(0xD8); // CLD
+
+  ldx_imm(e, 0XFF); // Init hardware stack
+  txs(e);
+
+  lda_imm(e, 0xFF); // init fp to point to top of hardware stack
+  sta_zpg(e, FP);
+  lda_imm(e, 0x01);
+  sta_zpg(e, FP + 1);
+
+  jsr(e, "main");
+
+  // halt loop
+  uint16_t halt_addr = (uint16_t)(ROM_START + e->code_pos);
+  jmp_abs(e, halt_addr);
+}
+
+
+static void emit_load_byte(emitter_t *e, zp_map_t *map,
+                            tac_operand_t *op, unsigned byte) {
+  switch (op->kind) {
+    case OPERAND_CONST_INT:
+      lda_imm(e, (uint8_t)((op->int_val >> (8 * byte)) & 0xFF));
+      break;
+    case OPERAND_VAR:
+    case OPERAND_TEMP:
+      lda_zpg(e, (uint8_t)(zp_map_lookup(map, op) + byte));
+      break;
+    default: break;
+  }
+}
+
+
+static void emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
+  register_func_label(e, cfg->name, (uint16_t)(ROM_START + e->code_pos));
+
+  zp_map_t map;
+  zp_map_build(&map, cfg);
+
+  for (unsigned i = 0; i < cfg->block_count; ++i) {
+    basic_block_t *block = cfg->blocks[i];
+
+    for (unsigned j = 0; j < block->instr_count; ++j) {
+      tac_instr_t *instruction = &block->instrs[j];
+
+      switch (instruction->op) {
+        case TAC_COPY: {
+          unsigned width = codegen_type_size(instruction->dst.type);
+          uint8_t dst_addr = zp_map_lookup(&map, &instruction->dst);
+          for (unsigned b = 0; b < width; b++) {
+            emit_load_byte(e, &map, &instruction->src1, b);
+            sta_zpg(e, (uint8_t)(dst_addr + b));
+          }
+          break;
+        }
+
+        case TAC_STORE: {
+          if (instruction->dst.kind == OPERAND_CONST_INT) {
+            unsigned width = codegen_type_size(instruction->src1.type);
+            uint16_t base_addr = (uint16_t)instruction->dst.int_val;
+            for (unsigned b = 0; b < width; b++) {
+              emit_load_byte(e, &map, &instruction->src1, b);
+              sta_abs(e, (uint16_t)(base_addr + b));
+            }
+          }
+          break;
+        }
+
+        case TAC_RETURN: {
+          if (instruction->src1.kind != OPERAND_NONE) {
+            unsigned width = codegen_type_size(cfg->return_type);
+            for (unsigned b = 0; b < width; b++) {
+              emit_load_byte(e, &map, &instruction->src1, b);
+              sta_zpg(e, (uint8_t)(RET + b));
+            }
+          }
+          rts(e);
+          break;
+        }
+
+        default: break;
+      }
+    }
+  }
+
+  rts(e);
+}
+
+
+// ----------------------------------------------------------------
+// Main code gen
+// ----------------------------------------------------------------
 
 static void emitter_free(emitter_t *e) {
   free(e->func_labels);
@@ -159,7 +308,6 @@ static void emitter_free(emitter_t *e) {
 
 
 uint8_t *generate_rom(ir_gen_t *gen, size_t *final_rom_size) {
-  (void)gen;
   emitter_t e = { 0 };
 
   e.rom = malloc(ROM_SIZE);
@@ -173,10 +321,10 @@ uint8_t *generate_rom(ir_gen_t *gen, size_t *final_rom_size) {
 
   emit_runtime(&e);
 
-  // TODO: emit function bodies from IR
-  // For now, emit a stub main that just returns (RTS)
-  register_func_label(&e, "main", (uint16_t)(ROM_START + e.code_pos));
-  rts(&e);
+  // walk cfg blocks and emit functions
+  for (unsigned i = 0; i < gen->module.cfg_count; ++i) {
+    emit_function_from_cfg(&e, &gen->module.cfgs[i]);
+  }
 
   if (!resolve_func_fixups(&e)) {
     free(e.rom);
