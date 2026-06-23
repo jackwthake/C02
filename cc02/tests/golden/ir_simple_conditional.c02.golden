@@ -12,4 +12,5 @@ fn main() -> void
     inc i
     goto L0
     L1:
+    return
 

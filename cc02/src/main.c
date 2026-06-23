@@ -1,38 +1,9 @@
-#define _POSIX_C_SOURCE 199309L
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 #include <getopt.h>
-#include <time.h> 
 
+#include "driver.h"
 #include "colors.h"
-
-#include "tokenizer.h"
-#include "parser.h"
-#include "analyzer.h"
-#include "ir.h"
-
-#define PARAM_ERROR_RET_CODE 1
-#define FILE_LOAD_ERROR_RET_CODE 2
-#define TOKEN_ERROR_RET_CODE 3
-#define PARSER_ERROR_RET_CODE 4
-#define ANALYZER_ERROR_RET_CODE 5
-#define IR_ERROR_RET_CODE 6
-
-typedef struct params_t {
-  int dump_tokens;
-  int dump_ast;
-  int dump_symbols;
-  int dump_ir;
-  int syntax_only;
-  int time_report;
-  int incremental_build;
-
-  int is_input_bin;
-  char *output;
-  char *input;
-} params_t;
 
 
 static void print_help(const char *prog_name) {
@@ -104,14 +75,13 @@ static int read_params(int argc, char * const *argv, params_t *params) {
   if (optind < argc) {
     params->input = argv[optind];
 
-    // ensure file ends in .c02
     const char *ext = strrchr(params->input, '.');
     if (strcmp(ext, ".o") == 0 || strcmp(ext, ".out") == 0) {
       params->is_input_bin = 1;
     } else if (!ext || strcmp(ext, ".c02") != 0) {
       fprintf(stderr, "Input file must have .c02 extension\n");
       return -1;
-    } else { // c02 source
+    } else {
       params->is_input_bin = 0;
     }
   } else {
@@ -133,243 +103,48 @@ static int read_params(int argc, char * const *argv, params_t *params) {
 }
 
 
-static long load_file(const char *file_path, char **out_content, unsigned is_bin) {
-  FILE *f; 
-  if (is_bin) {
-    f = fopen(file_path, "rb");
+static void print_timing_report(const params_t *params, const timing_t *timing, double total) {
+  printf("\n=== Compilation Time Report ===\n");
+  printf("File Load:      %8.3f ms\n", timing->load);
+
+  if (!params->is_input_bin) {
+    printf("Tokenization:   %8.3f ms\n", timing->lex);
+    printf("Parsing:        %8.3f ms\n", timing->parse);
+    printf("Sem. Analysis:  %8.3f ms\n", timing->sema);
+  }
+
+  if (params->syntax_only) {
+    printf("IR Generation:  %8s\n", "Skipped");
+    printf("Code Gen:       %8s\n", "Skipped");
   } else {
-    f = fopen(file_path, "r");
+    printf("IR Generation:  %8.3f ms\n", timing->ir);
+    printf("Code Gen:       %8.3f ms\n", timing->codegen);
   }
 
-  if (!f) {
-    perror("Failed to open input file");
-    return -1;
-  }
-
-  if (fseek(f, 0, SEEK_END) != 0) {
-    perror("Failed to seek input file");
-    fclose(f);
-    return -1;
-  }
-
-  long fsize = ftell(f);
-  if (fsize < 0) {
-    perror("Failed to determine input file size");
-    fclose(f);
-    return -1;
-  }
-
-  if (fseek(f, 0, SEEK_SET) != 0) {
-    perror("Failed to rewind input file");
-    fclose(f);
-    return -1;
-  }
-
-  char *content = malloc((size_t)fsize + 1);
-  if (!content) {
-    perror("Failed to allocate memory for file content");
-    fclose(f);
-    return -1;
-  }
-
-  const size_t bytes_read = fread(content, 1, (size_t)fsize, f);
-  if (bytes_read != (size_t)fsize) {
-    perror("Failed to read input file");
-    free(content);
-    fclose(f);
-    return -1;
-  }
-
-  content[fsize] = '\0';
-  fclose(f);
-
-  *out_content = content;
-  return fsize + 1;
-}
-
-/* * Helper function to get the current time in milliseconds.
- * Uses CLOCK_MONOTONIC to protect against system clock changes.
- */
-static double get_time_ms(void) {
-  struct timespec ts;
-  clock_gettime(CLOCK_MONOTONIC, &ts);
-  return (double)ts.tv_sec * 1000.0 + (double)ts.tv_nsec / 1000000.0;
+  printf("Cleanup:        %8.3f ms\n", timing->cleanup);
+  printf("-------------------------------\n");
+  printf("Total Time:     %8.3f ms\n", total);
+  printf("===============================\n\n");
 }
 
 
 int main(int argc, char * const *argv) {
   ENABLE_COLORS();
-  
-  params_t params = {0};
 
-  /* Read command-line parameters */
+  params_t params = {0};
   int parse_status = read_params(argc, argv, &params);
   if (parse_status != 0) {
     return parse_status == 2 ? 0 : PARAM_ERROR_RET_CODE;
   }
 
-  int status = 0;
-
-  /* Timing variables */
+  timing_t timing = {0};
   double t_total_start = get_time_ms();
-  double t_step_start;
-  double t_load = 0.0, t_lex = 0.0, t_parse = 0.0, t_sema = 0.0, t_ir = 0.0, t_codegen = 0.0, t_cleanup = 0.0;
 
-  char *source_code = NULL;
-  token_t *tokens = NULL;
-  unsigned num_tokens = 0;
-  parser_t parser = {0};
-  analyzer_t analyzer = {0};
-  ir_gen_t ir_gen = {0};
+  int status = run_compiler(&params, &timing);
 
-  /* Load the input file */
-  t_step_start = get_time_ms();
-  long fsize;
-  if ((fsize = load_file(params.input, &source_code, params.is_input_bin)) < 0) {
-    status = FILE_LOAD_ERROR_RET_CODE; goto finish;
-  }
-  t_load = get_time_ms() - t_step_start;
-
-  if (params.is_input_bin) goto ir_start;
-
-  /* tokenize the source code */
-  t_step_start = get_time_ms();
-  tokens = tokenize(params.input, source_code, fsize, &num_tokens);
-  t_lex = get_time_ms() - t_step_start;
-
-  if (!tokens) {
-    status = TOKEN_ERROR_RET_CODE; goto finish;
-  }
-
-  if (params.dump_tokens) {
-    print_tokens(tokens, num_tokens);
-  }
-
-  /* parse the tokens into an AST */
-  t_step_start = get_time_ms();
-
-  if (!parser_init(&parser)) {
-    fprintf(stderr, "Parser allocation failed.");
-    status = PARSER_ERROR_RET_CODE; goto finish;
-  }
-
-  ast_t ast = parse(&parser, tokens, num_tokens);
-  t_parse = get_time_ms() - t_step_start;
-
-  if (!ast) {
-    status = PARSER_ERROR_RET_CODE; goto finish;
-  }
-
-  if (params.dump_ast) {
-    print_ast(ast);
-  }
-
-  /* Semantic analysis */
-  t_step_start = get_time_ms();
-
-  if (!analyzer_init(&analyzer)) {
-    status = ANALYZER_ERROR_RET_CODE; goto finish;
-  }
-
-  symtab_t *symbol_table = analyze(&analyzer, ast);
-  if (!symbol_table || analyzer.errors || is_symtab_empty(symbol_table)) {
-    if (analyzer.errors > 0) { // could fail without errors from source code
-      fprintf(stderr, RED "\nSemantic analysis failed with " BOLD_RED "%u" RESET RED " errors.\n" RESET, analyzer.errors);
-    }
-
-    status = ANALYZER_ERROR_RET_CODE; goto finish;
-  }
-
-  t_sema = get_time_ms() - t_step_start;
-
-  if (params.dump_symbols) {
-    print_symtab(symbol_table);
-  }
-
-  if (params.syntax_only) {
-    goto finish;
-  }
-
-  /* IR generation */
-ir_start:
-  t_step_start = get_time_ms();
-  
-  if (!params.is_input_bin) {
-    if (!ir_gen_init(&ir_gen)) {
-      fprintf(stderr, "IR generator allocation failed.\n");
-      status = IR_ERROR_RET_CODE; goto finish;
-    }
-    
-    if (!ir_gen_run(&ir_gen, ast, &analyzer)) {
-      fprintf(stderr, RED "IR generation failed.\n" RESET);
-      status = IR_ERROR_RET_CODE; goto finish;
-    }
-    
-    
-    if (params.incremental_build) {
-      const char *out = params.output ? params.output : "a.o";
-      if (!ir_write(&ir_gen, out)) {
-        fprintf(stderr, "Failed to write IR to %s\n", out);
-        status = IR_ERROR_RET_CODE;
-      }
-
-      if (params.dump_ir) {
-        ir_gen_print(&ir_gen);
-      }
-
-      t_ir = get_time_ms() - t_step_start;
-      goto finish;
-    }
-  } else {
-    if (!ir_read(&ir_gen, params.input)) {
-      fprintf(stderr, "Failed to read IR from %s\n", params.input);
-      status = IR_ERROR_RET_CODE; goto finish;
-    }
-  }
-  
-  t_ir = get_time_ms() - t_step_start;
-  
-  if (params.dump_ir) {
-    ir_gen_print(&ir_gen);
-  }
-
-  /* Code generation */
-  t_step_start = get_time_ms();
-
-  t_codegen = get_time_ms() - t_step_start;
-
-finish:
-  t_step_start = get_time_ms();
-  free(source_code);
-  if (tokens) free_tokens(tokens, num_tokens);
-  parser_free(&parser);
-  analyzer_free(&analyzer);
-  ir_gen_free(&ir_gen);
-  t_cleanup = get_time_ms() - t_step_start;
-
-  /* Print Timing Report if flag was passed */
   if (params.time_report) {
     double t_total = get_time_ms() - t_total_start;
-    printf("\n=== Compilation Time Report ===\n");
-    printf("File Load:      %8.3f ms\n", t_load);
-
-    if (!params.is_input_bin) {
-      printf("Tokenization:   %8.3f ms\n", t_lex);
-      printf("Parsing:        %8.3f ms\n", t_parse);
-      printf("Sem. Analysis:  %8.3f ms\n", t_sema);
-    }
-    
-    printf("IR Generation:  %8.3f ms\n", t_ir);
-
-    if (params.syntax_only) {
-      printf("Code Gen:       %8s\n", "Skipped");
-    } else {
-      printf("Code Gen:       %8.3f ms\n", t_codegen);
-    }
-    printf("Cleanup:        %8.3f ms\n", t_cleanup);
-    printf("-------------------------------\n");
-    printf("Total Time:     %8.3f ms\n", t_total);
-    printf("===============================\n\n");
+    print_timing_report(&params, &timing, t_total);
   }
 
   return status;

@@ -1,0 +1,10 @@
+reg u8 PORTB @ 0x6000;
+
+fn main() -> void {
+  u8 x = 10;
+  if (x >= 10) {
+    PORTB = 42;
+  } else {
+    PORTB = 99;
+  }
+}

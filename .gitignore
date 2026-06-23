@@ -1,6 +1,9 @@
 **/*/target
 **/*/*.o
+*.o
 *.vsix
 .vscode
 bin/
 *.out
+*.bin
+__pycache__/

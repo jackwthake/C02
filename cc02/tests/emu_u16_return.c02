@@ -1,0 +1,4 @@
+fn main() -> u16 {
+  u16 x = 0x1234;
+  return x;
+}

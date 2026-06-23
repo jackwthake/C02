@@ -7,7 +7,138 @@ and this project adheres to [Semantic Versioning](https://semver.org/) - while
 the project is in `0.x`, breaking changes may land in MINOR releases; PATCH
 releases are reserved for bug fixes only.
 
-## [Unreleased]
+## [v0.2.11] 2026-06-23
+
+- **Implicit void return in IR** — `lower_function` now emits a trailing
+  `TAC_RETURN` when the last instruction isn't already a return, so void
+  functions without an explicit `return` produce correct IR.
+- **Data section & global variable support** — global variables are allocated
+  RAM addresses ($0200 upward) and initialized in the bootstrap before
+  `JSR main`. String literals are placed in ROM after all function code.
+  A `data_fixup_t` backpatching system resolves string ROM addresses into
+  the bootstrap init code after the data section is emitted.
+  - `allocate_globals` assigns RAM addresses with type-aware stride.
+  - `emit_global_init` emits `LDA #imm; STA abs` per global, with fixup
+    placeholders for string-initialized pointers.
+  - `emit_data_section` writes null-terminated string bytes into ROM and
+    resolves all data fixups.
+  - `emit_load_byte` / `emit_store_byte` detect globals and use absolute
+    addressing (`LDA abs` / `STA abs`) instead of zero-page.
+  - Bootstrap split into `emit_bootstrap` + `emit_call_main` so global init
+    code runs between hardware setup and `JSR main`.
+- **`TAC_LOAD` (pointer dereference & register reads)** — pointer dereference
+  via `LDA ($nn),Y` indirect indexed addressing. Hardware register reads use
+  `LDA abs`. Global pointers are copied from RAM to their ZP slot before
+  indirect access.
+- **16-bit `TAC_INC` / `TAC_DEC`** — `INC zpg; BNE +2; INC zpg+1` for
+  pointers and u16 values. DEC uses `LDA zpg; BNE +2; DEC zpg+1; DEC zpg`
+  to propagate borrow.
+- New opcode emitters: `lda_abs` ($AD), `lda_ind_y` ($B1), `ldy_imm` ($A0),
+  `bne_rel` ($D0).
+- Emulator test: `string_deref` — global string pointer, loop with `*p`
+  dereference and 16-bit `++p`, verifies correct characters reach PORTB.
+- **Hardware verified** — `lcd_hello_world_simplified.c02` prints "Hello C02!" on a
+  real 65C02 breadboard with HD44780 LCD.
+
+## [v0.2.10] 2026-06-23
+
+- **Line count: disassembler section** — refactored `count_lines` into a
+  reusable `count_lines_in(dir, exts)` helper and added a Disassembler section
+  for c02-objdump (Rust + Makefile). Also added `target` to `IGNORED_DIRS` to
+  exclude Cargo build artifacts.
+- **Control flow codegen** — complete control flow generation for the
+  65C02 target, enabling `for`, `while`, and `if`/`else` to compile and run on
+  real hardware.
+  - **Local label system** — `TAC_LABEL` records label addresses during emission;
+    `TAC_JUMP` emits `JMP abs` with backward-ref direct patching or forward-ref
+    backpatching via `local_fixups`, resolved at the end of each function.
+  - **`TAC_COND_JUMP`** — inverted-branch-over-JMP pattern (`BEQ +3; JMP target`)
+    gives unlimited jump range from a 1-byte boolean source.
+  - **`TAC_NOT`** — boolean negation via `EOR #$01`.
+  - **All six comparison ops** — `TAC_LT`, `TAC_GTE`, `TAC_EQ`, `TAC_NEQ`,
+    `TAC_GT`, `TAC_LTE` via a `COMPARE_OP` macro that stamps out the
+    `CMP`/branch/`LDA` sequence with a single branch-opcode parameter. `GT` and
+    `LTE` swap operands to reuse `LT`/`GTE` logic. Uses a branch-before-load
+    pattern to avoid the 6502 `LDA #0` clobbering the Zero flag before
+    `BEQ`/`BNE`.
+  - **`TAC_INC` / `TAC_DEC`** — in-place `INC zpg` / `DEC zpg` for u8 variables.
+  - New opcode emitters: `beq_rel`, `cmp_imm`, `cmp_zpg`, `eor_imm`, `inc_zpg`,
+    `dec_zpg`.
+  - Emulator tests: `forward_jump`, `cmp_gt`, `cmp_gte`, `cmp_eq`, `cmp_neq`,
+    `cmp_lte`.
+  - **Hardware verified** — `led_counter.c02` (nested while + for loop cycling PORTB
+    through 0–254) compiled and flashed to real 65C02 breadboard.
+
+### Known Limitations
+
+- **Comparisons are u8-only** — `COMPARE_OP` loads only byte 0 of each operand.
+  A u16 comparison will silently compare only the low byte, giving wrong results
+  when values differ in the high byte.
+- **INC/DEC are u8-only** — `INC zpg` / `DEC zpg` operate on a single byte with
+  no carry into a high byte. Incrementing a u16 past `$00FF` or decrementing
+  below `$0100` will wrap the low byte without touching the high byte.
+- **Comparisons are unsigned-only** — the `CMP` + carry-flag branch sequence
+  implements unsigned ordering. Signed comparisons (i8/i16) require checking
+  the Negative and Overflow flags (`N ⊕ V`), which needs a different branch
+  sequence not yet implemented.
+
+## [0.2.9] 2026-06-22
+
+- **CFG walk** — `generate_rom()` now iterates over `ir_module_t.cfgs` and
+  emits real function bodies from the TAC instruction stream, replacing the
+  previous stub main.
+- **Zero-page operand map** — per-function allocation table that assigns each
+  variable and temporary a zero-page slot ($04 upward), striding by type size
+  (1 byte for u8/i8, 2 bytes for u16/i16/pointers). Params are seeded first
+  from the CFG's parameter list, then locals and temps are collected from all
+  instructions.
+- **TAC_COPY** — variable/temporary assignment via `LDA`/`STA` through the
+  operand map, with width-aware byte loops for 16-bit types.
+- **TAC_STORE** — writes to absolute addresses (hardware registers), supporting
+  both constant and variable sources with multi-byte emission for wider types.
+- **TAC_RETURN** — emits `RTS` for void returns; for value returns, copies the
+  result into the RET register ($02/$03) with width derived from the function's
+  return type signature.
+- **`emit_load_byte` helper** — byte-indexed operand loader that handles
+  constants (shift + mask), variables, and temporaries uniformly, used by all
+  TAC ops to avoid duplicating width logic.
+- New opcode emitters: `lda_zpg` ($A5), `sta_abs` ($8D).
+- Added emulator tests: `store_const_to_abs`, `copy_var_to_abs`,
+  `u16_copy_and_return`, plus the existing py65 bootstrap tests.
+
+## [0.2.8] 2026-06-22
+
+- **Driver refactor** — extracted the compilation pipeline from `main.c` into
+  `driver.c`/`driver.h`. Each stage (file loading, frontend, IR, codegen) is
+  now a separate function chained by return-code checks, replacing the previous
+  `goto finish` control flow. `main.c` is now just CLI parsing and the timing
+  report.
+- **Code generation stub** — added `generate_rom()` entry point in
+  `src/code-gen/generator.c` with `emitter_t` struct for flat ROM buffer
+  output. Dump flags (`--ast-dump`, `--symbol-dump`, `--ir-dump`) now skip
+  codegen since they are for inspecting compiler internals, not building
+  binaries.
+- **Bootstrap runtime** — the code generator emits a 65C02 reset stub at the
+  start of ROM: `SEI`, `CLD`, hardware stack init (`$01FF`), frame pointer
+  init (`FP` at ZP `$00`), `JSR main`, and an infinite halt loop. Interrupt
+  vectors are written at `$FFFA–$FFFF` with the reset vector pointing to
+  ROM start.
+- **Label resolution and fixup system** — function calls (`JSR`) record a
+  fixup with a placeholder address at emit time. Function entry points are
+  registered in a label table as they are emitted. After all code is emitted,
+  fixups are resolved by patching the placeholder addresses. A parallel
+  per-function system (`local_labels` / `local_fixups`) is in place for
+  control-flow labels (`TAC_LABEL` / `TAC_JUMP` / `TAC_COND_JUMP`).
+- **Opcode emitter macros** — `OP_EMITTER_NO_ARG`, `OP_EMITTER_SINGLE_ARG`,
+  and `OP_EMITTER_ABS` generate typed emit functions from an opcode constant,
+  keeping the codegen readable without raw hex throughout.
+- **Zero-page layout revised** — scratch registers now span `$04–$EE`
+  (compiler-managed temporaries, locals, and globals), with `$EF–$FF`
+  reserved for function ABI parameter passing. The previous user-space
+  carve-out (`$30–$FF`) is removed; all variable placement is
+  compiler-managed.
+
+## [0.2.7] 2026-06-22
 
 - **Forward declarations (`decl`)** — added `decl fn name(...) -> type;` and
   `decl type name;` syntax for declaring functions and globals defined in other
