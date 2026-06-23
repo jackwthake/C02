@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/) - while
 the project is in `0.x`, breaking changes may land in MINOR releases; PATCH
 releases are reserved for bug fixes only.
 
+## [Unreleased]
+
+- **Line count: disassembler section** — refactored `count_lines` into a
+  reusable `count_lines_in(dir, exts)` helper and added a Disassembler section
+  for c02-objdump (Rust + Makefile). Also added `target` to `IGNORED_DIRS` to
+  exclude Cargo build artifacts.
+- **TAC_LABEL** local labels now resolve correctly
+- **TAC_JUMP** Jumps inside functions now wired up
+
 ## [0.2.9] 2026-06-22
 
 - **CFG walk** — `generate_rom()` now iterates over `ir_module_t.cfgs` and

@@ -236,6 +236,18 @@ def test_u16_copy_and_return():
     return True, None
 
 
+def test_forward_jump():
+    """if/else forward jump skips else body, PORTB gets if-body value."""
+    source = os.path.join(SCRIPT_DIR, "emu_forward_jump.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 42:
+        return False, f"memory[$6000] = {val}, expected 42"
+    return True, None
+
+
 # ----------------------------------------------------------------
 # Runner
 # ----------------------------------------------------------------
@@ -252,6 +264,7 @@ TESTS = [
     ("store_const_to_abs", test_store_const_to_abs),
     ("copy_var_to_abs", test_copy_var_to_abs),
     ("u16_copy_and_return", test_u16_copy_and_return),
+    ("forward_jump", test_forward_jump),
 ]
 
 

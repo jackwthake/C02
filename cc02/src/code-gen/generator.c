@@ -144,6 +144,35 @@ static void add_fixup(emitter_t *e, char *func_name) {
 }
 
 
+static int resolve_local_fixups(emitter_t *e) {
+  for (unsigned i = 0; i < e->local_fixup_count; i++) {
+    fixup_t *f = &e->local_fixups[i];
+    uint16_t addr = e->local_labels[f->label_id];
+    if (!addr) {
+      fprintf(stderr, "codegen: unresolved local label L%u\n", f->label_id);
+      return 0;
+    }
+
+    e->rom[f->patch_pos]     = (uint8_t)(addr & 0xFF);
+    e->rom[f->patch_pos + 1] = (uint8_t)(addr >> 8);
+  }
+  return 1;
+}
+
+
+static void add_local_fixup(emitter_t *e, unsigned label_id) {
+  if (e->local_fixup_count >= e->local_fixup_capacity) {
+    unsigned cap = e->local_fixup_capacity ? e->local_fixup_capacity * 2 : 8;
+    e->local_fixups = realloc(e->local_fixups, cap * sizeof(fixup_t));
+    e->local_fixup_capacity = cap;
+  }
+
+  fixup_t *f = &e->local_fixups[e->local_fixup_count++];
+  f->patch_pos = e->code_pos;
+  f->label_id = label_id;
+}
+
+
 // ----------------------------------------------------------------
 // Op code emitters
 // ----------------------------------------------------------------
@@ -245,6 +274,11 @@ static void emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
   zp_map_t map;
   zp_map_build(&map, cfg);
 
+  e->local_label_count = cfg->next_label;
+  e->local_fixup_count = 0;
+  e->local_labels = realloc(e->local_labels, cfg->next_label * sizeof(uint16_t));
+  memset(e->local_labels, 0, cfg->next_label * sizeof(uint16_t));
+
   for (unsigned i = 0; i < cfg->block_count; ++i) {
     basic_block_t *block = cfg->blocks[i];
 
@@ -252,6 +286,8 @@ static void emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
       tac_instr_t *instruction = &block->instrs[j];
 
       switch (instruction->op) {
+        case TAC_LABEL: e->local_labels[instruction->label] = (uint16_t)(ROM_START + e->code_pos); break;
+
         case TAC_COPY: {
           unsigned width = codegen_type_size(instruction->dst.type);
           uint8_t dst_addr = zp_map_lookup(&map, &instruction->dst);
@@ -259,6 +295,20 @@ static void emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
             emit_load_byte(e, &map, &instruction->src1, b);
             sta_zpg(e, (uint8_t)(dst_addr + b));
           }
+          break;
+        }
+
+        case TAC_JUMP: {
+          if (e->local_labels[instruction->label]) {
+            jmp_abs(e, e->local_labels[instruction->label]);
+          } else {
+            EMIT(0x4c); //jmp absolute
+
+            add_local_fixup(e, instruction->label); // add label to be resolved, fill in placeholder bytes
+            EMIT(0x00);
+            EMIT(0x00);
+          }
+
           break;
         }
 
@@ -291,6 +341,7 @@ static void emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
     }
   }
 
+  resolve_local_fixups(e);
   rts(e);
 }
 

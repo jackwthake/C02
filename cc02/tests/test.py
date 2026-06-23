@@ -194,27 +194,31 @@ EXTENSION_LABELS = {
     ".c02": "C02",
     ".py": "Python",
     ".mk": "Makefile",
+    ".rs": "Rust",
 }
 
 COMPILER_EXTS = {".c", ".h", ".inc", ".mk"}
 HARNESS_EXTS = {".py", ".c02"}
-TESTS_REL = os.path.join("cc02", "tests")
+OBJDUMP_EXTS = {".rs", ".mk"}
 
-IGNORED_DIRS = {".git", "bin", "build", "node_modules", "__pycache__"}
+IGNORED_DIRS = {".git", "bin", "build", "node_modules", "__pycache__", "target"}
 
 COMPILER_SRC_DIR = os.path.join("cc02", "src")
+COMPILER_MAKEFILES = ["Makefile", os.path.join("cc02", "Makefile")]
+OBJDUMP_DIR = "c02-objdump"
+TESTS_REL = os.path.join("cc02", "tests")
+EXAMPLES_DIR = "examples"
 
-def count_lines():
-    compiler_counts = {}
-    harness_counts = {}
-    folder_counts = {}
-    for dirpath, dirnames, filenames in os.walk(REPO_ROOT):
+def count_lines_in(root_dir, extensions):
+    counts = {}
+    abs_root = os.path.join(REPO_ROOT, root_dir)
+    for dirpath, dirnames, filenames in os.walk(abs_root):
         dirnames[:] = [d for d in dirnames if d not in IGNORED_DIRS]
         for f in filenames:
             ext = os.path.splitext(f)[1]
             if f == "Makefile" and not ext:
                 ext = ".mk"
-            if ext not in EXTENSION_LABELS:
+            if ext not in extensions:
                 continue
             filepath = os.path.join(dirpath, f)
             try:
@@ -222,44 +226,79 @@ def count_lines():
                     lines = sum(1 for _ in fh)
             except (OSError, UnicodeDecodeError):
                 continue
-            relpath = os.path.relpath(filepath, REPO_ROOT)
-            in_tests = relpath.startswith(TESTS_REL)
-            if in_tests or ext in HARNESS_EXTS:
-                harness_counts[ext] = harness_counts.get(ext, 0) + lines
-            elif ext in COMPILER_EXTS:
-                compiler_counts[ext] = compiler_counts.get(ext, 0) + lines
-                if relpath.startswith(COMPILER_SRC_DIR):
-                    parts = relpath[len(COMPILER_SRC_DIR):].strip(os.sep).split(os.sep)
-                    folder = parts[0] if len(parts) > 1 else "driver"
-                    folder_counts[folder] = folder_counts.get(folder, 0) + lines
+            counts[ext] = counts.get(ext, 0) + lines
+    return counts
+
+def count_file(rel_path):
+    try:
+        with open(os.path.join(REPO_ROOT, rel_path)) as fh:
+            return sum(1 for _ in fh)
+    except (OSError, UnicodeDecodeError):
+        return 0
+
+def print_section(title, counts, label_map=None):
+    if not counts:
+        return
+    total = sum(counts.values())
+    if label_map:
+        max_label = max(len(label_map.get(k, k)) for k in counts)
+    else:
+        max_label = max(len(EXTENSION_LABELS[e]) for e in counts)
+    max_digits = len(str(max(counts.values())))
+    print(f"\n  {title}")
+    for key in sorted(counts, key=lambda k: counts[k], reverse=True):
+        label_str = label_map.get(key, key) if label_map else EXTENSION_LABELS[key]
+        label = (label_str + ":").ljust(max_label + 1)
+        pct = counts[key] / total * 100
+        print(f"    {label} {counts[key]:<{max_digits}} lines ({pct:.1f}%)")
+    print(f"    {'Total:'.ljust(max_label + 1)} {total} lines")
+
+def count_lines():
+    compiler_counts = count_lines_in(COMPILER_SRC_DIR, COMPILER_EXTS)
+    for mkfile in COMPILER_MAKEFILES:
+        lines = count_file(mkfile)
+        if lines:
+            compiler_counts[".mk"] = compiler_counts.get(".mk", 0) + lines
+
+    folder_counts = {}
+    abs_src = os.path.join(REPO_ROOT, COMPILER_SRC_DIR)
+    for dirpath, dirnames, filenames in os.walk(abs_src):
+        dirnames[:] = [d for d in dirnames if d not in IGNORED_DIRS]
+        for f in filenames:
+            ext = os.path.splitext(f)[1]
+            if f == "Makefile" and not ext:
+                ext = ".mk"
+            if ext not in COMPILER_EXTS:
+                continue
+            filepath = os.path.join(dirpath, f)
+            try:
+                with open(filepath) as fh:
+                    lines = sum(1 for _ in fh)
+            except (OSError, UnicodeDecodeError):
+                continue
+            relpath = os.path.relpath(filepath, abs_src)
+            parts = relpath.split(os.sep)
+            folder = parts[0] if len(parts) > 1 else "driver"
+            folder_counts[folder] = folder_counts.get(folder, 0) + lines
+
+    harness_counts = count_lines_in(TESTS_REL, {*COMPILER_EXTS, *HARNESS_EXTS})
+    for ext, lines in count_lines_in(EXAMPLES_DIR, HARNESS_EXTS).items():
+        harness_counts[ext] = harness_counts.get(ext, 0) + lines
+
+    objdump_counts = count_lines_in(OBJDUMP_DIR, OBJDUMP_EXTS)
 
     if not compiler_counts and not harness_counts:
         print("no recognized source files found")
         return
 
-    def print_section(title, counts, label_map=None):
-        if not counts:
-            return
-        total = sum(counts.values())
-        if label_map:
-            max_label = max(len(label_map.get(k, k)) for k in counts)
-        else:
-            max_label = max(len(EXTENSION_LABELS[e]) for e in counts)
-        max_digits = len(str(max(counts.values())))
-        print(f"\n  {title}")
-        for key in sorted(counts, key=lambda k: counts[k], reverse=True):
-            label_str = label_map.get(key, key) if label_map else EXTENSION_LABELS[key]
-            label = (label_str + ":").ljust(max_label + 1)
-            pct = counts[key] / total * 100
-            print(f"    {label} {counts[key]:<{max_digits}} lines ({pct:.1f}%)")
-        print(f"    {'Total:'.ljust(max_label + 1)} {total} lines")
-
     print_section("Compiler", compiler_counts)
     if folder_counts:
         print_section("Compiler (by module)", folder_counts, label_map={k: k for k in folder_counts})
     print_section("Test Harness", harness_counts)
+    print_section("Disassembler", objdump_counts)
 
-    grand_total = sum(compiler_counts.values()) + sum(harness_counts.values())
+    sections = [compiler_counts, harness_counts, objdump_counts]
+    grand_total = sum(sum(s.values()) for s in sections)
     print(f"\n  Grand Total: {grand_total} lines")
 
 if __name__ == "__main__":
