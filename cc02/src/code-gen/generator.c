@@ -422,7 +422,6 @@ static void emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
   }
 
   resolve_local_fixups(e);
-  rts(e);
 }
 
 

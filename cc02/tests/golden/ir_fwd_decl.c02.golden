@@ -8,4 +8,5 @@ fn main() -> void
   block0:
     t0 = call send_byte(42)
     x = counter
+    return
 

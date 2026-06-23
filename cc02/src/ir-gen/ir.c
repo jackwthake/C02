@@ -751,6 +751,12 @@ static void lower_function(ir_gen_t *gen, node_t *node) {
   if (node->function.body) {
     lower_block(gen, cfg, node->function.body);
   }
+
+  basic_block_t *entry = cfg->entry;
+  if (entry->instr_count == 0 ||
+      entry->instrs[entry->instr_count - 1].op != TAC_RETURN) {
+    emit(gen, cfg, (tac_instr_t){ .op = TAC_RETURN });
+  }
 }
 
 
