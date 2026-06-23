@@ -16,7 +16,8 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc python3 valgrind
+          sudo apt-get install -y gcc python3 python3-pip valgrind
+          pip install py65
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
