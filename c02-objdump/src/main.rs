@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::{fs, path::PathBuf, process};
 
-use crate::disassembler::disassembler;
+use crate::disassembler::{disassemble, dump_data, dump_sections, Mode};
 
 mod disassembler;
 
@@ -10,6 +10,18 @@ mod disassembler;
 struct Args {
   /// Path to the binary file to disassemble
   file: PathBuf,
+
+  /// Show all sections (disassembly + data hex dump)
+  #[arg(short = 'a', long = "all")]
+  all: bool,
+
+  /// Print section layout only
+  #[arg(short = 's', long = "sections")]
+  sections: bool,
+
+  /// Hex dump of .data section only
+  #[arg(short = 'd', long = "data")]
+  data: bool,
 }
 
 fn main() {
@@ -21,5 +33,13 @@ fn main() {
     process::exit(1);
   });
 
-  disassembler(bytes);
+  if args.sections {
+    dump_sections(&bytes);
+  } else if args.data {
+    dump_data(&bytes);
+  } else if args.all {
+    disassemble(&bytes, Mode::All);
+  } else {
+    disassemble(&bytes, Mode::CodeOnly);
+  }
 }

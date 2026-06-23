@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::io::{Cursor, Read, Seek, SeekFrom};
+use std::io::{Cursor, Read};
 
 const VECTOR_TABLE_SIZE: usize = 6;
 
@@ -51,31 +51,50 @@ fn print_op(op: &str, args: Vec<u8>, addr: u16, mode: AddrMode, labels: &HashMap
   println!("{:04X}: {}", addr, formatted);
 }
 
+// Total instruction size (opcode + operand bytes) for every 65C02 opcode.
+// 1 = implied/accumulator, 2 = immediate/zeropage/relative/indirect, 3 = absolute/BBR/BBS.
+// Undefined opcodes default to 1 (W65C02S single-byte NOPs).
+fn instruction_size(opcode: u8) -> usize {
+  #[rustfmt::skip]
+  static SIZES: [u8; 256] = [
+  // x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 xA xB xC xD xE xF
+      1, 2, 1, 1, 2, 2, 2, 2, 1, 2, 1, 1, 3, 3, 3, 3, // 0x: BRK ORA . . TSB ORA ASL RMB PHP ORA ASL . TSB ORA ASL BBR
+      2, 2, 2, 1, 2, 2, 2, 2, 1, 3, 1, 1, 3, 3, 3, 3, // 1x: BPL ORA ORA . TRB ORA ASL RMB CLC ORA INC . TRB ORA ASL BBR
+      3, 2, 1, 1, 2, 2, 2, 2, 1, 2, 1, 1, 3, 3, 3, 3, // 2x: JSR AND . . BIT AND ROL RMB PLP AND ROL . BIT AND ROL BBR
+      2, 2, 2, 1, 2, 2, 2, 2, 1, 3, 1, 1, 3, 3, 3, 3, // 3x: BMI AND AND . BIT AND ROL RMB SEC AND DEC . BIT AND ROL BBR
+      1, 2, 1, 1, 1, 2, 2, 2, 1, 2, 1, 1, 3, 3, 3, 3, // 4x: RTI EOR . . . EOR LSR RMB PHA EOR LSR . JMP EOR LSR BBR
+      2, 2, 2, 1, 1, 2, 2, 2, 1, 3, 1, 1, 3, 3, 3, 3, // 5x: BVC EOR EOR . . EOR LSR RMB CLI EOR PHY . . EOR LSR BBR
+      1, 2, 1, 1, 2, 2, 2, 2, 1, 2, 1, 1, 3, 3, 3, 3, // 6x: RTS ADC . . STZ ADC ROR RMB PLA ADC ROR . JMP ADC ROR BBR
+      2, 2, 2, 1, 2, 2, 2, 2, 1, 3, 1, 1, 3, 3, 3, 3, // 7x: BVS ADC ADC . STZ ADC ROR RMB SEI ADC PLY . JMP ADC ROR BBR
+      2, 2, 1, 1, 2, 2, 2, 2, 1, 2, 1, 1, 3, 3, 3, 3, // 8x: BRA STA . . STY STA STX SMB DEY BIT TXA . STY STA STX BBS
+      2, 2, 2, 1, 2, 2, 2, 2, 1, 3, 1, 1, 3, 3, 3, 3, // 9x: BCC STA STA . STY STA STX SMB TYA STA TXS . STZ STA STZ BBS
+      2, 2, 2, 1, 2, 2, 2, 2, 1, 2, 1, 1, 3, 3, 3, 3, // Ax: LDY LDA LDX . LDY LDA LDX SMB TAY LDA TAX . LDY LDA LDX BBS
+      2, 2, 2, 1, 2, 2, 2, 2, 1, 3, 1, 1, 3, 3, 3, 3, // Bx: BCS LDA LDA . LDY LDA LDX SMB CLV LDA TSX . LDY LDA LDX BBS
+      2, 2, 1, 1, 2, 2, 2, 2, 1, 2, 1, 2, 3, 3, 3, 3, // Cx: CPY CMP . . CPY CMP DEC SMB INY CMP DEX WAI CPY CMP DEC BBS
+      2, 2, 2, 1, 1, 2, 2, 2, 1, 3, 1, 2, 1, 3, 3, 3, // Dx: BNE CMP CMP . . CMP DEC SMB CLD CMP PHX STP . CMP DEC BBS
+      2, 2, 1, 1, 2, 2, 2, 2, 1, 2, 1, 1, 3, 3, 3, 3, // Ex: CPX SBC . . CPX SBC INC SMB INX SBC NOP . CPX SBC INC BBS
+      2, 2, 2, 1, 1, 2, 2, 2, 1, 3, 1, 2, 1, 3, 3, 3, // Fx: BEQ SBC SBC . . SBC INC SMB SED SBC PLX . . SBC INC BBS
+  ];
+  SIZES[opcode as usize] as usize
+}
+
+
 fn collect_jump_targets(bytes: &[u8]) -> HashMap<u16, String> {
   let mut targets: std::collections::BTreeSet<u16> = std::collections::BTreeSet::new();
-  let mut cursor = Cursor::new(bytes);
-  let mut buffer = [0u8; 1];
-  
-  while cursor.read(&mut buffer).unwrap_or(0) > 0 {
-    match buffer[0] {
-      0x20 | 0x4C => {
-        let mut op = [0u8; 2];
-        if cursor.read_exact(&mut op).is_ok() {
-          let target = u16::from_le_bytes([op[0], op[1]]);
-          targets.insert(target);
-        }
-      }
-      0xA9 | 0xA2 | 0xA0 | 0xA5 | 0xA6 | 0x85 | 0x84 | 0x86 | 0xB1 => {
-        cursor.seek(SeekFrom::Current(1)).ok();
-      }
-      0x8D => {
-        cursor.seek(SeekFrom::Current(2)).ok();
-      }
-      _ => {}
+  let mut i = 0;
+
+  while i < bytes.len() {
+    let opcode = bytes[i];
+    let size = instruction_size(opcode);
+
+    if (opcode == 0x20 || opcode == 0x4C) && i + 2 < bytes.len() {
+      let target = u16::from_le_bytes([bytes[i + 1], bytes[i + 2]]);
+      targets.insert(target);
     }
+
+    i += size;
   }
-  
-  // assign labels in address order so L0 is always the lowest address
+
   targets
   .into_iter()
   .enumerate()
@@ -83,32 +102,138 @@ fn collect_jump_targets(bytes: &[u8]) -> HashMap<u16, String> {
   .collect()
 }
 
-pub fn disassembler(bytes: Vec<u8>) {
+pub enum Mode {
+  CodeOnly,
+  All,
+}
+
+struct RomInfo {
+  base_addr: u16,
+  code_end: usize,
+  data_end: usize,
+  has_boundary: bool,
+  nmi: u16,
+  reset: u16,
+  irq: u16,
+}
+
+fn parse_rom(bytes: &[u8]) -> Option<RomInfo> {
   if bytes.len() <= VECTOR_TABLE_SIZE {
-    return;
+    return None;
   }
-  
+
+  let nmi   = u16::from_le_bytes([bytes[bytes.len() - 6], bytes[bytes.len() - 5]]);
+  let reset = u16::from_le_bytes([bytes[bytes.len() - 4], bytes[bytes.len() - 3]]);
+  let irq   = u16::from_le_bytes([bytes[bytes.len() - 2], bytes[bytes.len() - 1]]);
+  let base_addr = reset;
+
   let code_bytes = &bytes[..bytes.len() - VECTOR_TABLE_SIZE];
-  
-  let meaningful_len = code_bytes
-  .iter()
-  .rposition(|&b| b != 0xEA)
-  .map(|i| i + 1)
-  .unwrap_or(0);
-  
-  let code = &code_bytes[..meaningful_len];
+
+  let code_boundary = u16::from_le_bytes([
+    bytes[bytes.len() - 8],
+    bytes[bytes.len() - 7],
+  ]);
+
+  let has_boundary = code_boundary >= base_addr && code_boundary < 0xFFF0;
+
+  let code_end = if has_boundary {
+    (code_boundary - base_addr) as usize
+  } else {
+    code_bytes
+      .iter()
+      .rposition(|&b| b != 0xEA)
+      .map(|i| i + 1)
+      .unwrap_or(0)
+  };
+
+  let data_end = if has_boundary {
+    let marker_pos = bytes.len() - 8;
+    bytes[code_end..marker_pos]
+      .iter()
+      .rposition(|&b| b != 0xEA)
+      .map(|i| code_end + i + 1)
+      .unwrap_or(code_end)
+  } else {
+    code_end
+  };
+
+  Some(RomInfo { base_addr, code_end, data_end, has_boundary, nmi, reset, irq })
+}
+
+pub fn dump_sections(bytes: &[u8]) {
+  let info = match parse_rom(bytes) {
+    Some(i) => i,
+    None => { eprintln!("ROM too small"); return; }
+  };
+
+  let rom_size = bytes.len();
+  let base = info.base_addr;
+
+  println!("ROM size:  {} bytes ({:#06X})", rom_size, rom_size);
+  println!();
+  println!("  .text    ${:04X}–${:04X}  ({} bytes)",
+    base, base + info.code_end as u16 - 1, info.code_end);
+
+  if info.has_boundary && info.data_end > info.code_end {
+    println!("  .data    ${:04X}–${:04X}  ({} bytes)",
+      base + info.code_end as u16,
+      base + info.data_end as u16 - 1,
+      info.data_end - info.code_end);
+  }
+
+  println!("  vectors  $FFFA–$FFFF  (6 bytes)");
+  println!();
+  println!("  NMI      ${:04X}", info.nmi);
+  println!("  Reset    ${:04X}", info.reset);
+  println!("  IRQ      ${:04X}", info.irq);
+}
+
+fn hex_dump(bytes: &[u8], base_addr: u16, offset: usize, len: usize) {
+  let end = (offset + len).min(bytes.len());
+  let mut i = offset;
+  while i < end {
+    let addr = base_addr.wrapping_add(i as u16);
+    print!("{:04X}:", addr);
+    let row_end = (i + 16).min(end);
+    for j in i..row_end {
+      if j % 8 == 0 && j != i { print!(" "); }
+      print!(" {:02X}", bytes[j]);
+    }
+    // ascii column
+    print!("  ");
+    for j in i..row_end {
+      let ch = bytes[j];
+      if ch.is_ascii_graphic() || ch == b' ' {
+        print!("{}", ch as char);
+      } else {
+        print!(".");
+      }
+    }
+    println!();
+    i = row_end;
+  }
+}
+
+pub fn disassemble(bytes: &[u8], mode: Mode) {
+  let info = match parse_rom(bytes) {
+    Some(i) => i,
+    None => return,
+  };
+
+  let code = &bytes[..info.code_end];
   let labels = collect_jump_targets(code);
-  
+
   let mut cursor = Cursor::new(code);
   let mut buffer = [0u8; 1];
-  
+
   while cursor.read(&mut buffer).unwrap_or(0) > 0 {
     let addr = (cursor.position().saturating_sub(1)) as u16;
-    
-    if let Some(label) = labels.get(&addr) {
+    let abs_addr = info.base_addr.wrapping_add(addr);
+
+    if let Some(label) = labels.get(&abs_addr) {
       println!("\n{}:", label);
     }
-    
+
     match buffer[0] {
       // 00-0F: Control & Logic Group
       0x00 => print_op("BRK", vec![], addr, AddrMode::Implied, &labels),
@@ -358,5 +483,34 @@ pub fn disassembler(bytes: Vec<u8>) {
       
       _ => println!("{:04X}: Unknown Opcode: {:02X}", addr, buffer[0]),
     }
+  }
+
+  if let Mode::All = mode {
+    if info.has_boundary && info.data_end > info.code_end {
+      let data_len = info.data_end - info.code_end;
+      println!("\n.data  ${:04X}–${:04X}  ({} bytes)\n",
+        info.base_addr + info.code_end as u16,
+        info.base_addr + info.data_end as u16 - 1,
+        data_len);
+      hex_dump(bytes, info.base_addr, info.code_end, data_len);
+    }
+  }
+}
+
+pub fn dump_data(bytes: &[u8]) {
+  let info = match parse_rom(bytes) {
+    Some(i) => i,
+    None => return,
+  };
+
+  if info.has_boundary && info.data_end > info.code_end {
+    let data_len = info.data_end - info.code_end;
+    println!(".data  ${:04X}–${:04X}  ({} bytes)\n",
+      info.base_addr + info.code_end as u16,
+      info.base_addr + info.data_end as u16 - 1,
+      data_len);
+    hex_dump(bytes, info.base_addr, info.code_end, data_len);
+  } else {
+    println!("No data section found.");
   }
 }
