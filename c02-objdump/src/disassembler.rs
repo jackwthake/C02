@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::io::{Cursor, Read, Seek, SeekFrom};
+use std::io::{Cursor, Read};
 
 const VECTOR_TABLE_SIZE: usize = 6;
 
@@ -51,31 +51,47 @@ fn print_op(op: &str, args: Vec<u8>, addr: u16, mode: AddrMode, labels: &HashMap
   println!("{:04X}: {}", addr, formatted);
 }
 
+fn instruction_size(opcode: u8) -> usize {
+  #[rustfmt::skip]
+  static SIZES: [u8; 256] = [
+  //  x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 xA xB xC xD xE xF
+      1, 2, 1, 1, 2, 2, 2, 2, 1, 2, 1, 1, 3, 3, 3, 3, // 0x
+      2, 2, 2, 1, 2, 2, 2, 2, 1, 3, 1, 1, 3, 3, 3, 3, // 1x
+      3, 2, 1, 1, 2, 2, 2, 2, 1, 2, 1, 1, 3, 3, 3, 3, // 2x
+      2, 2, 2, 1, 2, 2, 2, 2, 1, 3, 1, 1, 3, 3, 3, 3, // 3x
+      1, 2, 1, 1, 1, 2, 2, 2, 1, 2, 1, 1, 3, 3, 3, 3, // 4x
+      2, 2, 2, 1, 1, 2, 2, 2, 1, 3, 1, 1, 3, 3, 3, 3, // 5x
+      1, 2, 1, 1, 2, 2, 2, 2, 1, 2, 1, 1, 3, 3, 3, 3, // 6x
+      2, 2, 2, 1, 2, 2, 2, 2, 1, 3, 1, 1, 3, 3, 3, 3, // 7x
+      2, 2, 1, 1, 2, 2, 2, 2, 1, 2, 1, 1, 3, 3, 3, 3, // 8x
+      2, 2, 2, 1, 2, 2, 2, 2, 1, 3, 1, 1, 3, 3, 3, 3, // 9x
+      2, 2, 2, 1, 2, 2, 2, 2, 1, 2, 1, 1, 3, 3, 3, 3, // Ax
+      2, 2, 2, 1, 2, 2, 2, 2, 1, 3, 1, 1, 3, 3, 3, 3, // Bx
+      2, 2, 1, 1, 2, 2, 2, 2, 1, 2, 1, 2, 3, 3, 3, 3, // Cx
+      2, 2, 2, 1, 1, 2, 2, 2, 1, 3, 1, 2, 1, 3, 3, 3, // Dx
+      2, 2, 1, 1, 2, 2, 2, 2, 1, 2, 1, 1, 3, 3, 3, 3, // Ex
+      2, 2, 2, 1, 1, 2, 2, 2, 1, 3, 1, 2, 1, 3, 3, 3, // Fx
+  ];
+  SIZES[opcode as usize] as usize
+}
+
+
 fn collect_jump_targets(bytes: &[u8]) -> HashMap<u16, String> {
   let mut targets: std::collections::BTreeSet<u16> = std::collections::BTreeSet::new();
-  let mut cursor = Cursor::new(bytes);
-  let mut buffer = [0u8; 1];
-  
-  while cursor.read(&mut buffer).unwrap_or(0) > 0 {
-    match buffer[0] {
-      0x20 | 0x4C => {
-        let mut op = [0u8; 2];
-        if cursor.read_exact(&mut op).is_ok() {
-          let target = u16::from_le_bytes([op[0], op[1]]);
-          targets.insert(target);
-        }
-      }
-      0xA9 | 0xA2 | 0xA0 | 0xA5 | 0xA6 | 0x85 | 0x84 | 0x86 | 0xB1 => {
-        cursor.seek(SeekFrom::Current(1)).ok();
-      }
-      0x8D => {
-        cursor.seek(SeekFrom::Current(2)).ok();
-      }
-      _ => {}
+  let mut i = 0;
+
+  while i < bytes.len() {
+    let opcode = bytes[i];
+    let size = instruction_size(opcode);
+
+    if (opcode == 0x20 || opcode == 0x4C) && i + 2 < bytes.len() {
+      let target = u16::from_le_bytes([bytes[i + 1], bytes[i + 2]]);
+      targets.insert(target);
     }
+
+    i += size;
   }
-  
-  // assign labels in address order so L0 is always the lowest address
+
   targets
   .into_iter()
   .enumerate()
@@ -87,28 +103,34 @@ pub fn disassembler(bytes: Vec<u8>) {
   if bytes.len() <= VECTOR_TABLE_SIZE {
     return;
   }
-  
+
+  let base_addr = u16::from_le_bytes([
+    bytes[bytes.len() - 4],
+    bytes[bytes.len() - 3],
+  ]);
+
   let code_bytes = &bytes[..bytes.len() - VECTOR_TABLE_SIZE];
-  
+
   let meaningful_len = code_bytes
   .iter()
   .rposition(|&b| b != 0xEA)
   .map(|i| i + 1)
   .unwrap_or(0);
-  
+
   let code = &code_bytes[..meaningful_len];
   let labels = collect_jump_targets(code);
-  
+
   let mut cursor = Cursor::new(code);
   let mut buffer = [0u8; 1];
-  
+
   while cursor.read(&mut buffer).unwrap_or(0) > 0 {
     let addr = (cursor.position().saturating_sub(1)) as u16;
-    
-    if let Some(label) = labels.get(&addr) {
+    let abs_addr = base_addr.wrapping_add(addr);
+
+    if let Some(label) = labels.get(&abs_addr) {
       println!("\n{}:", label);
     }
-    
+
     match buffer[0] {
       // 00-0F: Control & Logic Group
       0x00 => print_op("BRK", vec![], addr, AddrMode::Implied, &labels),
