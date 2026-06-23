@@ -291,7 +291,7 @@ def count_lines():
         print("no recognized source files found")
         return
 
-    print_section("Compiler", compiler_counts)
+    print_section("Compiler (by language)", compiler_counts)
     if folder_counts:
         print_section("Compiler (by module)", folder_counts, label_map={k: k for k in folder_counts})
     print_section("Test Harness", harness_counts)

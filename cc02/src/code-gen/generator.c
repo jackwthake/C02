@@ -202,11 +202,24 @@ OP_EMITTER_SINGLE_ARG(lda_zpg, 0xA5)
 OP_EMITTER_SINGLE_ARG(ldx_imm, 0xA2)
 OP_EMITTER_SINGLE_ARG(sta_zpg, 0x85)
 
+OP_EMITTER_SINGLE_ARG(cmp_imm, 0xC9)
+OP_EMITTER_SINGLE_ARG(cmp_zpg, 0xC5)
+OP_EMITTER_SINGLE_ARG(beq_rel, 0xF0)
+OP_EMITTER_SINGLE_ARG(eor_imm, 0x49)
+
+OP_EMITTER_SINGLE_ARG(inc_zpg, 0xE6)
+OP_EMITTER_SINGLE_ARG(dec_zpg, 0xC6)
+
 OP_EMITTER_NO_ARG(txs, 0x9A)
 OP_EMITTER_NO_ARG(rts, 0x60)
 
+
 OP_EMITTER_ABS(jmp_abs, 0x4C)
 OP_EMITTER_ABS(sta_abs, 0x8D)
+
+#undef OP_EMITTER_SINGLE_ARG
+#undef OP_EMITTER_NO_ARG
+#undef OP_EMITTER_ABS
 
 
 static void jsr(emitter_t *e, char *func_name) {
@@ -268,6 +281,21 @@ static void emit_load_byte(emitter_t *e, zp_map_t *map,
 }
 
 
+static void emit_cond_jump(emitter_t *e, zp_map_t *map,
+                           tac_operand_t *src, unsigned label_id) {
+  emit_load_byte(e, map, src, 0);
+  beq_rel(e, 3);
+  if (e->local_labels[label_id]) {
+    jmp_abs(e, e->local_labels[label_id]);
+  } else {
+    EMIT(0x4C);
+    add_local_fixup(e, label_id);
+    EMIT(0x00);
+    EMIT(0x00);
+  }
+}
+
+
 static void emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
   register_func_label(e, cfg->name, (uint16_t)(ROM_START + e->code_pos));
 
@@ -286,7 +314,7 @@ static void emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
       tac_instr_t *instruction = &block->instrs[j];
 
       switch (instruction->op) {
-        case TAC_LABEL: e->local_labels[instruction->label] = (uint16_t)(ROM_START + e->code_pos); break;
+        // -- data movement --
 
         case TAC_COPY: {
           unsigned width = codegen_type_size(instruction->dst.type);
@@ -295,20 +323,6 @@ static void emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
             emit_load_byte(e, &map, &instruction->src1, b);
             sta_zpg(e, (uint8_t)(dst_addr + b));
           }
-          break;
-        }
-
-        case TAC_JUMP: {
-          if (e->local_labels[instruction->label]) {
-            jmp_abs(e, e->local_labels[instruction->label]);
-          } else {
-            EMIT(0x4c); //jmp absolute
-
-            add_local_fixup(e, instruction->label); // add label to be resolved, fill in placeholder bytes
-            EMIT(0x00);
-            EMIT(0x00);
-          }
-
           break;
         }
 
@@ -324,6 +338,24 @@ static void emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
           break;
         }
 
+        // -- control flow --
+
+        case TAC_LABEL: e->local_labels[instruction->label] = (uint16_t)(ROM_START + e->code_pos); break;
+
+        case TAC_JUMP: {
+          if (e->local_labels[instruction->label]) {
+            jmp_abs(e, e->local_labels[instruction->label]);
+          } else {
+            EMIT(0x4c);
+            add_local_fixup(e, instruction->label);
+            EMIT(0x00);
+            EMIT(0x00);
+          }
+          break;
+        }
+
+        case TAC_COND_JUMP: emit_cond_jump(e, &map, &instruction->src1, instruction->label); break;
+
         case TAC_RETURN: {
           if (instruction->src1.kind != OPERAND_NONE) {
             unsigned width = codegen_type_size(cfg->return_type);
@@ -333,6 +365,54 @@ static void emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
             }
           }
           rts(e);
+          break;
+        }
+
+        // -- comparisons & boolean --
+
+        case TAC_NOT: {
+          uint8_t dst_addr = zp_map_lookup(&map, &instruction->dst);
+          emit_load_byte(e, &map, &instruction->src1, 0);
+          eor_imm(e, 0x01);
+          sta_zpg(e, dst_addr);
+          break;
+        }
+
+        #define COMPARE_OP(TAC, LEFT, RIGHT, BRANCH_OP)                 \
+          case TAC: {                                                   \
+            uint8_t dst_addr = zp_map_lookup(&map, &instruction->dst);  \
+            emit_load_byte(e, &map, &instruction->LEFT, 0);             \
+            if (instruction->RIGHT.kind == OPERAND_CONST_INT)           \
+              cmp_imm(e, (uint8_t)(instruction->RIGHT.int_val & 0xFF)); \
+            else                                                        \
+              cmp_zpg(e, zp_map_lookup(&map, &instruction->RIGHT));     \
+            EMIT(BRANCH_OP); EMIT(4);                                   \
+            lda_imm(e, 0);                                              \
+            EMIT(0xF0); EMIT(2);                                        \
+            lda_imm(e, 1);                                              \
+            sta_zpg(e, dst_addr);                                       \
+            break;                                                      \
+          }
+
+        COMPARE_OP(TAC_LT,  src1, src2, 0x90)  // BCC — true if <
+        COMPARE_OP(TAC_GTE, src1, src2, 0xB0)  // BCS — true if >=
+        COMPARE_OP(TAC_EQ,  src1, src2, 0xF0)  // BEQ — true if ==
+        COMPARE_OP(TAC_NEQ, src1, src2, 0xD0)  // BNE — true if !=
+        COMPARE_OP(TAC_GT,  src2, src1, 0x90)  // a>b = b<a, swap+BCC
+        COMPARE_OP(TAC_LTE, src2, src1, 0xB0)  // a<=b = b>=a, swap+BCS
+        #undef COMPARE_OP
+
+        // -- increment / decrement --
+
+        case TAC_INC: {
+          uint8_t dst_addr = zp_map_lookup(&map, &instruction->dst);
+          inc_zpg(e, dst_addr);
+          break;
+        }
+
+        case TAC_DEC: {
+          uint8_t dst_addr = zp_map_lookup(&map, &instruction->dst);
+          dec_zpg(e, dst_addr);
           break;
         }
 

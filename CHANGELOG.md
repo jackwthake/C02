@@ -7,14 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/) - while
 the project is in `0.x`, breaking changes may land in MINOR releases; PATCH
 releases are reserved for bug fixes only.
 
-## [Unreleased]
+## [v0.2.10] 2026-06-23
 
 - **Line count: disassembler section** — refactored `count_lines` into a
   reusable `count_lines_in(dir, exts)` helper and added a Disassembler section
   for c02-objdump (Rust + Makefile). Also added `target` to `IGNORED_DIRS` to
   exclude Cargo build artifacts.
-- **TAC_LABEL** local labels now resolve correctly
-- **TAC_JUMP** Jumps inside functions now wired up
+- **Control flow codegen** — complete control flow generation for the
+  65C02 target, enabling `for`, `while`, and `if`/`else` to compile and run on
+  real hardware.
+  - **Local label system** — `TAC_LABEL` records label addresses during emission;
+    `TAC_JUMP` emits `JMP abs` with backward-ref direct patching or forward-ref
+    backpatching via `local_fixups`, resolved at the end of each function.
+  - **`TAC_COND_JUMP`** — inverted-branch-over-JMP pattern (`BEQ +3; JMP target`)
+    gives unlimited jump range from a 1-byte boolean source.
+  - **`TAC_NOT`** — boolean negation via `EOR #$01`.
+  - **All six comparison ops** — `TAC_LT`, `TAC_GTE`, `TAC_EQ`, `TAC_NEQ`,
+    `TAC_GT`, `TAC_LTE` via a `COMPARE_OP` macro that stamps out the
+    `CMP`/branch/`LDA` sequence with a single branch-opcode parameter. `GT` and
+    `LTE` swap operands to reuse `LT`/`GTE` logic. Uses a branch-before-load
+    pattern to avoid the 6502 `LDA #0` clobbering the Zero flag before
+    `BEQ`/`BNE`.
+  - **`TAC_INC` / `TAC_DEC`** — in-place `INC zpg` / `DEC zpg` for u8 variables.
+  - New opcode emitters: `beq_rel`, `cmp_imm`, `cmp_zpg`, `eor_imm`, `inc_zpg`,
+    `dec_zpg`.
+  - Emulator tests: `forward_jump`, `cmp_gt`, `cmp_gte`, `cmp_eq`, `cmp_neq`,
+    `cmp_lte`.
+  - **Hardware verified** — `for_test.c02` (nested while + for loop cycling PORTB
+    through 0–254) compiled and flashed to real 65C02 breadboard.
+
+### Known Limitations
+
+- **Comparisons are u8-only** — `COMPARE_OP` loads only byte 0 of each operand.
+  A u16 comparison will silently compare only the low byte, giving wrong results
+  when values differ in the high byte.
+- **INC/DEC are u8-only** — `INC zpg` / `DEC zpg` operate on a single byte with
+  no carry into a high byte. Incrementing a u16 past `$00FF` or decrementing
+  below `$0100` will wrap the low byte without touching the high byte.
+- **Comparisons are unsigned-only** — the `CMP` + carry-flag branch sequence
+  implements unsigned ordering. Signed comparisons (i8/i16) require checking
+  the Negative and Overflow flags (`N ⊕ V`), which needs a different branch
+  sequence not yet implemented.
 
 ## [0.2.9] 2026-06-22
 

@@ -248,6 +248,28 @@ def test_forward_jump():
     return True, None
 
 
+def _test_cmp(source_file, description):
+    """Helper: compile an if/else comparison test, expect PORTB = 42."""
+    def test():
+        source = os.path.join(SCRIPT_DIR, source_file)
+        mpu, err = compile_and_run(source)
+        if mpu is None:
+            return False, f"compilation failed: {err}"
+        val = mpu.memory[0x6000]
+        if val != 42:
+            return False, f"memory[$6000] = {val}, expected 42"
+        return True, None
+    test.__doc__ = description
+    return test
+
+
+test_cmp_gt  = _test_cmp("emu_cmp_gt.c02",  "10 > 5 takes if-body")
+test_cmp_gte = _test_cmp("emu_cmp_gte.c02", "10 >= 10 takes if-body (boundary)")
+test_cmp_eq  = _test_cmp("emu_cmp_eq.c02",  "10 == 10 takes if-body")
+test_cmp_neq = _test_cmp("emu_cmp_neq.c02", "10 != 5 takes if-body")
+test_cmp_lte = _test_cmp("emu_cmp_lte.c02", "10 <= 10 takes if-body (boundary)")
+
+
 # ----------------------------------------------------------------
 # Runner
 # ----------------------------------------------------------------
@@ -265,6 +287,11 @@ TESTS = [
     ("copy_var_to_abs", test_copy_var_to_abs),
     ("u16_copy_and_return", test_u16_copy_and_return),
     ("forward_jump", test_forward_jump),
+    ("cmp_gt", test_cmp_gt),
+    ("cmp_gte", test_cmp_gte),
+    ("cmp_eq", test_cmp_eq),
+    ("cmp_neq", test_cmp_neq),
+    ("cmp_lte", test_cmp_lte),
 ]
 
 
