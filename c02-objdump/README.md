@@ -1,67 +1,79 @@
 # 65C02 Disassembler
 
-The disassembler implementation in [src/disassembler.rs](src/disassembler.rs) uses a large match statement to decode each of the 256 possible 6502/65C02 opcodes. Each instruction case handles:
-
-1. Reading any required operands from the binary
-2. Determining the addressing mode
-3. Formatting the instruction in standard assembly syntax
-4. Printing the output with the current address
+Decodes compiled C02 `.bin` ROM files back into annotated 65C02 assembly. Resolves jump targets to named labels and understands the C02 ROM layout (code, data, and vector sections).
 
 ## Usage
 
 ```shell
-./c02-objdump <BIN FILE>
+c02-objdump [OPTIONS] <BIN FILE>
 ```
 
-Each instruction is displayed as:
+### Options
 
-```assembly
-ADDRESS: MNEMONIC OPERAND
-```
+| Flag | Description |
+| :--- | :--- |
+| *(none)* | Disassemble `.text` section only |
+| `-a`, `--all` | Disassemble code + hex dump of `.data` section |
+| `-d`, `--data` | Hex dump of `.data` section only |
+| `-s`, `--sections` | Print section layout and vector table only |
 
-Examples:
+### Examples
+
+**Default** — disassemble code, stop before data:
 
 ```assembly
 L1:
-8013: TSX
-8014: STX $00
-8016: LDA #$01
-8018: STA $01
-801A: LDA $04
-801C: PHA
-801D: LDA $05
-801F: PHA
-8020: LDA #$00
-8022: STA $05
-8024: LDA #$55
-8026: STA $04
-8028: LDA #$00
-802A: STA $03
-802C: LDA $04
-802E: STA $02
-8030: JMP L2
+0057: LDA $0200
+005A: STA $05
+005C: LDA $0201
+005F: STA $06
 
 L2:
-8033: PLA
-8034: STA $05
-8036: PLA
-8037: STA $04
-8039: LDX $00
-803B: TXS
-803C: RTS
+0061: LDY #$00
+0063: LDA ($05),Y
+0065: STA $09
+...
+0091: RTS
 ```
 
-Unknown opcodes are displayed as "Unknown Opcode: XX" for debugging purposes
+**`-a`** — code disassembly followed by data hex dump:
+
+```
+...
+L3:
+0091: RTS
+
+.data  $8092–$809C  (11 bytes)
+
+8092: 48 65 6C 6C 6F 20  43 30 32 21 00  Hello C02!.
+```
+
+**`-s`** — section map:
+
+```
+ROM size:  32768 bytes (0x8000)
+
+  .text    $8000–$8091  (146 bytes)
+  .data    $8092–$809C  (11 bytes)
+  vectors  $FFFA–$FFFF  (6 bytes)
+
+  NMI      $0000
+  Reset    $8000
+  IRQ      $0000
+```
 
 ## Implementation Details
 
+### Section Detection
+
+The C02 code generator writes a 2-byte code/data boundary address at `$FFF8` (just before the 6-byte vector table). The disassembler reads this to determine where `.text` ends and `.data` begins. For binaries without this marker, it falls back to scanning for the last non-NOP (`$EA`) byte.
+
 ### Label Generation
 
-The disassembler automatically generates labels for jump targets:
-
-- JSR (Jump to Subroutine) and JMP (Jump) instructions create labels
-- Labels are named sequentially (L0, L1, L2, etc.) in address order
-- Branch targets are displayed either as labels or as addresses
+- JSR and JMP instructions create labels at their target addresses
+- Labels are named sequentially (L0, L1, L2, ...) in address order
+- A pre-scan pass walks the full instruction stream using a 256-entry opcode size table to stay in sync with instruction boundaries
+- The reset vector is read to translate between ROM buffer offsets and absolute addresses
 
 ## References
 
