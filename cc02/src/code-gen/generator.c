@@ -643,6 +643,13 @@ uint8_t *generate_rom(ir_gen_t *gen, size_t *final_rom_size) {
   }
 
   emit_data_section(&e, gen);
+
+  // code/data boundary at $FFF8 for the disassembler
+  unsigned boundary_pos = 0xFFF8 - ROM_START;
+  uint16_t code_end = (uint16_t)(ROM_START + e.data_pos);
+  e.rom[boundary_pos]     = (uint8_t)(code_end & 0xFF);
+  e.rom[boundary_pos + 1] = (uint8_t)(code_end >> 8);
+
   emit_vectors(&e);
   emitter_free(&e);
 
