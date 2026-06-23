@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/) - while
 the project is in `0.x`, breaking changes may land in MINOR releases; PATCH
 releases are reserved for bug fixes only.
 
+## [v0.2.12] 2026-06-23
+
+- **c02-objdump: label markers** — jump target labels (`L0:`, `L1:`, ...) now
+  print at the correct positions in the disassembly. The reset vector is read
+  to translate between ROM buffer offsets and absolute addresses.
+- **c02-objdump: full opcode size table** — the label pre-scan uses a 256-entry
+  instruction size table covering the entire 65C02 instruction set, replacing
+  the previous partial list that would lose sync on unrecognized opcodes.
+- **c02-objdump: section-aware output** — the code generator now writes a
+  code/data boundary address at `$FFF8` in the ROM. The disassembler reads
+  this to stop before the data section, with a NOP-fill heuristic fallback
+  for older binaries.
+- **c02-objdump: new CLI flags** —
+  `-a` / `--all` shows disassembly followed by a `.data` hex dump with ASCII.
+  `-d` / `--data` dumps just the `.data` section.
+  `-s` / `--sections` prints the section layout (`.text`, `.data`, vectors
+  with addresses).
+
 ## [v0.2.11] 2026-06-23
 
 - **Implicit void return in IR** — `lower_function` now emits a trailing
