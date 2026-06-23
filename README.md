@@ -21,8 +21,7 @@
 2. **Recursive Descent Parser:** Transforms the token stream into a structured AST, treating hardware registers and standard controls as first-class grammatical constructs.
 3. **Lexically Scoped Semantic Analyzer:** Two-pass validation engine over the AST. Pass 1 registers all top-level declarations (functions, structs, registers, globals) into the global symbol table. Pass 2 walks function bodies with a scoped symbol table, checking undeclared identifiers, type mismatches, argument counts/types, struct field access, lvalue validity, and return-type consistency. Invalid declarations are poisoned to prevent cascading diagnostics.
 4. **IR Generator:** Lowers the analysed AST into a self-contained three-address code (TAC) intermediate representation. The IR module contains struct layouts with computed field offsets, global/register definitions with hardware addresses baked in, and one flat instruction stream per function - codegen can emit target code from the IR alone, without consulting the AST or symbol table. Supports incremental compilation: `-c` serializes the IR to a `.o` file that can be loaded back to skip the frontend entirely.
-5. **Optimized Code Generator:** Generates valid 65C02 binaries. It avoids slow stack execution by mapping parameters and expression scratchpads directly onto a high-performance zero-page register design.
-> To be implemented!!
+5. **Code Generator:** Emits valid 65C02 ROM binaries (32K) with a bootstrap runtime, interrupt vectors, and flat zero-page register allocation. Avoids slow stack-based execution by mapping local variables, temporaries, and parameters directly onto zero-page slots. Globals are allocated in RAM ($0200+) and initialized in the bootstrap before `JSR main`. String literals are placed in a ROM data section with backpatching fixups. Simple programs compile and run on real hardware.
 
 #### c02-objdump Disassembler
 
@@ -30,14 +29,30 @@
 
 ## Current Status & Limitations
 
-C02 is under active, early development. The **complete frontend** (tokenizer, parser, semantic analyzer) and **IR generation** are functional and tested, but code generation is not yet implemented:
+C02 is under active, early development. The **complete frontend** (tokenizer, parser, semantic analyzer), **IR generation**, and **code generator** are functional and tested — simple programs compile to valid 65C02 ROMs and run on real hardware.
 
-- **Code generation is not implemented.** `cc02` will not currently produce a working 65C02 binary. The IR is complete (use `--ir-dump` to inspect it), but the final lowering to 6502 machine code is the next milestone. The zero-page register layout below is a design target for the code generator, not yet a reality.
-- **No arrays.** There's no array type or subscript syntax (`a[i]`) yet. Strings work as `u8*` and pointer arithmetic covers some of the same ground in the meantime, but fixed-size arrays with bounds/length tracking are unimplemented.
-- **Struct field access through a pointer is auto-dereferenced** - there's no `->` operator; `.` is used uniformly and the analyzer resolves single-level pointer indirection automatically (e.g. `ptr.field` where `ptr` is a `Struct*`).
-- **Missing-return detection is shallow.** A non-void function with no `return` at the end is flagged, but the analyzer does not perform full path-coverage analysis - a one-armed `if` that falls through, or an `if`/`else` where only some branches return, is not caught.
+#### What works today
 
-If you're exploring the codebase: the parser ([parser.c](cc02/src/parser/parser.c)), the analyzer ([analyzer.c](cc02/src/analysis/analyzer.c)), and the IR generator ([ir.c](cc02/src/ir-gen/ir.c)) are the most complete parts of the project. Issues and PRs around parser bugs, grammar gaps, analyzer edge cases, or IR lowering are welcome; codegen is actively being worked on next.
+- **Data movement:** variable copies, constant stores, hardware register writes (`TAC_COPY`, `TAC_STORE`, `TAC_RETURN`).
+- **Control flow:** `if`/`else`, `while`, `for` loops via label/jump/conditional-jump.
+- **Comparisons:** all six relational operators (`<`, `<=`, `==`, `!=`, `>=`, `>`), u8 only.
+- **Increment/decrement:** `++`/`--` for both u8 and 16-bit values (pointers, u16).
+- **Pointer dereference:** `*p` via indirect indexed addressing (`LDA ($nn),Y`).
+- **Global variables:** RAM-allocated globals with bootstrap initialization. String literals placed in a ROM data section with backpatching fixups.
+
+#### Not yet implemented
+
+- **Function calls** (`TAC_CALL`) — the ABI zone is reserved but `JSR`/parameter passing is not wired up yet.
+- **Arithmetic** (`+`, `-`, `*`, `/`, `%`) — no `TAC_ADD`/`TAC_SUB`/`TAC_MUL`/`TAC_DIV` codegen.
+- **Struct field access** (`TAC_FIELD_LOAD`/`TAC_FIELD_STORE`).
+- **Type casts** (`TAC_CAST`) — implicit widening (u8→u16) reads a garbage high byte.
+- **16-bit comparisons** — only the low byte is compared; values differing in the high byte give wrong results.
+- **Signed comparisons** — the `CMP`/carry-flag sequence implements unsigned ordering only.
+- **Arrays** — no array type or subscript syntax (`a[i]`).
+- **Struct field access through a pointer is auto-dereferenced** — there's no `->` operator; `.` is used uniformly and the analyzer resolves single-level pointer indirection automatically (e.g. `ptr.field` where `ptr` is a `Struct*`).
+- **Missing-return detection is shallow.** A non-void function with no `return` at the end is flagged, but the analyzer does not perform full path-coverage analysis.
+
+If you're exploring the codebase: the parser ([parser.c](cc02/src/parser/parser.c)), the analyzer ([analyzer.c](cc02/src/analysis/analyzer.c)), the IR generator ([ir.c](cc02/src/ir-gen/ir.c)), and the code generator ([generator.c](cc02/src/code-gen/generator.c)) are the main files. Issues and PRs are welcome.
 
 ## Toolchain Usage
 
@@ -93,7 +108,7 @@ All generated error messages are presented in a clang like format with concise s
 
 ## Language Specifications
 
-> The grammar below reflects what the tokenizer and parser currently accept. Semantic analysis validates the full AST after parsing, and IR generation lowers it to TAC - see [Getting Started](#getting-started-key-features--architecture) above. Code generation is not implemented yet.
+> The grammar below reflects what the tokenizer and parser currently accept. Semantic analysis validates the full AST after parsing, IR generation lowers it to TAC, and the code generator emits 65C02 machine code — see [Getting Started](#getting-started-key-features--architecture) and [Current Status](#current-status--limitations) for what's working today.
 
 ### Basic Types
 
@@ -234,50 +249,33 @@ Precedence, lowest to highest:
 
 ### Compilation Example
 
+This program cycles LEDs connected to PORTB on a 65C02 breadboard — counting up from 0 to 255 and back down in an infinite loop. It compiles to a valid 32K ROM and runs on real hardware.
+
 ```c
 reg u8 PORTB @ 0x6000;
-reg u8 PORTA @ 0x6001;
 reg u8 DDRB @ 0x6002;
-reg u8 DDRA @ 0x6003;
-
-/*
- PORTB = LCD data lines
- PORTA = top 3 bits for control lines, PA7 = enable, PA6 = read/write, PA6 = register select
-*/
-
-u8 *msg = "Hello C02!";
-
-fn lcd_send_command(u8 cmd) -> void {
-  PORTB = cmd; // Put command on data lines
-  PORTA = 0x80; // RS=0, E=1 to latch command
-  PORTA = 0x00; // E=0 to complete command
-}
-
-fn lcd_putc(u8 ch) -> void {
-  PORTB = ch; // Put character on data lines
-  PORTA = 0x32; // RS
-  PORTA = 0xA0; // RS | E
-  PORTA = 0x32; // RS
-}
 
 fn main() -> void {
-  // Set the data direction registers for PORTA and PORTB to output
   DDRB = 0xFF; // Set all pins of PORTB as output
-  DDRA = 0xE0; // Set top 3 bits of PORTA as output (for RS, RW, E)
 
-  // Clear the ports to start with a known state
-  PORTB = 0;
-  PORTA = 0;
+  while(true) {
+    u8 i = 0;
+    for (; i < 255; ++i) {
+      PORTB = i;
+    }
 
-  // Initialize the LCD (following a typical initialization sequence)
-  lcd_send_command(0x38); // Function set: 8-bit, 2 lines, 5x8 dots
-  lcd_send_command(0x0C); // Display on, cursor off
-  lcd_send_command(0x06); // Entry mode set: increment cursor, no shift
+    PORTB = i;
 
-  for (u8 i = 0; i < 10; i += 1) {
-    lcd_putc(msg);
+    for (; i > 0; --i) {
+      PORTB = i;
+    }
   }
 }
+```
+
+```bash
+cc02 led_counter.c02 -o led_counter.bin   # compile to 32K ROM
+c02-objdump led_counter.bin               # disassemble to inspect the output
 ```
 
 ---
