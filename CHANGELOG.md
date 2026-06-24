@@ -28,6 +28,14 @@ releases are reserved for bug fixes only.
   `cmp_abs`.
 - Emulator tests: `inc_global` (global u8 increment), `cmp_global` (compare
   local against global with branch).
+- **u8 arithmetic (`TAC_ADD`, `TAC_SUB`)** — `CLC; LDA src1; ADC src2; STA dst`
+  for addition, `SEC; LDA src1; SBC src2; STA dst` for subtraction. Global-aware
+  RHS helpers (`emit_adc_byte`, `emit_sbc_byte`) dispatch ADC/SBC abs ($6D/$ED)
+  for globals. New opcode emitters: `clc` ($18), `sec` ($38), `adc_imm` ($69),
+  `adc_zpg` ($65), `adc_abs` ($6D), `sbc_imm` ($E9), `sbc_zpg` ($E5),
+  `sbc_abs` ($ED). CLC/SEC is emitted once outside the byte loop so u16
+  carry propagation works correctly.
+- Emulator tests: `add_u8`, `sub_u8`, `add_const`.
 
 ## [v0.2.12] 2026-06-23
 

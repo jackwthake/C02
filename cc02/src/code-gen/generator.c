@@ -246,8 +246,15 @@ OP_EMITTER_SINGLE_ARG(eor_imm, 0x49)
 OP_EMITTER_SINGLE_ARG(inc_zpg, 0xE6)
 OP_EMITTER_SINGLE_ARG(dec_zpg, 0xC6)
 
+OP_EMITTER_SINGLE_ARG(adc_imm, 0x69)
+OP_EMITTER_SINGLE_ARG(adc_zpg, 0x65)
+OP_EMITTER_SINGLE_ARG(sbc_imm, 0xE9)
+OP_EMITTER_SINGLE_ARG(sbc_zpg, 0xE5)
+
 OP_EMITTER_NO_ARG(txs, 0x9A)
 OP_EMITTER_NO_ARG(rts, 0x60)
+OP_EMITTER_NO_ARG(clc, 0x18)
+OP_EMITTER_NO_ARG(sec, 0x38)
 
 
 OP_EMITTER_ABS(jmp_abs, 0x4C)
@@ -256,6 +263,8 @@ OP_EMITTER_ABS(lda_abs, 0xAD)
 OP_EMITTER_ABS(cmp_abs, 0xCD)
 OP_EMITTER_ABS(inc_abs, 0xEE)
 OP_EMITTER_ABS(dec_abs, 0xCE)
+OP_EMITTER_ABS(adc_abs, 0x6D)
+OP_EMITTER_ABS(sbc_abs, 0xED)
 
 #undef OP_EMITTER_SINGLE_ARG
 #undef OP_EMITTER_NO_ARG
@@ -433,6 +442,50 @@ static void emit_cmp_byte(emitter_t *e, zp_map_t *map,
     }
     case OPERAND_TEMP:
       cmp_zpg(e, (uint8_t)(zp_map_lookup(map, op) + byte));
+      break;
+    default: break;
+  }
+}
+
+
+static void emit_adc_byte(emitter_t *e, zp_map_t *map,
+                          tac_operand_t *op, unsigned byte) {
+  switch (op->kind) {
+    case OPERAND_CONST_INT:
+      adc_imm(e, (uint8_t)((op->int_val >> (8 * byte)) & 0xFF));
+      break;
+    case OPERAND_VAR: {
+      global_entry_t *g = lookup_global(e, op->name);
+      if (g)
+        adc_abs(e, (uint16_t)(g->ram_addr + byte));
+      else
+        adc_zpg(e, (uint8_t)(zp_map_lookup(map, op) + byte));
+      break;
+    }
+    case OPERAND_TEMP:
+      adc_zpg(e, (uint8_t)(zp_map_lookup(map, op) + byte));
+      break;
+    default: break;
+  }
+}
+
+
+static void emit_sbc_byte(emitter_t *e, zp_map_t *map,
+                          tac_operand_t *op, unsigned byte) {
+  switch (op->kind) {
+    case OPERAND_CONST_INT:
+      sbc_imm(e, (uint8_t)((op->int_val >> (8 * byte)) & 0xFF));
+      break;
+    case OPERAND_VAR: {
+      global_entry_t *g = lookup_global(e, op->name);
+      if (g)
+        sbc_abs(e, (uint16_t)(g->ram_addr + byte));
+      else
+        sbc_zpg(e, (uint8_t)(zp_map_lookup(map, op) + byte));
+      break;
+    }
+    case OPERAND_TEMP:
+      sbc_zpg(e, (uint8_t)(zp_map_lookup(map, op) + byte));
       break;
     default: break;
   }
@@ -630,6 +683,30 @@ static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
               dec_zpg(e, (uint8_t)(dst_addr + 1));
             }
             dec_zpg(e, dst_addr);
+          }
+          break;
+        }
+
+        // -- arithmetic --
+
+        case TAC_ADD: {
+          unsigned width = codegen_type_size(instruction->dst.type);
+          clc(e);
+          for (unsigned b = 0; b < width; b++) {
+            emit_load_byte(e, &map, &instruction->src1, b);
+            emit_adc_byte(e, &map, &instruction->src2, b);
+            emit_store_byte(e, &map, &instruction->dst, b);
+          }
+          break;
+        }
+
+        case TAC_SUB: {
+          unsigned width = codegen_type_size(instruction->dst.type);
+          sec(e);
+          for (unsigned b = 0; b < width; b++) {
+            emit_load_byte(e, &map, &instruction->src1, b);
+            emit_sbc_byte(e, &map, &instruction->src2, b);
+            emit_store_byte(e, &map, &instruction->dst, b);
           }
           break;
         }
