@@ -39,6 +39,11 @@ releases are reserved for bug fixes only.
 - **`TAC_NEG` (unary minus)** — `SEC; LDA #0; SBC [src1]; STA [dst]`. SEC is
   emitted once before the byte loop so borrow propagates correctly for u16.
 - Emulator test: `neg_u8` (double negate round-trips back to original value).
+- **u16 arithmetic** — `TAC_ADD`/`TAC_SUB` are width-aware from the start
+  (CLC/SEC outside byte loop, carry propagates between bytes). Signed i8/i16
+  arithmetic works via two's complement — same ADC/SBC instructions.
+- Emulator tests: `add_u16` (300+200=500), `sub_u16` (1000-500=500),
+  `add_i8` (-5+47=42), `add_i16` (-300+800=500).
 
 ## [v0.2.12] 2026-06-23
 

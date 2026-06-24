@@ -318,6 +318,60 @@ def test_neg_u8():
     return True, None
 
 
+def test_add_u16():
+    """u16 300 + 200 = 500 (0x01F4), returned in RET register."""
+    source = os.path.join(SCRIPT_DIR, "emu_add_u16.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    lo = mpu.memory[ZP_RET]
+    hi = mpu.memory[ZP_RET + 1]
+    val = lo | (hi << 8)
+    if val != 500:
+        return False, f"RET = {val} (${val:04X}), expected 500 ($01F4)"
+    return True, None
+
+
+def test_sub_u16():
+    """u16 1000 - 500 = 500 (0x01F4), returned in RET register."""
+    source = os.path.join(SCRIPT_DIR, "emu_sub_u16.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    lo = mpu.memory[ZP_RET]
+    hi = mpu.memory[ZP_RET + 1]
+    val = lo | (hi << 8)
+    if val != 500:
+        return False, f"RET = {val} (${val:04X}), expected 500 ($01F4)"
+    return True, None
+
+
+def test_add_i8():
+    """i8 -5 + 47 = 42 (signed arithmetic via two's complement)."""
+    source = os.path.join(SCRIPT_DIR, "emu_add_i8.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 42:
+        return False, f"memory[$6000] = {val}, expected 42"
+    return True, None
+
+
+def test_add_i16():
+    """i16 -300 + 800 = 500 (signed u16 arithmetic via two's complement)."""
+    source = os.path.join(SCRIPT_DIR, "emu_add_i16.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    lo = mpu.memory[ZP_RET]
+    hi = mpu.memory[ZP_RET + 1]
+    val = lo | (hi << 8)
+    if val != 500:
+        return False, f"RET = {val} (${val:04X}), expected 500 ($01F4)"
+    return True, None
+
+
 def test_add_u8():
     """u8 x=10, y=32; PORTB = x+y → 42."""
     source = os.path.join(SCRIPT_DIR, "emu_add_u8.c02")
@@ -380,6 +434,10 @@ TESTS = [
     ("inc_global", test_inc_global),
     ("cmp_global", test_cmp_global),
     ("neg_u8", test_neg_u8),
+    ("add_u16", test_add_u16),
+    ("sub_u16", test_sub_u16),
+    ("add_i8", test_add_i8),
+    ("add_i16", test_add_i16),
     ("add_u8", test_add_u8),
     ("sub_u8", test_sub_u8),
     ("add_const", test_add_const),

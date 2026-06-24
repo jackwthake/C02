@@ -1,0 +1,5 @@
+fn main() -> u16 {
+  u16 a = 1000;
+  u16 b = 500;
+  return a - b;
+}
