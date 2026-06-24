@@ -32,6 +32,11 @@ static unsigned codegen_type_size(type_t type) {
 }
 
 
+static int is_signed_type(type_t type) {
+  return type.kind == TYPE_I8 || type.kind == TYPE_I16;
+}
+
+
 static uint8_t zp_map_lookup(zp_map_t *map, tac_operand_t *op) {
   for (unsigned i = 0; i < map->count; i++) {
     zp_entry_t *e = &map->entries[i];
@@ -250,6 +255,8 @@ OP_EMITTER_SINGLE_ARG(adc_imm, 0x69)
 OP_EMITTER_SINGLE_ARG(adc_zpg, 0x65)
 OP_EMITTER_SINGLE_ARG(sbc_imm, 0xE9)
 OP_EMITTER_SINGLE_ARG(sbc_zpg, 0xE5)
+
+OP_EMITTER_SINGLE_ARG(bvc_rel, 0x50)
 
 OP_EMITTER_NO_ARG(txs, 0x9A)
 OP_EMITTER_NO_ARG(rts, 0x60)
@@ -637,15 +644,40 @@ static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
           }
 
           unsigned cmp_width = codegen_type_size(left->type);
+          int is_signed = is_signed_type(left->type);
+          int is_ordering = (instruction->op != TAC_EQ && instruction->op != TAC_NEQ);
 
-          if (cmp_width == 1) {
+          if (cmp_width == 1 && (!is_signed || !is_ordering)) {
+            // u8 unsigned ordering, or u8/i8 EQ/NEQ (sign-agnostic)
             emit_load_byte(e, &map, left, 0);
             emit_cmp_byte(e, &map, right, 0);
             EMIT(branch_op); EMIT(4);
             lda_imm(e, 0);
             EMIT(0xF0); EMIT(2);
             lda_imm(e, 1);
-          } else if (instruction->op == TAC_EQ || instruction->op == TAC_NEQ) {
+          } else if (cmp_width == 1 && is_signed) {
+            // i8 signed ordering: N XOR V pattern
+            size_t p_true, p_done;
+            emit_load_byte(e, &map, left, 0);
+            sec(e);
+            emit_sbc_byte(e, &map, right, 0);
+            bvc_rel(e, 2);
+            eor_imm(e, 0x80);
+            // N flag = (left < right)
+            EMIT(0x30); p_true = e->code_pos; EMIT(0); // BMI true
+            // false:
+            lda_imm(e, 0);
+            EMIT(0xF0); p_done = e->code_pos; EMIT(0); // BEQ done
+            // true:
+            e->rom[p_true] = (uint8_t)(e->code_pos - p_true - 1);
+            lda_imm(e, 1);
+            // done:
+            e->rom[p_done] = (uint8_t)(e->code_pos - p_done - 1);
+            if (branch_op == 0xB0) {
+              eor_imm(e, 0x01);
+            }
+          } else if (!is_ordering) {
+            // u16/i16 EQ/NEQ (sign-agnostic)
             size_t p1, p2, p3;
             if (instruction->op == TAC_EQ) {
               emit_load_byte(e, &map, left, 1);
@@ -680,8 +712,8 @@ static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
               // done:
               e->rom[p3] = (uint8_t)(e->code_pos - p3 - 1);
             }
-          } else {
-            // u16 ordering (LT/GTE, GT/LTE with swapped operands)
+          } else if (!is_signed) {
+            // u16 unsigned ordering
             size_t p_true1, p_false, p_true2, p_done;
             emit_load_byte(e, &map, left, 1);
             emit_cmp_byte(e, &map, right, 1);
@@ -700,7 +732,40 @@ static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
             lda_imm(e, 1);
             // done:
             e->rom[p_done] = (uint8_t)(e->code_pos - p_done - 1);
-
+            if (branch_op == 0xB0) {
+              eor_imm(e, 0x01);
+            }
+          } else {
+            // i16 signed ordering: N XOR V on high byte, unsigned low byte
+            size_t p_low, p_true1, p_skip, p_true2, p_done;
+            emit_load_byte(e, &map, left, 1);
+            sec(e);
+            emit_sbc_byte(e, &map, right, 1);
+            EMIT(0xF0); p_low = e->code_pos; EMIT(0);    // BEQ low_compare
+            bvc_rel(e, 2);
+            eor_imm(e, 0x80);
+            EMIT(0x30); p_true1 = e->code_pos; EMIT(0);  // BMI true
+            // high bytes differ, not less → skip to false
+            EMIT(0x4C); p_skip = e->code_pos; EMIT(0); EMIT(0); // JMP false
+            // low_compare:
+            e->rom[p_low] = (uint8_t)(e->code_pos - p_low - 1);
+            emit_load_byte(e, &map, left, 0);
+            emit_cmp_byte(e, &map, right, 0);
+            EMIT(0x90); p_true2 = e->code_pos; EMIT(0);  // BCC true
+            // false:
+            {
+              uint16_t false_addr = (uint16_t)(ROM_START + e->code_pos);
+              e->rom[p_skip]     = (uint8_t)(false_addr & 0xFF);
+              e->rom[p_skip + 1] = (uint8_t)(false_addr >> 8);
+            }
+            lda_imm(e, 0);
+            EMIT(0xF0); p_done = e->code_pos; EMIT(0);   // BEQ done
+            // true:
+            e->rom[p_true1] = (uint8_t)(e->code_pos - p_true1 - 1);
+            e->rom[p_true2] = (uint8_t)(e->code_pos - p_true2 - 1);
+            lda_imm(e, 1);
+            // done:
+            e->rom[p_done] = (uint8_t)(e->code_pos - p_done - 1);
             if (branch_op == 0xB0) {
               eor_imm(e, 0x01);
             }

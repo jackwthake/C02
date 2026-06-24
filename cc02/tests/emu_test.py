@@ -285,6 +285,10 @@ def test_string_deref():
 test_cmp_u16_lt = _test_cmp("emu_cmp_u16_lt.c02", "u16 255 < 256 (high-byte-first proves LT)")
 test_cmp_u16_eq = _test_cmp("emu_cmp_u16_eq.c02", "u16 500 == 500 (both bytes must match)")
 test_cmp_u16_gt = _test_cmp("emu_cmp_u16_gt.c02", "u16 1000 > 255 (high-byte difference)")
+test_cmp_i8_lt  = _test_cmp("emu_cmp_i8_lt.c02",  "i8 -5 < 3 (negative < positive)")
+test_cmp_i8_gt  = _test_cmp("emu_cmp_i8_gt.c02",  "i8 3 > -5 (positive > negative)")
+test_cmp_i8_neg = _test_cmp("emu_cmp_i8_neg.c02", "i8 -10 < -3 (both negative)")
+test_cmp_i16_signed = _test_cmp("emu_cmp_i16_signed.c02", "i16 -300 < 300 (signed 16-bit)")
 
 
 def test_inc_global():
@@ -441,6 +445,10 @@ TESTS = [
     ("cmp_u16_lt", test_cmp_u16_lt),
     ("cmp_u16_eq", test_cmp_u16_eq),
     ("cmp_u16_gt", test_cmp_u16_gt),
+    ("cmp_i8_lt", test_cmp_i8_lt),
+    ("cmp_i8_gt", test_cmp_i8_gt),
+    ("cmp_i8_neg", test_cmp_i8_neg),
+    ("cmp_i16_signed", test_cmp_i16_signed),
     ("neg_u8", test_neg_u8),
     ("add_u16", test_add_u16),
     ("sub_u16", test_sub_u16),

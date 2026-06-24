@@ -48,6 +48,14 @@ releases are reserved for bug fixes only.
   (zpg=2 vs abs=3 vs imm=2).
 - Emulator tests: `cmp_u16_lt` (255<256, high-byte decides), `cmp_u16_eq`
   (500==500, both bytes match), `cmp_u16_gt` (1000>255, high-byte decides).
+- **Signed comparisons (i8/i16)** — ordering comparisons (LT/GTE/GT/LTE) now
+  detect signed operand types and emit the N XOR V pattern: `SEC; SBC; BVC +2;
+  EOR #$80; BMI true` for i8, with an extended high-byte-first pattern for
+  i16 (signed high byte via N^V, unsigned low byte fallback via BCC). EQ/NEQ
+  remain sign-agnostic. GTE inverts the LT result. GT/LTE swap operands.
+  New opcode emitter: `bvc_rel` ($50).
+- Emulator tests: `cmp_i8_lt` (-5<3), `cmp_i8_gt` (3>-5), `cmp_i8_neg`
+  (-10<-3), `cmp_i16_signed` (-300<300).
 - **u16 arithmetic** — `TAC_ADD`/`TAC_SUB` are width-aware from the start
   (CLC/SEC outside byte loop, carry propagates between bytes). Signed i8/i16
   arithmetic works via two's complement — same ADC/SBC instructions.
