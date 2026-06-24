@@ -316,14 +316,14 @@ def test_cmp_global():
 
 
 def test_neg_u8():
-    """i8 x=42; y=-x; z=-y → 42 (double negate round-trips)."""
+    """i8 x=42; y=-x; PORTB=y → 214 (0xD6, two's complement of 42)."""
     source = os.path.join(SCRIPT_DIR, "emu_neg_u8.c02")
     mpu, err = compile_and_run(source)
     if mpu is None:
         return False, f"compilation failed: {err}"
     val = mpu.memory[0x6000]
-    if val != 42:
-        return False, f"memory[$6000] = {val}, expected 42"
+    if val != 214:
+        return False, f"memory[$6000] = {val}, expected 214 (0xD6)"
     return True, None
 
 
