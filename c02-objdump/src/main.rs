@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::{fs, path::PathBuf, process};
 
-use crate::disassembler::{disassemble, dump_data, dump_sections, Mode};
+use crate::disassembler::{disassemble, dump_data, dump_sections, dump_size, Mode};
 
 mod disassembler;
 
@@ -22,6 +22,10 @@ struct Args {
   /// Hex dump of .data section only
   #[arg(short = 'd', long = "data")]
   data: bool,
+
+  /// Print ROM usage summary (Arduino-style)
+  #[arg(short = 'S', long = "size")]
+  size: bool,
 }
 
 fn main() {
@@ -33,7 +37,9 @@ fn main() {
     process::exit(1);
   });
 
-  if args.sections {
+  if args.size {
+    dump_size(&bytes);
+  } else if args.sections {
     dump_sections(&bytes);
   } else if args.data {
     dump_data(&bytes);

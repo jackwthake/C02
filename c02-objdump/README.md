@@ -16,6 +16,7 @@ c02-objdump [OPTIONS] <BIN FILE>
 | `-a`, `--all` | Disassemble code + hex dump of `.data` section |
 | `-d`, `--data` | Hex dump of `.data` section only |
 | `-s`, `--sections` | Print section layout and vector table only |
+| `-S`, `--size` | Print ROM usage summary |
 
 ### Examples
 
@@ -46,6 +47,13 @@ L3:
 .data  $8092–$809C  (11 bytes)
 
 8092: 48 65 6C 6C 6F 20  43 30 32 21 00  Hello C02!.
+```
+
+**`-S`** — ROM usage summary:
+
+```
+Program uses 165 bytes (0%) of ROM space. Maximum is 32768 bytes.
+  .text: 146 bytes, .data: 11 bytes, vectors: 8 bytes
 ```
 
 **`-s`** — section map:

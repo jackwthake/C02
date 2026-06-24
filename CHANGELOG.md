@@ -24,6 +24,8 @@ releases are reserved for bug fixes only.
   `-d` / `--data` dumps just the `.data` section.
   `-s` / `--sections` prints the section layout (`.text`, `.data`, vectors
   with addresses).
+  `-S` / `--size` prints an Arduino-style ROM usage summary with `.text`,
+  `.data`, and vectors breakdown.
 
 ## [v0.2.11] 2026-06-23
 

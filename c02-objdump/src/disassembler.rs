@@ -497,6 +497,25 @@ pub fn disassemble(bytes: &[u8], mode: Mode) {
   }
 }
 
+pub fn dump_size(bytes: &[u8]) {
+  let info = match parse_rom(bytes) {
+    Some(i) => i,
+    None => { eprintln!("ROM too small"); return; }
+  };
+
+  let rom_size = bytes.len();
+  let code_bytes = info.code_end;
+  let data_bytes = info.data_end - info.code_end;
+  let used = info.data_end + VECTOR_TABLE_SIZE + 2;
+  let pct = (used as f64 / rom_size as f64 * 100.0) as u32;
+
+  println!("Program uses {} bytes ({}%) of ROM space. Maximum is {} bytes.",
+    used, pct, rom_size);
+  println!("  .text: {} bytes, .data: {} bytes, vectors: 8 bytes",
+    code_bytes, data_bytes);
+}
+
+
 pub fn dump_data(bytes: &[u8]) {
   let info = match parse_rom(bytes) {
     Some(i) => i,
