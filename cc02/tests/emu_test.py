@@ -306,6 +306,18 @@ def test_cmp_global():
     return True, None
 
 
+def test_neg_u8():
+    """i8 x=42; y=-x; z=-y → 42 (double negate round-trips)."""
+    source = os.path.join(SCRIPT_DIR, "emu_neg_u8.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 42:
+        return False, f"memory[$6000] = {val}, expected 42"
+    return True, None
+
+
 def test_add_u8():
     """u8 x=10, y=32; PORTB = x+y → 42."""
     source = os.path.join(SCRIPT_DIR, "emu_add_u8.c02")
@@ -367,6 +379,7 @@ TESTS = [
     ("string_deref", test_string_deref),
     ("inc_global", test_inc_global),
     ("cmp_global", test_cmp_global),
+    ("neg_u8", test_neg_u8),
     ("add_u8", test_add_u8),
     ("sub_u8", test_sub_u8),
     ("add_const", test_add_const),

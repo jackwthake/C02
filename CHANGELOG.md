@@ -36,6 +36,9 @@ releases are reserved for bug fixes only.
   `sbc_abs` ($ED). CLC/SEC is emitted once outside the byte loop so u16
   carry propagation works correctly.
 - Emulator tests: `add_u8`, `sub_u8`, `add_const`.
+- **`TAC_NEG` (unary minus)** — `SEC; LDA #0; SBC [src1]; STA [dst]`. SEC is
+  emitted once before the byte loop so borrow propagates correctly for u16.
+- Emulator test: `neg_u8` (double negate round-trips back to original value).
 
 ## [v0.2.12] 2026-06-23
 

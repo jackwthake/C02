@@ -689,6 +689,17 @@ static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
 
         // -- arithmetic --
 
+        case TAC_NEG: {
+          unsigned width = codegen_type_size(instruction->dst.type);
+          sec(e);
+          for (unsigned b = 0; b < width; b++) {
+            lda_imm(e, 0);
+            emit_sbc_byte(e, &map, &instruction->src1, b);
+            emit_store_byte(e, &map, &instruction->dst, b);
+          }
+          break;
+        }
+
         case TAC_ADD: {
           unsigned width = codegen_type_size(instruction->dst.type);
           clc(e);
