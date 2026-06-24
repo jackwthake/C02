@@ -19,6 +19,15 @@ releases are reserved for bug fixes only.
   bootstrap-verification tests (rom_size, reset_vector, etc.) now use
   `emu_store_const.c02` instead of `analyzer_basic.c02`, which uses TAC ops
   not yet implemented in the code generator.
+- **Fix global/ZP bug class** — `TAC_INC`/`TAC_DEC` on global variables now
+  emit `INC abs` ($EE) / `DEC abs` ($CE) targeting the global's RAM address
+  instead of the stale ZP scratch slot. 16-bit global INC/DEC uses `BNE +3`
+  (3-byte abs instruction) instead of `+2`. `COMPARE_OP` right-hand operands
+  now route through a global-aware `emit_cmp_byte` helper that dispatches
+  `CMP abs` ($CD) for globals. New opcode emitters: `inc_abs`, `dec_abs`,
+  `cmp_abs`.
+- Emulator tests: `inc_global` (global u8 increment), `cmp_global` (compare
+  local against global with branch).
 
 ## [v0.2.12] 2026-06-23
 

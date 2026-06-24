@@ -253,6 +253,9 @@ OP_EMITTER_NO_ARG(rts, 0x60)
 OP_EMITTER_ABS(jmp_abs, 0x4C)
 OP_EMITTER_ABS(sta_abs, 0x8D)
 OP_EMITTER_ABS(lda_abs, 0xAD)
+OP_EMITTER_ABS(cmp_abs, 0xCD)
+OP_EMITTER_ABS(inc_abs, 0xEE)
+OP_EMITTER_ABS(dec_abs, 0xCE)
 
 #undef OP_EMITTER_SINGLE_ARG
 #undef OP_EMITTER_NO_ARG
@@ -414,6 +417,28 @@ static void emit_store_byte(emitter_t *e, zp_map_t *map,
 }
 
 
+static void emit_cmp_byte(emitter_t *e, zp_map_t *map,
+                          tac_operand_t *op, unsigned byte) {
+  switch (op->kind) {
+    case OPERAND_CONST_INT:
+      cmp_imm(e, (uint8_t)((op->int_val >> (8 * byte)) & 0xFF));
+      break;
+    case OPERAND_VAR: {
+      global_entry_t *g = lookup_global(e, op->name);
+      if (g)
+        cmp_abs(e, (uint16_t)(g->ram_addr + byte));
+      else
+        cmp_zpg(e, (uint8_t)(zp_map_lookup(map, op) + byte));
+      break;
+    }
+    case OPERAND_TEMP:
+      cmp_zpg(e, (uint8_t)(zp_map_lookup(map, op) + byte));
+      break;
+    default: break;
+  }
+}
+
+
 static void emit_cond_jump(emitter_t *e, zp_map_t *map,
                            tac_operand_t *src, unsigned label_id) {
   emit_load_byte(e, map, src, 0);
@@ -546,10 +571,7 @@ static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
           case TAC: {                                                   \
             uint8_t dst_addr = zp_map_lookup(&map, &instruction->dst);  \
             emit_load_byte(e, &map, &instruction->LEFT, 0);             \
-            if (instruction->RIGHT.kind == OPERAND_CONST_INT)           \
-              cmp_imm(e, (uint8_t)(instruction->RIGHT.int_val & 0xFF)); \
-            else                                                        \
-              cmp_zpg(e, zp_map_lookup(&map, &instruction->RIGHT));     \
+            emit_cmp_byte(e, &map, &instruction->RIGHT, 0);             \
             EMIT(BRANCH_OP); EMIT(4);                                   \
             lda_imm(e, 0);                                              \
             EMIT(0xF0); EMIT(2);                                        \
@@ -569,25 +591,46 @@ static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
         // -- increment / decrement --
 
         case TAC_INC: {
-          uint8_t dst_addr = zp_map_lookup(&map, &instruction->dst);
           unsigned width = codegen_type_size(instruction->dst.type);
-          inc_zpg(e, dst_addr);
-          if (width > 1) {
-            bne_rel(e, 2);
-            inc_zpg(e, (uint8_t)(dst_addr + 1));
+          global_entry_t *g = (instruction->dst.kind == OPERAND_VAR)
+            ? lookup_global(e, instruction->dst.name) : NULL;
+          if (g) {
+            inc_abs(e, g->ram_addr);
+            if (width > 1) {
+              bne_rel(e, 3);
+              inc_abs(e, (uint16_t)(g->ram_addr + 1));
+            }
+          } else {
+            uint8_t dst_addr = zp_map_lookup(&map, &instruction->dst);
+            inc_zpg(e, dst_addr);
+            if (width > 1) {
+              bne_rel(e, 2);
+              inc_zpg(e, (uint8_t)(dst_addr + 1));
+            }
           }
           break;
         }
 
         case TAC_DEC: {
-          uint8_t dst_addr = zp_map_lookup(&map, &instruction->dst);
           unsigned width = codegen_type_size(instruction->dst.type);
-          if (width > 1) {
-            lda_zpg(e, dst_addr);
-            bne_rel(e, 2);
-            dec_zpg(e, (uint8_t)(dst_addr + 1));
+          global_entry_t *g = (instruction->dst.kind == OPERAND_VAR)
+            ? lookup_global(e, instruction->dst.name) : NULL;
+          if (g) {
+            if (width > 1) {
+              lda_abs(e, g->ram_addr);
+              bne_rel(e, 3);
+              dec_abs(e, (uint16_t)(g->ram_addr + 1));
+            }
+            dec_abs(e, g->ram_addr);
+          } else {
+            uint8_t dst_addr = zp_map_lookup(&map, &instruction->dst);
+            if (width > 1) {
+              lda_zpg(e, dst_addr);
+              bne_rel(e, 2);
+              dec_zpg(e, (uint8_t)(dst_addr + 1));
+            }
+            dec_zpg(e, dst_addr);
           }
-          dec_zpg(e, dst_addr);
           break;
         }
 

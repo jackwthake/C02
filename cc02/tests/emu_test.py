@@ -282,6 +282,30 @@ def test_string_deref():
     return True, None
 
 
+def test_inc_global():
+    """Increment a global variable (u8 counter = 41; ++counter → 42)."""
+    source = os.path.join(SCRIPT_DIR, "emu_inc_global.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 42:
+        return False, f"memory[$6000] = {val}, expected 42"
+    return True, None
+
+
+def test_cmp_global():
+    """Compare local against global (x=10 > threshold=50 is false → else body)."""
+    source = os.path.join(SCRIPT_DIR, "emu_cmp_global.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 42:
+        return False, f"memory[$6000] = {val}, expected 42"
+    return True, None
+
+
 # ----------------------------------------------------------------
 # Runner
 # ----------------------------------------------------------------
@@ -305,6 +329,8 @@ TESTS = [
     ("cmp_neq", test_cmp_neq),
     ("cmp_lte", test_cmp_lte),
     ("string_deref", test_string_deref),
+    ("inc_global", test_inc_global),
+    ("cmp_global", test_cmp_global),
 ]
 
 

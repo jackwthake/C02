@@ -1,0 +1,12 @@
+reg u8 PORTB @ 0x6000;
+
+u8 threshold = 50;
+
+fn main() -> void {
+  u8 x = 10;
+  if (x > threshold) {
+    PORTB = 99;
+  } else {
+    PORTB = 42;
+  }
+}
