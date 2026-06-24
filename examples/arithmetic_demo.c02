@@ -1,0 +1,51 @@
+/*
+ * arithmetic_demo.c02 — exercises the new codegen features on PORTB LEDs.
+ *
+ * Visible behaviour (binary on 8 LEDs):
+ *   Phase 1: counts 0→7 using addition              (bottom 3 LEDs sweep)
+ *   Phase 2: counts 7→0 using subtraction            (bottom 3 LEDs sweep back)
+ *   Phase 3: outputs the absolute value of -42 (214) (11010110 pattern)
+ *   Phase 4: signed-compare gate — outputs 0xFF only
+ *            if -10 < 5 (true via signed comparison) (all LEDs on)
+ *   Repeats forever.
+ *
+ * Hardware: 65C02 breadboard with 8 LEDs on PORTB.
+ * Also runnable in the py65 emulator — final PORTB value is 0xFF.
+ */
+
+reg u8 PORTB @ 0x6000;
+reg u8 DDRB @ 0x6002;
+
+u8 step = 1;
+
+fn main() -> void {
+  DDRB = 0xFF;
+
+  while (true) {
+    // Phase 1: addition — count up by global step (1)
+    u8 val = 0;
+    for (u8 i = 0; i < 8; ++i) {
+      PORTB = val;
+      val = val + step;
+    }
+
+    // Phase 2: subtraction — count back down
+    for (u8 i = 0; i < 8; ++i) {
+      val = val - step;
+      PORTB = val;
+    }
+
+    // Phase 3: unary minus — show two's complement of 42
+    i8 neg = -42;
+    PORTB = neg;
+
+    // Phase 4: signed comparison gate
+    i8 a = -10;
+    i8 b = 5;
+    if (a < b) {
+      PORTB = 0xFF;
+    } else {
+      PORTB = 0x00;
+    }
+  }
+}

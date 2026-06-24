@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/) - while
 the project is in `0.x`, breaking changes may land in MINOR releases; PATCH
 releases are reserved for bug fixes only.
 
+## [v.0.2.13] 2026-06-24
+
+- **Codegen diagnostic for unhandled TAC ops** — the `default: break` in the
+  TAC instruction switch has been replaced with a `fprintf(stderr)` + error
+  return that names the unhandled op number. Programs using unimplemented
+  features now fail loudly at compile time instead of silently producing wrong
+  binaries. `emit_function_from_cfg` now returns `int` (0 on failure) so the
+  error propagates to `generate_rom`.
+- **Bootstrap emu tests decoupled from analyzer_basic.c02** — the eight
+  bootstrap-verification tests (rom_size, reset_vector, etc.) now use
+  `emu_store_const.c02` instead of `analyzer_basic.c02`, which uses TAC ops
+  not yet implemented in the code generator.
+- **Fix global/ZP bug class** — `TAC_INC`/`TAC_DEC` on global variables now
+  emit `INC abs` ($EE) / `DEC abs` ($CE) targeting the global's RAM address
+  instead of the stale ZP scratch slot. 16-bit global INC/DEC uses `BNE +3`
+  (3-byte abs instruction) instead of `+2`. `COMPARE_OP` right-hand operands
+  now route through a global-aware `emit_cmp_byte` helper that dispatches
+  `CMP abs` ($CD) for globals. New opcode emitters: `inc_abs`, `dec_abs`,
+  `cmp_abs`.
+- Emulator tests: `inc_global` (global u8 increment), `cmp_global` (compare
+  local against global with branch).
+- **u8 arithmetic (`TAC_ADD`, `TAC_SUB`)** — `CLC; LDA src1; ADC src2; STA dst`
+  for addition, `SEC; LDA src1; SBC src2; STA dst` for subtraction. Global-aware
+  RHS helpers (`emit_adc_byte`, `emit_sbc_byte`) dispatch ADC/SBC abs ($6D/$ED)
+  for globals. New opcode emitters: `clc` ($18), `sec` ($38), `adc_imm` ($69),
+  `adc_zpg` ($65), `adc_abs` ($6D), `sbc_imm` ($E9), `sbc_zpg` ($E5),
+  `sbc_abs` ($ED). CLC/SEC is emitted once outside the byte loop so u16
+  carry propagation works correctly.
+- Emulator tests: `add_u8`, `sub_u8`, `add_const`.
+- **`TAC_NEG` (unary minus)** — `SEC; LDA #0; SBC [src1]; STA [dst]`. SEC is
+  emitted once before the byte loop so borrow propagates correctly for u16.
+- Emulator test: `neg_u8` (double negate round-trips back to original value).
+- **u16 comparisons** — `COMPARE_OP` macro replaced with backpatched
+  comparison handlers that support both u8 and u16 operands. u16 ordering
+  (LT/GTE/GT/LTE) uses a high-byte-first pattern: compare high bytes first
+  to determine definite ordering, fall through to low bytes when equal.
+  u16 EQ/NEQ compare both bytes. All forward branch offsets use backpatching
+  instead of hardcoded values, making them robust to variable-size loads
+  (zpg=2 vs abs=3 vs imm=2).
+- Emulator tests: `cmp_u16_lt` (255<256, high-byte decides), `cmp_u16_eq`
+  (500==500, both bytes match), `cmp_u16_gt` (1000>255, high-byte decides).
+- **Signed comparisons (i8/i16)** — ordering comparisons (LT/GTE/GT/LTE) now
+  detect signed operand types and emit the N XOR V pattern: `SEC; SBC; BVC +2;
+  EOR #$80; BMI true` for i8, with an extended high-byte-first pattern for
+  i16 (signed high byte via N^V, unsigned low byte fallback via BCC). EQ/NEQ
+  remain sign-agnostic. GTE inverts the LT result. GT/LTE swap operands.
+  New opcode emitter: `bvc_rel` ($50).
+- Emulator tests: `cmp_i8_lt` (-5<3), `cmp_i8_gt` (3>-5), `cmp_i8_neg`
+  (-10<-3), `cmp_i16_signed` (-300<300).
+- **u16 arithmetic** — `TAC_ADD`/`TAC_SUB` are width-aware from the start
+  (CLC/SEC outside byte loop, carry propagates between bytes). Signed i8/i16
+  arithmetic works via two's complement — same ADC/SBC instructions.
+- Emulator tests: `add_u16` (300+200=500), `sub_u16` (1000-500=500),
+  `add_i8` (-5+47=42), `add_i16` (-300+800=500).
+
 ## [v0.2.12] 2026-06-23
 
 - **c02-objdump: label markers** — jump target labels (`L0:`, `L1:`, ...) now

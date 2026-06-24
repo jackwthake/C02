@@ -21,11 +21,11 @@
 2. **Recursive Descent Parser:** Transforms the token stream into a structured AST, treating hardware registers and standard controls as first-class grammatical constructs.
 3. **Lexically Scoped Semantic Analyzer:** Two-pass validation engine over the AST. Pass 1 registers all top-level declarations (functions, structs, registers, globals) into the global symbol table. Pass 2 walks function bodies with a scoped symbol table, checking undeclared identifiers, type mismatches, argument counts/types, struct field access, lvalue validity, and return-type consistency. Invalid declarations are poisoned to prevent cascading diagnostics.
 4. **IR Generator:** Lowers the analysed AST into a self-contained three-address code (TAC) intermediate representation. The IR module contains struct layouts with computed field offsets, global/register definitions with hardware addresses baked in, and one flat instruction stream per function - codegen can emit target code from the IR alone, without consulting the AST or symbol table. Supports incremental compilation: `-c` serializes the IR to a `.o` file that can be loaded back to skip the frontend entirely.
-5. **Code Generator:** Emits valid 65C02 ROM binaries (32K) with a bootstrap runtime, interrupt vectors, and flat zero-page register allocation. Avoids slow stack-based execution by mapping local variables, temporaries, and parameters directly onto zero-page slots. Globals are allocated in RAM ($0200+) and initialized in the bootstrap before `JSR main`. String literals are placed in a ROM data section with backpatching fixups. Simple programs compile and run on real hardware.
+5. **Code Generator:** Emits valid 65C02 ROM binaries (32K) with a bootstrap runtime, interrupt vectors, and flat zero-page register allocation. Avoids slow stack-based execution by mapping local variables, temporaries, and parameters directly onto zero-page slots. Globals are allocated in RAM ($0200+) and initialized in the bootstrap before `JSR main`. String literals are placed in a ROM data section with backpatching fixups. Supports arithmetic (`+`, `-`, unary `-`) for all integer types (u8/i8/u16/i16), comparisons across all widths and signedness (unsigned via carry-flag, signed via N⊕V), and pointer dereference. Programs compile and run on real hardware.
 
 #### c02-objdump Disassembler
 
-- **Disassembler:** Decodes compiled `.bin` files back into annotated 65C02 assembly, resolving jump targets to named labels for readability. See [c02-objdump](c02-objdump/) for more information.
+- **Disassembler:** Decodes compiled `.bin` files back into annotated 65C02 assembly, resolving jump targets to named labels for readability. Supports section-aware output (`.text` / `.data` split), hex dumps with ASCII, and ROM usage summaries. See [c02-objdump](c02-objdump/) for more information.
 
 ## Current Status & Limitations
 
@@ -33,23 +33,23 @@ C02 is under active, early development. The **complete frontend** (tokenizer, pa
 
 #### What works today
 
-- **Data movement:** variable copies, constant stores, hardware register writes (`TAC_COPY`, `TAC_STORE`, `TAC_RETURN`).
+- **Data movement:** variable copies, constant stores, hardware register writes.
 - **Control flow:** `if`/`else`, `while`, `for` loops via label/jump/conditional-jump.
-- **Comparisons:** all six relational operators (`<`, `<=`, `==`, `!=`, `>=`, `>`), u8 only.
-- **Increment/decrement:** `++`/`--` for both u8 and 16-bit values (pointers, u16).
+- **Arithmetic:** `+`, `-`, and unary `-` for all integer types (u8, i8, u16, i16). Width-aware multi-byte emission for 16-bit operations with carry/borrow propagation.
+- **Comparisons:** all six relational operators (`<`, `<=`, `==`, `!=`, `>=`, `>`) for all widths (u8, u16) and signedness (unsigned via carry-flag, signed via N⊕V). 16-bit comparisons use a high-byte-first pattern.
+- **Increment/decrement:** `++`/`--` for both u8 and 16-bit values (pointers, u16), including globals.
 - **Pointer dereference:** `*p` via indirect indexed addressing (`LDA ($nn),Y`).
-- **Global variables:** RAM-allocated globals with bootstrap initialization. String literals placed in a ROM data section with backpatching fixups.
+- **Global variables:** RAM-allocated globals with bootstrap initialization, correctly accessed via absolute addressing throughout all codegen paths. String literals placed in a ROM data section with backpatching fixups.
 
 #### Not yet implemented
 
-- **Function calls** (`TAC_CALL`) — the ABI zone is reserved but `JSR`/parameter passing is not wired up yet.
-- **Arithmetic** (`+`, `-`, `*`, `/`, `%`) — no `TAC_ADD`/`TAC_SUB`/`TAC_MUL`/`TAC_DIV` codegen.
-- **Struct field access** (`TAC_FIELD_LOAD`/`TAC_FIELD_STORE`).
-- **Type casts** (`TAC_CAST`) — implicit widening (u8→u16) reads a garbage high byte.
-- **16-bit comparisons** — only the low byte is compared; values differing in the high byte give wrong results.
-- **Signed comparisons** — the `CMP`/carry-flag sequence implements unsigned ordering only.
+- **Function calls** — the ABI zone ($EF–$FF) is reserved but `JSR`/parameter passing is not wired up yet.
+- **Multiplication, division, modulo** (`*`, `/`, `%`) — no native 6502 instructions; needs runtime helper routines.
+- **Struct field access** (`s.field` codegen).
+- **Type casts** — implicit widening (u8→u16) reads a garbage high byte; needs explicit zero-extension.
+- **Address-of** (`&x`) — parsed and analysed but no codegen.
+- **Pointer store** (`*p = val`) — parsed and analysed but no codegen for variable-destination stores.
 - **Arrays** — no array type or subscript syntax (`a[i]`).
-- **Struct field access through a pointer is auto-dereferenced** — there's no `->` operator; `.` is used uniformly and the analyzer resolves single-level pointer indirection automatically (e.g. `ptr.field` where `ptr` is a `Struct*`).
 - **Missing-return detection is shallow.** A non-void function with no `return` at the end is flagged, but the analyzer does not perform full path-coverage analysis.
 
 If you're exploring the codebase: the parser ([parser.c](cc02/src/parser/parser.c)), the analyzer ([analyzer.c](cc02/src/analysis/analyzer.c)), the IR generator ([ir.c](cc02/src/ir-gen/ir.c)), and the code generator ([generator.c](cc02/src/code-gen/generator.c)) are the main files. Issues and PRs are welcome.

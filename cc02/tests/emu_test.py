@@ -80,7 +80,7 @@ def test_rom_size():
     with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as tmp:
         bin_path = tmp.name
     try:
-        source = os.path.join(SCRIPT_DIR, "analyzer_basic.c02")
+        source = os.path.join(SCRIPT_DIR, "emu_store_const.c02")
         ok, _ = compile_c02(source, bin_path)
         if not ok:
             return False, "compilation failed"
@@ -98,7 +98,7 @@ def test_reset_vector():
     with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as tmp:
         bin_path = tmp.name
     try:
-        source = os.path.join(SCRIPT_DIR, "analyzer_basic.c02")
+        source = os.path.join(SCRIPT_DIR, "emu_store_const.c02")
         ok, _ = compile_c02(source, bin_path)
         if not ok:
             return False, "compilation failed"
@@ -120,7 +120,7 @@ def test_nop_fill():
     with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as tmp:
         bin_path = tmp.name
     try:
-        source = os.path.join(SCRIPT_DIR, "analyzer_basic.c02")
+        source = os.path.join(SCRIPT_DIR, "emu_store_const.c02")
         ok, _ = compile_c02(source, bin_path)
         if not ok:
             return False, "compilation failed"
@@ -139,7 +139,7 @@ def test_nop_fill():
 
 def test_bootstrap_stack_init():
     """Bootstrap initializes the hardware stack pointer to $FF."""
-    source = os.path.join(SCRIPT_DIR, "analyzer_basic.c02")
+    source = os.path.join(SCRIPT_DIR, "emu_store_const.c02")
     mpu, err = compile_and_run(source)
     if mpu is None:
         return False, f"compilation failed: {err}"
@@ -150,7 +150,7 @@ def test_bootstrap_stack_init():
 
 def test_bootstrap_fp_init():
     """Bootstrap sets FP (ZP $00-$01) to $01FF."""
-    source = os.path.join(SCRIPT_DIR, "analyzer_basic.c02")
+    source = os.path.join(SCRIPT_DIR, "emu_store_const.c02")
     mpu, err = compile_and_run(source)
     if mpu is None:
         return False, f"compilation failed: {err}"
@@ -162,7 +162,7 @@ def test_bootstrap_fp_init():
 
 def test_halt_loop():
     """CPU halts (PC stuck on JMP to self) after main returns."""
-    source = os.path.join(SCRIPT_DIR, "analyzer_basic.c02")
+    source = os.path.join(SCRIPT_DIR, "emu_store_const.c02")
     mpu, err = compile_and_run(source, max_cycles=1000)
     if mpu is None:
         return False, f"compilation failed: {err}"
@@ -177,7 +177,7 @@ def test_halt_loop():
 
 def test_interrupts_disabled():
     """Bootstrap disables interrupts (SEI sets I flag)."""
-    source = os.path.join(SCRIPT_DIR, "analyzer_basic.c02")
+    source = os.path.join(SCRIPT_DIR, "emu_store_const.c02")
     mpu, err = compile_and_run(source)
     if mpu is None:
         return False, f"compilation failed: {err}"
@@ -188,7 +188,7 @@ def test_interrupts_disabled():
 
 def test_decimal_mode_clear():
     """Bootstrap clears decimal mode (CLD clears D flag)."""
-    source = os.path.join(SCRIPT_DIR, "analyzer_basic.c02")
+    source = os.path.join(SCRIPT_DIR, "emu_store_const.c02")
     mpu, err = compile_and_run(source)
     if mpu is None:
         return False, f"compilation failed: {err}"
@@ -282,6 +282,141 @@ def test_string_deref():
     return True, None
 
 
+test_cmp_u16_lt = _test_cmp("emu_cmp_u16_lt.c02", "u16 255 < 256 (high-byte-first proves LT)")
+test_cmp_u16_eq = _test_cmp("emu_cmp_u16_eq.c02", "u16 500 == 500 (both bytes must match)")
+test_cmp_u16_gt = _test_cmp("emu_cmp_u16_gt.c02", "u16 1000 > 255 (high-byte difference)")
+test_cmp_i8_lt  = _test_cmp("emu_cmp_i8_lt.c02",  "i8 -5 < 3 (negative < positive)")
+test_cmp_i8_gt  = _test_cmp("emu_cmp_i8_gt.c02",  "i8 3 > -5 (positive > negative)")
+test_cmp_i8_neg = _test_cmp("emu_cmp_i8_neg.c02", "i8 -10 < -3 (both negative)")
+test_cmp_i16_signed = _test_cmp("emu_cmp_i16_signed.c02", "i16 -300 < 300 (signed 16-bit)")
+
+
+def test_inc_global():
+    """Increment a global variable (u8 counter = 41; ++counter → 42)."""
+    source = os.path.join(SCRIPT_DIR, "emu_inc_global.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 42:
+        return False, f"memory[$6000] = {val}, expected 42"
+    return True, None
+
+
+def test_cmp_global():
+    """Compare local against global (x=10 > threshold=50 is false → else body)."""
+    source = os.path.join(SCRIPT_DIR, "emu_cmp_global.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 42:
+        return False, f"memory[$6000] = {val}, expected 42"
+    return True, None
+
+
+def test_neg_u8():
+    """i8 x=42; y=-x; PORTB=y → 214 (0xD6, two's complement of 42)."""
+    source = os.path.join(SCRIPT_DIR, "emu_neg_u8.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 214:
+        return False, f"memory[$6000] = {val}, expected 214 (0xD6)"
+    return True, None
+
+
+def test_add_u16():
+    """u16 300 + 200 = 500 (0x01F4), returned in RET register."""
+    source = os.path.join(SCRIPT_DIR, "emu_add_u16.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    lo = mpu.memory[ZP_RET]
+    hi = mpu.memory[ZP_RET + 1]
+    val = lo | (hi << 8)
+    if val != 500:
+        return False, f"RET = {val} (${val:04X}), expected 500 ($01F4)"
+    return True, None
+
+
+def test_sub_u16():
+    """u16 1000 - 500 = 500 (0x01F4), returned in RET register."""
+    source = os.path.join(SCRIPT_DIR, "emu_sub_u16.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    lo = mpu.memory[ZP_RET]
+    hi = mpu.memory[ZP_RET + 1]
+    val = lo | (hi << 8)
+    if val != 500:
+        return False, f"RET = {val} (${val:04X}), expected 500 ($01F4)"
+    return True, None
+
+
+def test_add_i8():
+    """i8 -5 + 47 = 42 (signed arithmetic via two's complement)."""
+    source = os.path.join(SCRIPT_DIR, "emu_add_i8.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 42:
+        return False, f"memory[$6000] = {val}, expected 42"
+    return True, None
+
+
+def test_add_i16():
+    """i16 -300 + 800 = 500 (signed u16 arithmetic via two's complement)."""
+    source = os.path.join(SCRIPT_DIR, "emu_add_i16.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    lo = mpu.memory[ZP_RET]
+    hi = mpu.memory[ZP_RET + 1]
+    val = lo | (hi << 8)
+    if val != 500:
+        return False, f"RET = {val} (${val:04X}), expected 500 ($01F4)"
+    return True, None
+
+
+def test_add_u8():
+    """u8 x=10, y=32; PORTB = x+y → 42."""
+    source = os.path.join(SCRIPT_DIR, "emu_add_u8.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 42:
+        return False, f"memory[$6000] = {val}, expected 42"
+    return True, None
+
+
+def test_sub_u8():
+    """u8 x=50, y=8; PORTB = x-y → 42."""
+    source = os.path.join(SCRIPT_DIR, "emu_sub_u8.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 42:
+        return False, f"memory[$6000] = {val}, expected 42"
+    return True, None
+
+
+def test_add_const():
+    """u8 x=40; PORTB = x+2 → 42."""
+    source = os.path.join(SCRIPT_DIR, "emu_add_const.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 42:
+        return False, f"memory[$6000] = {val}, expected 42"
+    return True, None
+
+
 # ----------------------------------------------------------------
 # Runner
 # ----------------------------------------------------------------
@@ -305,6 +440,23 @@ TESTS = [
     ("cmp_neq", test_cmp_neq),
     ("cmp_lte", test_cmp_lte),
     ("string_deref", test_string_deref),
+    ("inc_global", test_inc_global),
+    ("cmp_global", test_cmp_global),
+    ("cmp_u16_lt", test_cmp_u16_lt),
+    ("cmp_u16_eq", test_cmp_u16_eq),
+    ("cmp_u16_gt", test_cmp_u16_gt),
+    ("cmp_i8_lt", test_cmp_i8_lt),
+    ("cmp_i8_gt", test_cmp_i8_gt),
+    ("cmp_i8_neg", test_cmp_i8_neg),
+    ("cmp_i16_signed", test_cmp_i16_signed),
+    ("neg_u8", test_neg_u8),
+    ("add_u16", test_add_u16),
+    ("sub_u16", test_sub_u16),
+    ("add_i8", test_add_i8),
+    ("add_i16", test_add_i16),
+    ("add_u8", test_add_u8),
+    ("sub_u8", test_sub_u8),
+    ("add_const", test_add_const),
 ]
 
 

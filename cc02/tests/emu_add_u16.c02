@@ -1,0 +1,5 @@
+fn main() -> u16 {
+  u16 a = 300;
+  u16 b = 200;
+  return a + b;
+}

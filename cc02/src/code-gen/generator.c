@@ -22,6 +22,7 @@
 // Zero-page operand map
 // ----------------------------------------------------------------
 
+// Return byte width for a type (1 for u8/i8, 2 for u16/i16/pointers).
 static unsigned codegen_type_size(type_t type) {
   if (type.is_ptr) return 2;
   switch (type.kind) {
@@ -32,6 +33,13 @@ static unsigned codegen_type_size(type_t type) {
 }
 
 
+// True if the type requires signed comparison semantics.
+static int is_signed_type(type_t type) {
+  return type.kind == TYPE_I8 || type.kind == TYPE_I16;
+}
+
+
+// Find the ZP slot assigned to a var/temp operand. Returns 0 if not found.
 static uint8_t zp_map_lookup(zp_map_t *map, tac_operand_t *op) {
   for (unsigned i = 0; i < map->count; i++) {
     zp_entry_t *e = &map->entries[i];
@@ -43,6 +51,7 @@ static uint8_t zp_map_lookup(zp_map_t *map, tac_operand_t *op) {
 }
 
 
+// Assign the next available ZP slot to an operand (deduped, type-stride-aware).
 static void zp_map_add(zp_map_t *map, tac_operand_kind_t kind,
                         char *name, unsigned temp_id, type_t type) {
   tac_operand_t probe = { .kind = kind };
@@ -63,6 +72,7 @@ static void zp_map_add(zp_map_t *map, tac_operand_kind_t kind,
 }
 
 
+// Register a TAC operand in the ZP map (dispatches var vs temp).
 static void zp_map_add_operand(zp_map_t *map, tac_operand_t *op) {
   if (op->kind == OPERAND_VAR)
     zp_map_add(map, OPERAND_VAR, op->name, 0, op->type);
@@ -71,6 +81,7 @@ static void zp_map_add_operand(zp_map_t *map, tac_operand_t *op) {
 }
 
 
+// Build the per-function ZP map: params first, then all referenced operands.
 static void zp_map_build(zp_map_t *map, cfg_t *cfg) {
   map->count = 0;
   map->next_addr = REG_START;
@@ -96,6 +107,7 @@ static void zp_map_build(zp_map_t *map, cfg_t *cfg) {
 // Label resolution
 // ----------------------------------------------------------------
 
+// Record a function's ROM address for JSR fixup resolution.
 static void register_func_label(emitter_t *e, char *name, uint16_t addr) {
   if (e->func_label_count >= e->func_label_capacity) {
     unsigned cap = e->func_label_capacity ? e->func_label_capacity * 2 : 8;
@@ -108,6 +120,7 @@ static void register_func_label(emitter_t *e, char *name, uint16_t addr) {
 }
 
 
+// Backpatch all JSR placeholders with resolved function addresses.
 static int resolve_func_fixups(emitter_t *e) {
   for (unsigned i = 0; i < e->fixup_count; i++) {
     fixup_t *f = &e->fixups[i];
@@ -131,6 +144,7 @@ static int resolve_func_fixups(emitter_t *e) {
 }
 
 
+// Queue a forward-reference fixup for a JSR to an unresolved function.
 static void add_fixup(emitter_t *e, char *func_name) {
   if (e->fixup_count >= e->fixup_capacity) {
     unsigned cap = e->fixup_capacity ? e->fixup_capacity * 2 : 8;
@@ -144,6 +158,7 @@ static void add_fixup(emitter_t *e, char *func_name) {
 }
 
 
+// Backpatch all local label placeholders (JMP/COND_JUMP) within a function.
 static int resolve_local_fixups(emitter_t *e) {
   for (unsigned i = 0; i < e->local_fixup_count; i++) {
     fixup_t *f = &e->local_fixups[i];
@@ -160,6 +175,7 @@ static int resolve_local_fixups(emitter_t *e) {
 }
 
 
+// Queue a forward-reference fixup for a local control-flow label.
 static void add_local_fixup(emitter_t *e, unsigned label_id) {
   if (e->local_fixup_count >= e->local_fixup_capacity) {
     unsigned cap = e->local_fixup_capacity ? e->local_fixup_capacity * 2 : 8;
@@ -177,6 +193,7 @@ static void add_local_fixup(emitter_t *e, unsigned label_id) {
 // Global symbol support
 // ----------------------------------------------------------------
 
+// Look up a global variable by name; returns NULL for locals/temps.
 static global_entry_t *lookup_global(emitter_t *e, char *name) {
   for (unsigned i = 0; i < e->global_entry_count; i++) {
     if (strcmp(e->global_entries[i].name, name) == 0)
@@ -186,6 +203,7 @@ static global_entry_t *lookup_global(emitter_t *e, char *name) {
 }
 
 
+// Assign RAM addresses ($0200+) to each global variable with type-aware stride.
 static void allocate_globals(emitter_t *e, ir_gen_t *gen) {
   unsigned count = gen->module.global_count;
   if (count == 0) return;
@@ -246,19 +264,34 @@ OP_EMITTER_SINGLE_ARG(eor_imm, 0x49)
 OP_EMITTER_SINGLE_ARG(inc_zpg, 0xE6)
 OP_EMITTER_SINGLE_ARG(dec_zpg, 0xC6)
 
+OP_EMITTER_SINGLE_ARG(adc_imm, 0x69)
+OP_EMITTER_SINGLE_ARG(adc_zpg, 0x65)
+OP_EMITTER_SINGLE_ARG(sbc_imm, 0xE9)
+OP_EMITTER_SINGLE_ARG(sbc_zpg, 0xE5)
+
+OP_EMITTER_SINGLE_ARG(bvc_rel, 0x50)
+
 OP_EMITTER_NO_ARG(txs, 0x9A)
 OP_EMITTER_NO_ARG(rts, 0x60)
+OP_EMITTER_NO_ARG(clc, 0x18)
+OP_EMITTER_NO_ARG(sec, 0x38)
 
 
 OP_EMITTER_ABS(jmp_abs, 0x4C)
 OP_EMITTER_ABS(sta_abs, 0x8D)
 OP_EMITTER_ABS(lda_abs, 0xAD)
+OP_EMITTER_ABS(cmp_abs, 0xCD)
+OP_EMITTER_ABS(inc_abs, 0xEE)
+OP_EMITTER_ABS(dec_abs, 0xCE)
+OP_EMITTER_ABS(adc_abs, 0x6D)
+OP_EMITTER_ABS(sbc_abs, 0xED)
 
 #undef OP_EMITTER_SINGLE_ARG
 #undef OP_EMITTER_NO_ARG
 #undef OP_EMITTER_ABS
 
 
+// Emit JSR with a placeholder address and queue a fixup for later resolution.
 static void jsr(emitter_t *e, char *func_name) {
   EMIT(0x20);
   add_fixup(e, func_name);
@@ -271,6 +304,7 @@ static void jsr(emitter_t *e, char *func_name) {
 // Global init & data section
 // ----------------------------------------------------------------
 
+// Queue a fixup for a string ROM address (resolved after data section is emitted).
 static void add_data_fixup(emitter_t *e, unsigned global_idx, uint8_t byte) {
   if (e->data_fixup_count >= e->data_fixup_capacity) {
     unsigned cap = e->data_fixup_capacity ? e->data_fixup_capacity * 2 : 8;
@@ -284,6 +318,7 @@ static void add_data_fixup(emitter_t *e, unsigned global_idx, uint8_t byte) {
 }
 
 
+// Emit bootstrap code to initialize each global variable at its RAM address.
 static void emit_global_init(emitter_t *e, ir_gen_t *gen) {
   for (unsigned i = 0; i < gen->module.global_count; i++) {
     ir_global_t *g = &gen->module.globals[i];
@@ -312,6 +347,7 @@ static void emit_global_init(emitter_t *e, ir_gen_t *gen) {
 }
 
 
+// Write string literals into ROM after code and resolve data fixups.
 static void emit_data_section(emitter_t *e, ir_gen_t *gen) {
   e->data_pos = e->code_pos;
 
@@ -344,6 +380,7 @@ static void emit_data_section(emitter_t *e, ir_gen_t *gen) {
 // High level emitters
 // ----------------------------------------------------------------
 
+// Write NMI, Reset, and IRQ vectors at $FFFA-$FFFF.
 static void emit_vectors(emitter_t *e) {
   unsigned pos = 0xFFFA - ROM_START;
 
@@ -356,6 +393,7 @@ static void emit_vectors(emitter_t *e) {
 }
 
 
+// Emit the reset stub: SEI, CLD, stack init, frame pointer init.
 static void emit_bootstrap(emitter_t *e) {
   EMIT(0x78); // SEI
   EMIT(0xD8); // CLD
@@ -370,6 +408,7 @@ static void emit_bootstrap(emitter_t *e) {
 }
 
 
+// Emit JSR main followed by an infinite halt loop (JMP to self).
 static void emit_call_main(emitter_t *e) {
   jsr(e, "main");
 
@@ -379,6 +418,7 @@ static void emit_call_main(emitter_t *e) {
 }
 
 
+// Load byte N of an operand into A. Global-aware: uses abs for globals, zpg for locals.
 static void emit_load_byte(emitter_t *e, zp_map_t *map,
                             tac_operand_t *op, unsigned byte) {
   switch (op->kind) {
@@ -401,6 +441,7 @@ static void emit_load_byte(emitter_t *e, zp_map_t *map,
 }
 
 
+// Store A into byte N of a destination. Global-aware: uses abs for globals, zpg for locals.
 static void emit_store_byte(emitter_t *e, zp_map_t *map,
                              tac_operand_t *dst, unsigned byte) {
   if (dst->kind == OPERAND_VAR) {
@@ -414,6 +455,76 @@ static void emit_store_byte(emitter_t *e, zp_map_t *map,
 }
 
 
+// Emit CMP against byte N of an operand. Global-aware: uses abs for globals.
+static void emit_cmp_byte(emitter_t *e, zp_map_t *map,
+                          tac_operand_t *op, unsigned byte) {
+  switch (op->kind) {
+    case OPERAND_CONST_INT:
+      cmp_imm(e, (uint8_t)((op->int_val >> (8 * byte)) & 0xFF));
+      break;
+    case OPERAND_VAR: {
+      global_entry_t *g = lookup_global(e, op->name);
+      if (g)
+        cmp_abs(e, (uint16_t)(g->ram_addr + byte));
+      else
+        cmp_zpg(e, (uint8_t)(zp_map_lookup(map, op) + byte));
+      break;
+    }
+    case OPERAND_TEMP:
+      cmp_zpg(e, (uint8_t)(zp_map_lookup(map, op) + byte));
+      break;
+    default: break;
+  }
+}
+
+
+// Emit ADC against byte N of an operand. Global-aware: uses abs for globals.
+static void emit_adc_byte(emitter_t *e, zp_map_t *map,
+                          tac_operand_t *op, unsigned byte) {
+  switch (op->kind) {
+    case OPERAND_CONST_INT:
+      adc_imm(e, (uint8_t)((op->int_val >> (8 * byte)) & 0xFF));
+      break;
+    case OPERAND_VAR: {
+      global_entry_t *g = lookup_global(e, op->name);
+      if (g)
+        adc_abs(e, (uint16_t)(g->ram_addr + byte));
+      else
+        adc_zpg(e, (uint8_t)(zp_map_lookup(map, op) + byte));
+      break;
+    }
+    case OPERAND_TEMP:
+      adc_zpg(e, (uint8_t)(zp_map_lookup(map, op) + byte));
+      break;
+    default: break;
+  }
+}
+
+
+// Emit SBC against byte N of an operand. Global-aware: uses abs for globals.
+static void emit_sbc_byte(emitter_t *e, zp_map_t *map,
+                          tac_operand_t *op, unsigned byte) {
+  switch (op->kind) {
+    case OPERAND_CONST_INT:
+      sbc_imm(e, (uint8_t)((op->int_val >> (8 * byte)) & 0xFF));
+      break;
+    case OPERAND_VAR: {
+      global_entry_t *g = lookup_global(e, op->name);
+      if (g)
+        sbc_abs(e, (uint16_t)(g->ram_addr + byte));
+      else
+        sbc_zpg(e, (uint8_t)(zp_map_lookup(map, op) + byte));
+      break;
+    }
+    case OPERAND_TEMP:
+      sbc_zpg(e, (uint8_t)(zp_map_lookup(map, op) + byte));
+      break;
+    default: break;
+  }
+}
+
+
+// Emit conditional jump: LDA src; BEQ skip; JMP target. Jumps when nonzero.
 static void emit_cond_jump(emitter_t *e, zp_map_t *map,
                            tac_operand_t *src, unsigned label_id) {
   emit_load_byte(e, map, src, 0);
@@ -429,7 +540,8 @@ static void emit_cond_jump(emitter_t *e, zp_map_t *map,
 }
 
 
-static void emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
+// Lower a function's TAC instruction stream to 65C02 machine code.
+static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
   register_func_label(e, cfg->name, (uint16_t)(ROM_START + e->code_pos));
 
   zp_map_t map;
@@ -542,61 +654,243 @@ static void emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
           break;
         }
 
-        #define COMPARE_OP(TAC, LEFT, RIGHT, BRANCH_OP)                 \
-          case TAC: {                                                   \
-            uint8_t dst_addr = zp_map_lookup(&map, &instruction->dst);  \
-            emit_load_byte(e, &map, &instruction->LEFT, 0);             \
-            if (instruction->RIGHT.kind == OPERAND_CONST_INT)           \
-              cmp_imm(e, (uint8_t)(instruction->RIGHT.int_val & 0xFF)); \
-            else                                                        \
-              cmp_zpg(e, zp_map_lookup(&map, &instruction->RIGHT));     \
-            EMIT(BRANCH_OP); EMIT(4);                                   \
-            lda_imm(e, 0);                                              \
-            EMIT(0xF0); EMIT(2);                                        \
-            lda_imm(e, 1);                                              \
-            sta_zpg(e, dst_addr);                                       \
-            break;                                                      \
+        case TAC_LT:  case TAC_GTE: case TAC_GT: case TAC_LTE:
+        case TAC_EQ:  case TAC_NEQ: {
+          uint8_t dst_addr = zp_map_lookup(&map, &instruction->dst);
+          tac_operand_t *left, *right;
+          uint8_t branch_op;
+
+          switch (instruction->op) {
+            case TAC_GT:  left = &instruction->src2; right = &instruction->src1; branch_op = 0x90; break;
+            case TAC_LTE: left = &instruction->src2; right = &instruction->src1; branch_op = 0xB0; break;
+            case TAC_LT:  left = &instruction->src1; right = &instruction->src2; branch_op = 0x90; break;
+            case TAC_GTE: left = &instruction->src1; right = &instruction->src2; branch_op = 0xB0; break;
+            case TAC_EQ:  left = &instruction->src1; right = &instruction->src2; branch_op = 0xF0; break;
+            case TAC_NEQ: left = &instruction->src1; right = &instruction->src2; branch_op = 0xD0; break;
+            default:      left = &instruction->src1; right = &instruction->src2; branch_op = 0x90; break;
           }
 
-        COMPARE_OP(TAC_LT,  src1, src2, 0x90)  // BCC — true if <
-        COMPARE_OP(TAC_GTE, src1, src2, 0xB0)  // BCS — true if >=
-        COMPARE_OP(TAC_EQ,  src1, src2, 0xF0)  // BEQ — true if ==
-        COMPARE_OP(TAC_NEQ, src1, src2, 0xD0)  // BNE — true if !=
-        COMPARE_OP(TAC_GT,  src2, src1, 0x90)  // a>b = b<a, swap+BCC
-        COMPARE_OP(TAC_LTE, src2, src1, 0xB0)  // a<=b = b>=a, swap+BCS
-        #undef COMPARE_OP
+          unsigned cmp_width = codegen_type_size(left->type);
+          int is_signed = is_signed_type(left->type);
+          int is_ordering = (instruction->op != TAC_EQ && instruction->op != TAC_NEQ);
+
+          if (cmp_width == 1 && (!is_signed || !is_ordering)) {
+            // u8 unsigned ordering, or u8/i8 EQ/NEQ (sign-agnostic)
+            emit_load_byte(e, &map, left, 0);
+            emit_cmp_byte(e, &map, right, 0);
+            EMIT(branch_op); EMIT(4);
+            lda_imm(e, 0);
+            EMIT(0xF0); EMIT(2);
+            lda_imm(e, 1);
+          } else if (cmp_width == 1 && is_signed) {
+            // i8 signed ordering: N XOR V pattern
+            size_t p_true, p_done;
+            emit_load_byte(e, &map, left, 0);
+            sec(e);
+            emit_sbc_byte(e, &map, right, 0);
+            bvc_rel(e, 2);
+            eor_imm(e, 0x80);
+            // N flag = (left < right)
+            EMIT(0x30); p_true = e->code_pos; EMIT(0); // BMI true
+            // false:
+            lda_imm(e, 0);
+            EMIT(0xF0); p_done = e->code_pos; EMIT(0); // BEQ done
+            // true:
+            e->rom[p_true] = (uint8_t)(e->code_pos - p_true - 1);
+            lda_imm(e, 1);
+            // done:
+            e->rom[p_done] = (uint8_t)(e->code_pos - p_done - 1);
+            if (branch_op == 0xB0) {
+              eor_imm(e, 0x01);
+            }
+          } else if (!is_ordering) {
+            // u16/i16 EQ/NEQ (sign-agnostic)
+            size_t p1, p2, p3;
+            if (instruction->op == TAC_EQ) {
+              emit_load_byte(e, &map, left, 1);
+              emit_cmp_byte(e, &map, right, 1);
+              EMIT(0xD0); p1 = e->code_pos; EMIT(0); // BNE false
+              emit_load_byte(e, &map, left, 0);
+              emit_cmp_byte(e, &map, right, 0);
+              EMIT(0xF0); p2 = e->code_pos; EMIT(0); // BEQ true
+              // false:
+              e->rom[p1] = (uint8_t)(e->code_pos - p1 - 1);
+              lda_imm(e, 0);
+              EMIT(0xF0); p3 = e->code_pos; EMIT(0); // BEQ done
+              // true:
+              e->rom[p2] = (uint8_t)(e->code_pos - p2 - 1);
+              lda_imm(e, 1);
+              // done:
+              e->rom[p3] = (uint8_t)(e->code_pos - p3 - 1);
+            } else {
+              emit_load_byte(e, &map, left, 1);
+              emit_cmp_byte(e, &map, right, 1);
+              EMIT(0xD0); p1 = e->code_pos; EMIT(0); // BNE true
+              emit_load_byte(e, &map, left, 0);
+              emit_cmp_byte(e, &map, right, 0);
+              EMIT(0xD0); p2 = e->code_pos; EMIT(0); // BNE true
+              // false:
+              lda_imm(e, 0);
+              EMIT(0xF0); p3 = e->code_pos; EMIT(0); // BEQ done
+              // true:
+              e->rom[p1] = (uint8_t)(e->code_pos - p1 - 1);
+              e->rom[p2] = (uint8_t)(e->code_pos - p2 - 1);
+              lda_imm(e, 1);
+              // done:
+              e->rom[p3] = (uint8_t)(e->code_pos - p3 - 1);
+            }
+          } else if (!is_signed) {
+            // u16 unsigned ordering
+            size_t p_true1, p_false, p_true2, p_done;
+            emit_load_byte(e, &map, left, 1);
+            emit_cmp_byte(e, &map, right, 1);
+            EMIT(0x90); p_true1 = e->code_pos; EMIT(0);  // BCC true
+            EMIT(0xD0); p_false = e->code_pos; EMIT(0);  // BNE false
+            emit_load_byte(e, &map, left, 0);
+            emit_cmp_byte(e, &map, right, 0);
+            EMIT(0x90); p_true2 = e->code_pos; EMIT(0);  // BCC true
+            // false:
+            e->rom[p_false] = (uint8_t)(e->code_pos - p_false - 1);
+            lda_imm(e, 0);
+            EMIT(0xF0); p_done = e->code_pos; EMIT(0);   // BEQ done
+            // true:
+            e->rom[p_true1] = (uint8_t)(e->code_pos - p_true1 - 1);
+            e->rom[p_true2] = (uint8_t)(e->code_pos - p_true2 - 1);
+            lda_imm(e, 1);
+            // done:
+            e->rom[p_done] = (uint8_t)(e->code_pos - p_done - 1);
+            if (branch_op == 0xB0) {
+              eor_imm(e, 0x01);
+            }
+          } else {
+            // i16 signed ordering: N XOR V on high byte, unsigned low byte
+            size_t p_low, p_true1, p_skip, p_true2, p_done;
+            emit_load_byte(e, &map, left, 1);
+            sec(e);
+            emit_sbc_byte(e, &map, right, 1);
+            EMIT(0xF0); p_low = e->code_pos; EMIT(0);    // BEQ low_compare
+            bvc_rel(e, 2);
+            eor_imm(e, 0x80);
+            EMIT(0x30); p_true1 = e->code_pos; EMIT(0);  // BMI true
+            // high bytes differ, not less → skip to false
+            EMIT(0x4C); p_skip = e->code_pos; EMIT(0); EMIT(0); // JMP false
+            // low_compare:
+            e->rom[p_low] = (uint8_t)(e->code_pos - p_low - 1);
+            emit_load_byte(e, &map, left, 0);
+            emit_cmp_byte(e, &map, right, 0);
+            EMIT(0x90); p_true2 = e->code_pos; EMIT(0);  // BCC true
+            // false:
+            {
+              uint16_t false_addr = (uint16_t)(ROM_START + e->code_pos);
+              e->rom[p_skip]     = (uint8_t)(false_addr & 0xFF);
+              e->rom[p_skip + 1] = (uint8_t)(false_addr >> 8);
+            }
+            lda_imm(e, 0);
+            EMIT(0xF0); p_done = e->code_pos; EMIT(0);   // BEQ done
+            // true:
+            e->rom[p_true1] = (uint8_t)(e->code_pos - p_true1 - 1);
+            e->rom[p_true2] = (uint8_t)(e->code_pos - p_true2 - 1);
+            lda_imm(e, 1);
+            // done:
+            e->rom[p_done] = (uint8_t)(e->code_pos - p_done - 1);
+            if (branch_op == 0xB0) {
+              eor_imm(e, 0x01);
+            }
+          }
+
+          sta_zpg(e, dst_addr);
+          break;
+        }
 
         // -- increment / decrement --
 
         case TAC_INC: {
-          uint8_t dst_addr = zp_map_lookup(&map, &instruction->dst);
           unsigned width = codegen_type_size(instruction->dst.type);
-          inc_zpg(e, dst_addr);
-          if (width > 1) {
-            bne_rel(e, 2);
-            inc_zpg(e, (uint8_t)(dst_addr + 1));
+          global_entry_t *g = (instruction->dst.kind == OPERAND_VAR)
+            ? lookup_global(e, instruction->dst.name) : NULL;
+          if (g) {
+            inc_abs(e, g->ram_addr);
+            if (width > 1) {
+              bne_rel(e, 3);
+              inc_abs(e, (uint16_t)(g->ram_addr + 1));
+            }
+          } else {
+            uint8_t dst_addr = zp_map_lookup(&map, &instruction->dst);
+            inc_zpg(e, dst_addr);
+            if (width > 1) {
+              bne_rel(e, 2);
+              inc_zpg(e, (uint8_t)(dst_addr + 1));
+            }
           }
           break;
         }
 
         case TAC_DEC: {
-          uint8_t dst_addr = zp_map_lookup(&map, &instruction->dst);
           unsigned width = codegen_type_size(instruction->dst.type);
-          if (width > 1) {
-            lda_zpg(e, dst_addr);
-            bne_rel(e, 2);
-            dec_zpg(e, (uint8_t)(dst_addr + 1));
+          global_entry_t *g = (instruction->dst.kind == OPERAND_VAR)
+            ? lookup_global(e, instruction->dst.name) : NULL;
+          if (g) {
+            if (width > 1) {
+              lda_abs(e, g->ram_addr);
+              bne_rel(e, 3);
+              dec_abs(e, (uint16_t)(g->ram_addr + 1));
+            }
+            dec_abs(e, g->ram_addr);
+          } else {
+            uint8_t dst_addr = zp_map_lookup(&map, &instruction->dst);
+            if (width > 1) {
+              lda_zpg(e, dst_addr);
+              bne_rel(e, 2);
+              dec_zpg(e, (uint8_t)(dst_addr + 1));
+            }
+            dec_zpg(e, dst_addr);
           }
-          dec_zpg(e, dst_addr);
           break;
         }
 
-        default: break;
+        // -- arithmetic --
+
+        case TAC_NEG: {
+          unsigned width = codegen_type_size(instruction->dst.type);
+          sec(e);
+          for (unsigned b = 0; b < width; b++) {
+            lda_imm(e, 0);
+            emit_sbc_byte(e, &map, &instruction->src1, b);
+            emit_store_byte(e, &map, &instruction->dst, b);
+          }
+          break;
+        }
+
+        case TAC_ADD: {
+          unsigned width = codegen_type_size(instruction->dst.type);
+          clc(e);
+          for (unsigned b = 0; b < width; b++) {
+            emit_load_byte(e, &map, &instruction->src1, b);
+            emit_adc_byte(e, &map, &instruction->src2, b);
+            emit_store_byte(e, &map, &instruction->dst, b);
+          }
+          break;
+        }
+
+        case TAC_SUB: {
+          unsigned width = codegen_type_size(instruction->dst.type);
+          sec(e);
+          for (unsigned b = 0; b < width; b++) {
+            emit_load_byte(e, &map, &instruction->src1, b);
+            emit_sbc_byte(e, &map, &instruction->src2, b);
+            emit_store_byte(e, &map, &instruction->dst, b);
+          }
+          break;
+        }
+
+        default:
+          fprintf(stderr, "codegen: unhandled TAC op %d\n", instruction->op);
+          return 0;
       }
     }
   }
 
-  resolve_local_fixups(e);
+  return resolve_local_fixups(e);
 }
 
 
@@ -604,6 +898,7 @@ static void emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
 // Main code gen
 // ----------------------------------------------------------------
 
+// Free all heap-allocated emitter resources (labels, fixups, globals).
 static void emitter_free(emitter_t *e) {
   free(e->func_labels);
   free(e->fixups);
@@ -632,7 +927,12 @@ uint8_t *generate_rom(ir_gen_t *gen, size_t *final_rom_size) {
   emit_call_main(&e);
 
   for (unsigned i = 0; i < gen->module.cfg_count; ++i) {
-    emit_function_from_cfg(&e, &gen->module.cfgs[i]);
+    if (!emit_function_from_cfg(&e, &gen->module.cfgs[i])) {
+      free(e.rom);
+      emitter_free(&e);
+      *final_rom_size = 0;
+      return NULL;
+    }
   }
 
   if (!resolve_func_fixups(&e)) {
