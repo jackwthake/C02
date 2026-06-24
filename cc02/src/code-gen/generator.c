@@ -620,26 +620,95 @@ static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
           break;
         }
 
-        #define COMPARE_OP(TAC, LEFT, RIGHT, BRANCH_OP)                 \
-          case TAC: {                                                   \
-            uint8_t dst_addr = zp_map_lookup(&map, &instruction->dst);  \
-            emit_load_byte(e, &map, &instruction->LEFT, 0);             \
-            emit_cmp_byte(e, &map, &instruction->RIGHT, 0);             \
-            EMIT(BRANCH_OP); EMIT(4);                                   \
-            lda_imm(e, 0);                                              \
-            EMIT(0xF0); EMIT(2);                                        \
-            lda_imm(e, 1);                                              \
-            sta_zpg(e, dst_addr);                                       \
-            break;                                                      \
+        case TAC_LT:  case TAC_GTE: case TAC_GT: case TAC_LTE:
+        case TAC_EQ:  case TAC_NEQ: {
+          uint8_t dst_addr = zp_map_lookup(&map, &instruction->dst);
+          tac_operand_t *left, *right;
+          uint8_t branch_op;
+
+          switch (instruction->op) {
+            case TAC_GT:  left = &instruction->src2; right = &instruction->src1; branch_op = 0x90; break;
+            case TAC_LTE: left = &instruction->src2; right = &instruction->src1; branch_op = 0xB0; break;
+            case TAC_LT:  left = &instruction->src1; right = &instruction->src2; branch_op = 0x90; break;
+            case TAC_GTE: left = &instruction->src1; right = &instruction->src2; branch_op = 0xB0; break;
+            case TAC_EQ:  left = &instruction->src1; right = &instruction->src2; branch_op = 0xF0; break;
+            case TAC_NEQ: left = &instruction->src1; right = &instruction->src2; branch_op = 0xD0; break;
+            default:      left = &instruction->src1; right = &instruction->src2; branch_op = 0x90; break;
           }
 
-        COMPARE_OP(TAC_LT,  src1, src2, 0x90)  // BCC — true if <
-        COMPARE_OP(TAC_GTE, src1, src2, 0xB0)  // BCS — true if >=
-        COMPARE_OP(TAC_EQ,  src1, src2, 0xF0)  // BEQ — true if ==
-        COMPARE_OP(TAC_NEQ, src1, src2, 0xD0)  // BNE — true if !=
-        COMPARE_OP(TAC_GT,  src2, src1, 0x90)  // a>b = b<a, swap+BCC
-        COMPARE_OP(TAC_LTE, src2, src1, 0xB0)  // a<=b = b>=a, swap+BCS
-        #undef COMPARE_OP
+          unsigned cmp_width = codegen_type_size(left->type);
+
+          if (cmp_width == 1) {
+            emit_load_byte(e, &map, left, 0);
+            emit_cmp_byte(e, &map, right, 0);
+            EMIT(branch_op); EMIT(4);
+            lda_imm(e, 0);
+            EMIT(0xF0); EMIT(2);
+            lda_imm(e, 1);
+          } else if (instruction->op == TAC_EQ || instruction->op == TAC_NEQ) {
+            size_t p1, p2, p3;
+            if (instruction->op == TAC_EQ) {
+              emit_load_byte(e, &map, left, 1);
+              emit_cmp_byte(e, &map, right, 1);
+              EMIT(0xD0); p1 = e->code_pos; EMIT(0); // BNE false
+              emit_load_byte(e, &map, left, 0);
+              emit_cmp_byte(e, &map, right, 0);
+              EMIT(0xF0); p2 = e->code_pos; EMIT(0); // BEQ true
+              // false:
+              e->rom[p1] = (uint8_t)(e->code_pos - p1 - 1);
+              lda_imm(e, 0);
+              EMIT(0xF0); p3 = e->code_pos; EMIT(0); // BEQ done
+              // true:
+              e->rom[p2] = (uint8_t)(e->code_pos - p2 - 1);
+              lda_imm(e, 1);
+              // done:
+              e->rom[p3] = (uint8_t)(e->code_pos - p3 - 1);
+            } else {
+              emit_load_byte(e, &map, left, 1);
+              emit_cmp_byte(e, &map, right, 1);
+              EMIT(0xD0); p1 = e->code_pos; EMIT(0); // BNE true
+              emit_load_byte(e, &map, left, 0);
+              emit_cmp_byte(e, &map, right, 0);
+              EMIT(0xD0); p2 = e->code_pos; EMIT(0); // BNE true
+              // false:
+              lda_imm(e, 0);
+              EMIT(0xF0); p3 = e->code_pos; EMIT(0); // BEQ done
+              // true:
+              e->rom[p1] = (uint8_t)(e->code_pos - p1 - 1);
+              e->rom[p2] = (uint8_t)(e->code_pos - p2 - 1);
+              lda_imm(e, 1);
+              // done:
+              e->rom[p3] = (uint8_t)(e->code_pos - p3 - 1);
+            }
+          } else {
+            // u16 ordering (LT/GTE, GT/LTE with swapped operands)
+            size_t p_true1, p_false, p_true2, p_done;
+            emit_load_byte(e, &map, left, 1);
+            emit_cmp_byte(e, &map, right, 1);
+            EMIT(0x90); p_true1 = e->code_pos; EMIT(0);  // BCC true
+            EMIT(0xD0); p_false = e->code_pos; EMIT(0);  // BNE false
+            emit_load_byte(e, &map, left, 0);
+            emit_cmp_byte(e, &map, right, 0);
+            EMIT(0x90); p_true2 = e->code_pos; EMIT(0);  // BCC true
+            // false:
+            e->rom[p_false] = (uint8_t)(e->code_pos - p_false - 1);
+            lda_imm(e, 0);
+            EMIT(0xF0); p_done = e->code_pos; EMIT(0);   // BEQ done
+            // true:
+            e->rom[p_true1] = (uint8_t)(e->code_pos - p_true1 - 1);
+            e->rom[p_true2] = (uint8_t)(e->code_pos - p_true2 - 1);
+            lda_imm(e, 1);
+            // done:
+            e->rom[p_done] = (uint8_t)(e->code_pos - p_done - 1);
+
+            if (branch_op == 0xB0) {
+              eor_imm(e, 0x01);
+            }
+          }
+
+          sta_zpg(e, dst_addr);
+          break;
+        }
 
         // -- increment / decrement --
 

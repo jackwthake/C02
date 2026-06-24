@@ -39,6 +39,15 @@ releases are reserved for bug fixes only.
 - **`TAC_NEG` (unary minus)** — `SEC; LDA #0; SBC [src1]; STA [dst]`. SEC is
   emitted once before the byte loop so borrow propagates correctly for u16.
 - Emulator test: `neg_u8` (double negate round-trips back to original value).
+- **u16 comparisons** — `COMPARE_OP` macro replaced with backpatched
+  comparison handlers that support both u8 and u16 operands. u16 ordering
+  (LT/GTE/GT/LTE) uses a high-byte-first pattern: compare high bytes first
+  to determine definite ordering, fall through to low bytes when equal.
+  u16 EQ/NEQ compare both bytes. All forward branch offsets use backpatching
+  instead of hardcoded values, making them robust to variable-size loads
+  (zpg=2 vs abs=3 vs imm=2).
+- Emulator tests: `cmp_u16_lt` (255<256, high-byte decides), `cmp_u16_eq`
+  (500==500, both bytes match), `cmp_u16_gt` (1000>255, high-byte decides).
 - **u16 arithmetic** — `TAC_ADD`/`TAC_SUB` are width-aware from the start
   (CLC/SEC outside byte loop, carry propagates between bytes). Signed i8/i16
   arithmetic works via two's complement — same ADC/SBC instructions.

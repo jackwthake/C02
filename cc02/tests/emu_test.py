@@ -282,6 +282,11 @@ def test_string_deref():
     return True, None
 
 
+test_cmp_u16_lt = _test_cmp("emu_cmp_u16_lt.c02", "u16 255 < 256 (high-byte-first proves LT)")
+test_cmp_u16_eq = _test_cmp("emu_cmp_u16_eq.c02", "u16 500 == 500 (both bytes must match)")
+test_cmp_u16_gt = _test_cmp("emu_cmp_u16_gt.c02", "u16 1000 > 255 (high-byte difference)")
+
+
 def test_inc_global():
     """Increment a global variable (u8 counter = 41; ++counter → 42)."""
     source = os.path.join(SCRIPT_DIR, "emu_inc_global.c02")
@@ -433,6 +438,9 @@ TESTS = [
     ("string_deref", test_string_deref),
     ("inc_global", test_inc_global),
     ("cmp_global", test_cmp_global),
+    ("cmp_u16_lt", test_cmp_u16_lt),
+    ("cmp_u16_eq", test_cmp_u16_eq),
+    ("cmp_u16_gt", test_cmp_u16_gt),
     ("neg_u8", test_neg_u8),
     ("add_u16", test_add_u16),
     ("sub_u16", test_sub_u16),
