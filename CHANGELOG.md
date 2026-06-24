@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/) - while
 the project is in `0.x`, breaking changes may land in MINOR releases; PATCH
 releases are reserved for bug fixes only.
 
-## [Unreleased]
+## [v.0.2.13] 2026-06-24
 
 - **Codegen diagnostic for unhandled TAC ops** — the `default: break` in the
   TAC instruction switch has been replaced with a `fprintf(stderr)` + error
