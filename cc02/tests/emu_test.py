@@ -80,7 +80,7 @@ def test_rom_size():
     with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as tmp:
         bin_path = tmp.name
     try:
-        source = os.path.join(SCRIPT_DIR, "analyzer_basic.c02")
+        source = os.path.join(SCRIPT_DIR, "emu_store_const.c02")
         ok, _ = compile_c02(source, bin_path)
         if not ok:
             return False, "compilation failed"
@@ -98,7 +98,7 @@ def test_reset_vector():
     with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as tmp:
         bin_path = tmp.name
     try:
-        source = os.path.join(SCRIPT_DIR, "analyzer_basic.c02")
+        source = os.path.join(SCRIPT_DIR, "emu_store_const.c02")
         ok, _ = compile_c02(source, bin_path)
         if not ok:
             return False, "compilation failed"
@@ -120,7 +120,7 @@ def test_nop_fill():
     with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as tmp:
         bin_path = tmp.name
     try:
-        source = os.path.join(SCRIPT_DIR, "analyzer_basic.c02")
+        source = os.path.join(SCRIPT_DIR, "emu_store_const.c02")
         ok, _ = compile_c02(source, bin_path)
         if not ok:
             return False, "compilation failed"
@@ -139,7 +139,7 @@ def test_nop_fill():
 
 def test_bootstrap_stack_init():
     """Bootstrap initializes the hardware stack pointer to $FF."""
-    source = os.path.join(SCRIPT_DIR, "analyzer_basic.c02")
+    source = os.path.join(SCRIPT_DIR, "emu_store_const.c02")
     mpu, err = compile_and_run(source)
     if mpu is None:
         return False, f"compilation failed: {err}"
@@ -150,7 +150,7 @@ def test_bootstrap_stack_init():
 
 def test_bootstrap_fp_init():
     """Bootstrap sets FP (ZP $00-$01) to $01FF."""
-    source = os.path.join(SCRIPT_DIR, "analyzer_basic.c02")
+    source = os.path.join(SCRIPT_DIR, "emu_store_const.c02")
     mpu, err = compile_and_run(source)
     if mpu is None:
         return False, f"compilation failed: {err}"
@@ -162,7 +162,7 @@ def test_bootstrap_fp_init():
 
 def test_halt_loop():
     """CPU halts (PC stuck on JMP to self) after main returns."""
-    source = os.path.join(SCRIPT_DIR, "analyzer_basic.c02")
+    source = os.path.join(SCRIPT_DIR, "emu_store_const.c02")
     mpu, err = compile_and_run(source, max_cycles=1000)
     if mpu is None:
         return False, f"compilation failed: {err}"
@@ -177,7 +177,7 @@ def test_halt_loop():
 
 def test_interrupts_disabled():
     """Bootstrap disables interrupts (SEI sets I flag)."""
-    source = os.path.join(SCRIPT_DIR, "analyzer_basic.c02")
+    source = os.path.join(SCRIPT_DIR, "emu_store_const.c02")
     mpu, err = compile_and_run(source)
     if mpu is None:
         return False, f"compilation failed: {err}"
@@ -188,7 +188,7 @@ def test_interrupts_disabled():
 
 def test_decimal_mode_clear():
     """Bootstrap clears decimal mode (CLD clears D flag)."""
-    source = os.path.join(SCRIPT_DIR, "analyzer_basic.c02")
+    source = os.path.join(SCRIPT_DIR, "emu_store_const.c02")
     mpu, err = compile_and_run(source)
     if mpu is None:
         return False, f"compilation failed: {err}"

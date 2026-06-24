@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/) - while
 the project is in `0.x`, breaking changes may land in MINOR releases; PATCH
 releases are reserved for bug fixes only.
 
+## [Unreleased]
+
+- **Codegen diagnostic for unhandled TAC ops** — the `default: break` in the
+  TAC instruction switch has been replaced with a `fprintf(stderr)` + error
+  return that names the unhandled op number. Programs using unimplemented
+  features now fail loudly at compile time instead of silently producing wrong
+  binaries. `emit_function_from_cfg` now returns `int` (0 on failure) so the
+  error propagates to `generate_rom`.
+- **Bootstrap emu tests decoupled from analyzer_basic.c02** — the eight
+  bootstrap-verification tests (rom_size, reset_vector, etc.) now use
+  `emu_store_const.c02` instead of `analyzer_basic.c02`, which uses TAC ops
+  not yet implemented in the code generator.
+
 ## [v0.2.12] 2026-06-23
 
 - **c02-objdump: label markers** — jump target labels (`L0:`, `L1:`, ...) now

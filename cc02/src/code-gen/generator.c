@@ -429,7 +429,7 @@ static void emit_cond_jump(emitter_t *e, zp_map_t *map,
 }
 
 
-static void emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
+static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
   register_func_label(e, cfg->name, (uint16_t)(ROM_START + e->code_pos));
 
   zp_map_t map;
@@ -591,12 +591,14 @@ static void emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
           break;
         }
 
-        default: break;
+        default:
+          fprintf(stderr, "codegen: unhandled TAC op %d\n", instruction->op);
+          return 0;
       }
     }
   }
 
-  resolve_local_fixups(e);
+  return resolve_local_fixups(e);
 }
 
 
@@ -632,7 +634,12 @@ uint8_t *generate_rom(ir_gen_t *gen, size_t *final_rom_size) {
   emit_call_main(&e);
 
   for (unsigned i = 0; i < gen->module.cfg_count; ++i) {
-    emit_function_from_cfg(&e, &gen->module.cfgs[i]);
+    if (!emit_function_from_cfg(&e, &gen->module.cfgs[i])) {
+      free(e.rom);
+      emitter_free(&e);
+      *final_rom_size = 0;
+      return NULL;
+    }
   }
 
   if (!resolve_func_fixups(&e)) {
