@@ -5,10 +5,12 @@ the workflow below is intentionally lightweight, but consistent.
 
 ## Project Status
 
-C02 is currently a **parser frontend only** - see the [README's Current
-Status & Limitations](./README.md#current-status--limitations) section
-before diving in. Semantic analysis and code generation are the next major
-areas of work, so expect the AST and grammar to keep shifting for a while.
+C02 has a **complete frontend** (tokenizer, parser, semantic analyzer),
+**IR generation**, and a **code generator** that emits working 65C02 ROM
+binaries - see the [README's Current Status &
+Limitations](./README.md#current-status--limitations) for what works today
+and what's still unimplemented. The compiler is under active development,
+so expect internals (especially the IR and codegen) to keep shifting.
 
 ## License
 
@@ -29,7 +31,7 @@ terms.
 
    | Prefix      | Use for                                  |
    |-------------|-------------------------------------------|
-   | `feat/`     | New language features, parser additions   |
+   | `feat/`     | New language features, codegen additions  |
    | `fix/`      | Bug fixes                                  |
    | `refactor/` | Internal restructuring, no behavior change |
    | `docs/`     | README, comments, this file, etc.          |
@@ -42,18 +44,21 @@ terms.
 3. **Commit as you go.** Work-in-progress commits on your branch don't need
    to be clean - history gets squashed on merge (see below).
 
-4. **Add tests.** New parser features should come with a golden-file test
-   under `cc02/tests/` (see existing `parser_*.c02` / `.golden` pairs for the
-   pattern). Bug fixes should add a regression case where practical.
+4. **Add tests.** New features should come with tests under `cc02/tests/`:
+   golden-file tests for frontend changes (`parser_*.c02`, `analyzer_*.c02`,
+   `ir_*.c02` with matching `.golden` files), emulator tests for codegen
+   changes (`emu_*.c02` + a test function in `emu_test.py`), and smoke
+   tests for internal API changes (`cc02/tests/smoke/`). Bug fixes should
+   add a regression case where practical.
 
 5. **Update the changelog.** Add a line under `[Unreleased]` in
    [CHANGELOG.md](./CHANGELOG.md) describing the change. This keeps the
    changelog accurate without a separate bookkeeping pass at release time.
 
 6. **Open a Pull Request into `main`.** Make sure CI passes. Describe what
-   changed and why - for grammar/parser changes, a small before/after
-   example (source snippet + relevant AST shape) is the most useful thing
-   you can include.
+   changed and why - for frontend changes a before/after example (source
+   snippet + AST/IR shape) is helpful; for codegen changes, include the
+   emulator test that exercises the new path.
 
 7. **Squash and merge.** Keeps `main`'s history as one logical commit per
    change, regardless of how messy the branch's history was.
@@ -68,14 +73,18 @@ terms.
   when adding something that fits an existing shape.
 - Parser errors should go through `GENERATE_ERROR`/`EXPECT_SYMBOL` and
   propagate via `GUARD(p)`, consistent with everything else in `parser.c`.
+- Codegen helpers that read/write operands must go through the global-aware
+  helpers (`emit_load_byte`, `emit_store_byte`, etc.) — never raw
+  `zp_map_lookup`. See the `OP_EMITTER_*` and `GLOBAL_AWARE_ALU_HELPER`
+  macros for the stamped-out pattern used for new addressing-mode variants.
 
 ## Reporting Bugs
 
 Open an issue with:
 - The `.c02` source that triggers the problem (minimal repro if possible)
 - What you expected vs. what happened
-- Output of `--ast-dump` or `--token-dump` if relevant - these make parser
-  bugs much faster to diagnose
+- Output of `--ast-dump`, `--ir-dump`, or `--token-dump` if relevant -
+  these make bugs much faster to diagnose
 
 ## Questions
 
