@@ -22,6 +22,7 @@
 // Zero-page operand map
 // ----------------------------------------------------------------
 
+// Return byte width for a type (1 for u8/i8, 2 for u16/i16/pointers).
 static unsigned codegen_type_size(type_t type) {
   if (type.is_ptr) return 2;
   switch (type.kind) {
@@ -32,11 +33,13 @@ static unsigned codegen_type_size(type_t type) {
 }
 
 
+// True if the type requires signed comparison semantics.
 static int is_signed_type(type_t type) {
   return type.kind == TYPE_I8 || type.kind == TYPE_I16;
 }
 
 
+// Find the ZP slot assigned to a var/temp operand. Returns 0 if not found.
 static uint8_t zp_map_lookup(zp_map_t *map, tac_operand_t *op) {
   for (unsigned i = 0; i < map->count; i++) {
     zp_entry_t *e = &map->entries[i];
@@ -48,6 +51,7 @@ static uint8_t zp_map_lookup(zp_map_t *map, tac_operand_t *op) {
 }
 
 
+// Assign the next available ZP slot to an operand (deduped, type-stride-aware).
 static void zp_map_add(zp_map_t *map, tac_operand_kind_t kind,
                         char *name, unsigned temp_id, type_t type) {
   tac_operand_t probe = { .kind = kind };
@@ -68,6 +72,7 @@ static void zp_map_add(zp_map_t *map, tac_operand_kind_t kind,
 }
 
 
+// Register a TAC operand in the ZP map (dispatches var vs temp).
 static void zp_map_add_operand(zp_map_t *map, tac_operand_t *op) {
   if (op->kind == OPERAND_VAR)
     zp_map_add(map, OPERAND_VAR, op->name, 0, op->type);
@@ -76,6 +81,7 @@ static void zp_map_add_operand(zp_map_t *map, tac_operand_t *op) {
 }
 
 
+// Build the per-function ZP map: params first, then all referenced operands.
 static void zp_map_build(zp_map_t *map, cfg_t *cfg) {
   map->count = 0;
   map->next_addr = REG_START;
@@ -101,6 +107,7 @@ static void zp_map_build(zp_map_t *map, cfg_t *cfg) {
 // Label resolution
 // ----------------------------------------------------------------
 
+// Record a function's ROM address for JSR fixup resolution.
 static void register_func_label(emitter_t *e, char *name, uint16_t addr) {
   if (e->func_label_count >= e->func_label_capacity) {
     unsigned cap = e->func_label_capacity ? e->func_label_capacity * 2 : 8;
@@ -113,6 +120,7 @@ static void register_func_label(emitter_t *e, char *name, uint16_t addr) {
 }
 
 
+// Backpatch all JSR placeholders with resolved function addresses.
 static int resolve_func_fixups(emitter_t *e) {
   for (unsigned i = 0; i < e->fixup_count; i++) {
     fixup_t *f = &e->fixups[i];
@@ -136,6 +144,7 @@ static int resolve_func_fixups(emitter_t *e) {
 }
 
 
+// Queue a forward-reference fixup for a JSR to an unresolved function.
 static void add_fixup(emitter_t *e, char *func_name) {
   if (e->fixup_count >= e->fixup_capacity) {
     unsigned cap = e->fixup_capacity ? e->fixup_capacity * 2 : 8;
@@ -149,6 +158,7 @@ static void add_fixup(emitter_t *e, char *func_name) {
 }
 
 
+// Backpatch all local label placeholders (JMP/COND_JUMP) within a function.
 static int resolve_local_fixups(emitter_t *e) {
   for (unsigned i = 0; i < e->local_fixup_count; i++) {
     fixup_t *f = &e->local_fixups[i];
@@ -165,6 +175,7 @@ static int resolve_local_fixups(emitter_t *e) {
 }
 
 
+// Queue a forward-reference fixup for a local control-flow label.
 static void add_local_fixup(emitter_t *e, unsigned label_id) {
   if (e->local_fixup_count >= e->local_fixup_capacity) {
     unsigned cap = e->local_fixup_capacity ? e->local_fixup_capacity * 2 : 8;
@@ -182,6 +193,7 @@ static void add_local_fixup(emitter_t *e, unsigned label_id) {
 // Global symbol support
 // ----------------------------------------------------------------
 
+// Look up a global variable by name; returns NULL for locals/temps.
 static global_entry_t *lookup_global(emitter_t *e, char *name) {
   for (unsigned i = 0; i < e->global_entry_count; i++) {
     if (strcmp(e->global_entries[i].name, name) == 0)
@@ -191,6 +203,7 @@ static global_entry_t *lookup_global(emitter_t *e, char *name) {
 }
 
 
+// Assign RAM addresses ($0200+) to each global variable with type-aware stride.
 static void allocate_globals(emitter_t *e, ir_gen_t *gen) {
   unsigned count = gen->module.global_count;
   if (count == 0) return;
@@ -278,6 +291,7 @@ OP_EMITTER_ABS(sbc_abs, 0xED)
 #undef OP_EMITTER_ABS
 
 
+// Emit JSR with a placeholder address and queue a fixup for later resolution.
 static void jsr(emitter_t *e, char *func_name) {
   EMIT(0x20);
   add_fixup(e, func_name);
@@ -290,6 +304,7 @@ static void jsr(emitter_t *e, char *func_name) {
 // Global init & data section
 // ----------------------------------------------------------------
 
+// Queue a fixup for a string ROM address (resolved after data section is emitted).
 static void add_data_fixup(emitter_t *e, unsigned global_idx, uint8_t byte) {
   if (e->data_fixup_count >= e->data_fixup_capacity) {
     unsigned cap = e->data_fixup_capacity ? e->data_fixup_capacity * 2 : 8;
@@ -303,6 +318,7 @@ static void add_data_fixup(emitter_t *e, unsigned global_idx, uint8_t byte) {
 }
 
 
+// Emit bootstrap code to initialize each global variable at its RAM address.
 static void emit_global_init(emitter_t *e, ir_gen_t *gen) {
   for (unsigned i = 0; i < gen->module.global_count; i++) {
     ir_global_t *g = &gen->module.globals[i];
@@ -331,6 +347,7 @@ static void emit_global_init(emitter_t *e, ir_gen_t *gen) {
 }
 
 
+// Write string literals into ROM after code and resolve data fixups.
 static void emit_data_section(emitter_t *e, ir_gen_t *gen) {
   e->data_pos = e->code_pos;
 
@@ -363,6 +380,7 @@ static void emit_data_section(emitter_t *e, ir_gen_t *gen) {
 // High level emitters
 // ----------------------------------------------------------------
 
+// Write NMI, Reset, and IRQ vectors at $FFFA-$FFFF.
 static void emit_vectors(emitter_t *e) {
   unsigned pos = 0xFFFA - ROM_START;
 
@@ -375,6 +393,7 @@ static void emit_vectors(emitter_t *e) {
 }
 
 
+// Emit the reset stub: SEI, CLD, stack init, frame pointer init.
 static void emit_bootstrap(emitter_t *e) {
   EMIT(0x78); // SEI
   EMIT(0xD8); // CLD
@@ -389,6 +408,7 @@ static void emit_bootstrap(emitter_t *e) {
 }
 
 
+// Emit JSR main followed by an infinite halt loop (JMP to self).
 static void emit_call_main(emitter_t *e) {
   jsr(e, "main");
 
@@ -398,6 +418,7 @@ static void emit_call_main(emitter_t *e) {
 }
 
 
+// Load byte N of an operand into A. Global-aware: uses abs for globals, zpg for locals.
 static void emit_load_byte(emitter_t *e, zp_map_t *map,
                             tac_operand_t *op, unsigned byte) {
   switch (op->kind) {
@@ -420,6 +441,7 @@ static void emit_load_byte(emitter_t *e, zp_map_t *map,
 }
 
 
+// Store A into byte N of a destination. Global-aware: uses abs for globals, zpg for locals.
 static void emit_store_byte(emitter_t *e, zp_map_t *map,
                              tac_operand_t *dst, unsigned byte) {
   if (dst->kind == OPERAND_VAR) {
@@ -433,6 +455,7 @@ static void emit_store_byte(emitter_t *e, zp_map_t *map,
 }
 
 
+// Emit CMP against byte N of an operand. Global-aware: uses abs for globals.
 static void emit_cmp_byte(emitter_t *e, zp_map_t *map,
                           tac_operand_t *op, unsigned byte) {
   switch (op->kind) {
@@ -455,6 +478,7 @@ static void emit_cmp_byte(emitter_t *e, zp_map_t *map,
 }
 
 
+// Emit ADC against byte N of an operand. Global-aware: uses abs for globals.
 static void emit_adc_byte(emitter_t *e, zp_map_t *map,
                           tac_operand_t *op, unsigned byte) {
   switch (op->kind) {
@@ -477,6 +501,7 @@ static void emit_adc_byte(emitter_t *e, zp_map_t *map,
 }
 
 
+// Emit SBC against byte N of an operand. Global-aware: uses abs for globals.
 static void emit_sbc_byte(emitter_t *e, zp_map_t *map,
                           tac_operand_t *op, unsigned byte) {
   switch (op->kind) {
@@ -499,6 +524,7 @@ static void emit_sbc_byte(emitter_t *e, zp_map_t *map,
 }
 
 
+// Emit conditional jump: LDA src; BEQ skip; JMP target. Jumps when nonzero.
 static void emit_cond_jump(emitter_t *e, zp_map_t *map,
                            tac_operand_t *src, unsigned label_id) {
   emit_load_byte(e, map, src, 0);
@@ -514,6 +540,7 @@ static void emit_cond_jump(emitter_t *e, zp_map_t *map,
 }
 
 
+// Lower a function's TAC instruction stream to 65C02 machine code.
 static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
   register_func_label(e, cfg->name, (uint16_t)(ROM_START + e->code_pos));
 
@@ -871,6 +898,7 @@ static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
 // Main code gen
 // ----------------------------------------------------------------
 
+// Free all heap-allocated emitter resources (labels, fixups, globals).
 static void emitter_free(emitter_t *e) {
   free(e->func_labels);
   free(e->fixups);
