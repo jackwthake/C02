@@ -1,0 +1,8 @@
+reg u8 PORTB @ 0x6000;
+
+fn main() -> void {
+  u16 x = 256;
+  if (x) {
+    PORTB = 42;
+  }
+}

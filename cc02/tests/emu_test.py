@@ -417,6 +417,42 @@ def test_add_const():
     return True, None
 
 
+def test_logical_not():
+    """!2 → 0, then !0 → truthy → PORTB = 42."""
+    source = os.path.join(SCRIPT_DIR, "emu_logical_not.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 42:
+        return False, f"memory[$6000] = {val}, expected 42"
+    return True, None
+
+
+def test_bare_cond_u8():
+    """if (2) { PORTB = 42; } — bare non-boolean u8 condition."""
+    source = os.path.join(SCRIPT_DIR, "emu_bare_cond_u8.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 42:
+        return False, f"memory[$6000] = {val}, expected 42"
+    return True, None
+
+
+def test_bare_cond_u16():
+    """if (256) — u16 with low byte 0, high byte 1 is truthy."""
+    source = os.path.join(SCRIPT_DIR, "emu_bare_cond_u16.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 42:
+        return False, f"memory[$6000] = {val}, expected 42"
+    return True, None
+
+
 # ----------------------------------------------------------------
 # Runner
 # ----------------------------------------------------------------
@@ -457,6 +493,9 @@ TESTS = [
     ("add_u8", test_add_u8),
     ("sub_u8", test_sub_u8),
     ("add_const", test_add_const),
+    ("logical_not", test_logical_not),
+    ("bare_cond_u8", test_bare_cond_u8),
+    ("bare_cond_u16", test_bare_cond_u16),
 ]
 
 

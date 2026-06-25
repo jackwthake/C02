@@ -358,7 +358,7 @@ static tac_operand_t lower_expr(ir_gen_t *gen, cfg_t *cfg, node_t *node) {
         unsigned end_label = new_label(cfg);
 
         tac_operand_t left = lower_expr(gen, cfg, node->binop.left);
-        tac_operand_t neg = new_temp(cfg, left.type);
+        tac_operand_t neg = new_temp(cfg, (type_t){ .kind = TYPE_U8 });
         emit(gen, cfg, (tac_instr_t){ .op = TAC_NOT, .dst = neg, .src1 = left });
         emit(gen, cfg, (tac_instr_t){ .op = TAC_COND_JUMP, .src1 = neg, .label = false_label });
 
@@ -423,7 +423,9 @@ static tac_operand_t lower_expr(ir_gen_t *gen, cfg_t *cfg, node_t *node) {
       tac_operand_t operand = lower_expr(gen, cfg, node->unary.operand);
 
       type_t result_type = operand.type;
-      if (op == TAC_ADDR_OF) {
+      if (op == TAC_NOT) {
+        result_type = (type_t){ .kind = TYPE_U8 };
+      } else if (op == TAC_ADDR_OF) {
         result_type.is_ptr = 1;
         result_type.ptr_depth++;
       }
@@ -614,7 +616,7 @@ static void lower_stmt(ir_gen_t *gen, cfg_t *cfg, node_t *node) {
       int has_else = block_count > 1;
 
       tac_operand_t cond = lower_expr(gen, cfg, node->if_stmt.cond);
-      tac_operand_t neg = new_temp(cfg, cond.type);
+      tac_operand_t neg = new_temp(cfg, (type_t){ .kind = TYPE_U8 });
       emit(gen, cfg, (tac_instr_t){ .op = TAC_NOT, .dst = neg, .src1 = cond });
 
       unsigned else_label = new_label(cfg);
@@ -653,7 +655,7 @@ static void lower_stmt(ir_gen_t *gen, cfg_t *cfg, node_t *node) {
 
       // evaluate condition
       tac_operand_t cond = lower_expr(gen, cfg, node->while_stmt.cond);
-      tac_operand_t neg = new_temp(cfg, cond.type);
+      tac_operand_t neg = new_temp(cfg, (type_t){ .kind = TYPE_U8 });
 
       // if !condition -> jump to end
       emit(gen, cfg, (tac_instr_t){ .op = TAC_NOT, .dst = neg, .src1 = cond });
@@ -685,7 +687,7 @@ static void lower_stmt(ir_gen_t *gen, cfg_t *cfg, node_t *node) {
        // evaluate condition
       if (node->for_stmt.cond) {
         tac_operand_t cond = lower_expr(gen, cfg, node->for_stmt.cond);
-        tac_operand_t neg = new_temp(cfg, cond.type);
+        tac_operand_t neg = new_temp(cfg, (type_t){ .kind = TYPE_U8 });
 
         // if !condition -> jump to end
         emit(gen, cfg, (tac_instr_t){ .op = TAC_NOT, .dst = neg, .src1 = cond });

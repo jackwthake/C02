@@ -39,7 +39,11 @@ static int is_signed_type(type_t type) {
 }
 
 
-// Find the ZP slot assigned to a var/temp operand. Returns 0 if not found.
+// Sentinel for "operand not in ZP map". Must be a ZP address that is never
+// assigned by the map — $FF lives in the ABI param zone ($EF–$FF).
+#define ZP_NOT_FOUND 0xFF
+
+// Find the ZP slot assigned to a var/temp operand. Returns ZP_NOT_FOUND if not found.
 static uint8_t zp_map_lookup(zp_map_t *map, tac_operand_t *op) {
   for (unsigned i = 0; i < map->count; i++) {
     zp_entry_t *e = &map->entries[i];
@@ -47,7 +51,7 @@ static uint8_t zp_map_lookup(zp_map_t *map, tac_operand_t *op) {
     if (e->kind == OPERAND_VAR && strcmp(e->name, op->name) == 0) return e->zp_addr;
     if (e->kind == OPERAND_TEMP && e->temp_id == op->temp_id)    return e->zp_addr;
   }
-  return 0;
+  return ZP_NOT_FOUND;
 }
 
 
@@ -57,9 +61,12 @@ static void zp_map_add(zp_map_t *map, tac_operand_kind_t kind,
   tac_operand_t probe = { .kind = kind };
   if (kind == OPERAND_VAR) probe.name = name;
   else                     probe.temp_id = temp_id;
-  if (zp_map_lookup(map, &probe) != 0)
+  if (zp_map_lookup(map, &probe) != ZP_NOT_FOUND)
     return;
-  if (map->count >= ZP_MAP_MAX) return;
+  if (map->count >= ZP_MAP_MAX) {
+    fprintf(stderr, "codegen: ZP map overflow (>%d operands)\n", ZP_MAP_MAX);
+    return;
+  }
 
   unsigned size = codegen_type_size(type);
   zp_entry_t *e = &map->entries[map->count++];
@@ -111,7 +118,10 @@ static void zp_map_build(zp_map_t *map, cfg_t *cfg) {
 static void register_func_label(emitter_t *e, char *name, uint16_t addr) {
   if (e->func_label_count >= e->func_label_capacity) {
     unsigned cap = e->func_label_capacity ? e->func_label_capacity * 2 : 8;
-    e->func_labels = realloc(e->func_labels, cap * sizeof(func_label_t));
+    func_label_t *grown = arena_alloc(&e->arena, cap * sizeof(func_label_t));
+    if (e->func_labels)
+      memcpy(grown, e->func_labels, e->func_label_count * sizeof(func_label_t));
+    e->func_labels = grown;
     e->func_label_capacity = cap;
   }
   func_label_t *l = &e->func_labels[e->func_label_count++];
@@ -148,7 +158,10 @@ static int resolve_func_fixups(emitter_t *e) {
 static void add_fixup(emitter_t *e, char *func_name) {
   if (e->fixup_count >= e->fixup_capacity) {
     unsigned cap = e->fixup_capacity ? e->fixup_capacity * 2 : 8;
-    e->fixups = realloc(e->fixups, cap * sizeof(fixup_t));
+    fixup_t *grown = arena_alloc(&e->arena, cap * sizeof(fixup_t));
+    if (e->fixups)
+      memcpy(grown, e->fixups, e->fixup_count * sizeof(fixup_t));
+    e->fixups = grown;
     e->fixup_capacity = cap;
   }
   fixup_t *f = &e->fixups[e->fixup_count++];
@@ -179,7 +192,10 @@ static int resolve_local_fixups(emitter_t *e) {
 static void add_local_fixup(emitter_t *e, unsigned label_id) {
   if (e->local_fixup_count >= e->local_fixup_capacity) {
     unsigned cap = e->local_fixup_capacity ? e->local_fixup_capacity * 2 : 8;
-    e->local_fixups = realloc(e->local_fixups, cap * sizeof(fixup_t));
+    fixup_t *grown = arena_alloc(&e->arena, cap * sizeof(fixup_t));
+    if (e->local_fixups)
+      memcpy(grown, e->local_fixups, e->local_fixup_count * sizeof(fixup_t));
+    e->local_fixups = grown;
     e->local_fixup_capacity = cap;
   }
 
@@ -208,7 +224,7 @@ static void allocate_globals(emitter_t *e, ir_gen_t *gen) {
   unsigned count = gen->module.global_count;
   if (count == 0) return;
 
-  e->global_entries = malloc(count * sizeof(global_entry_t));
+  e->global_entries = arena_alloc(&e->arena, count * sizeof(global_entry_t));
   e->global_entry_count = count;
 
   for (unsigned i = 0; i < count; i++) {
@@ -255,6 +271,9 @@ OP_EMITTER_SINGLE_ARG(ldx_imm, 0xA2)
 OP_EMITTER_SINGLE_ARG(ldy_imm, 0xA0)
 OP_EMITTER_SINGLE_ARG(sta_zpg, 0x85)
 
+OP_EMITTER_SINGLE_ARG(ora_imm, 0x09)
+OP_EMITTER_SINGLE_ARG(ora_zpg, 0x05)
+
 OP_EMITTER_SINGLE_ARG(cmp_imm, 0xC9)
 OP_EMITTER_SINGLE_ARG(cmp_zpg, 0xC5)
 OP_EMITTER_SINGLE_ARG(beq_rel, 0xF0)
@@ -280,6 +299,7 @@ OP_EMITTER_NO_ARG(sec, 0x38)
 OP_EMITTER_ABS(jmp_abs, 0x4C)
 OP_EMITTER_ABS(sta_abs, 0x8D)
 OP_EMITTER_ABS(lda_abs, 0xAD)
+OP_EMITTER_ABS(ora_abs, 0x0D)
 OP_EMITTER_ABS(cmp_abs, 0xCD)
 OP_EMITTER_ABS(inc_abs, 0xEE)
 OP_EMITTER_ABS(dec_abs, 0xCE)
@@ -308,7 +328,10 @@ static void jsr(emitter_t *e, char *func_name) {
 static void add_data_fixup(emitter_t *e, unsigned global_idx, uint8_t byte) {
   if (e->data_fixup_count >= e->data_fixup_capacity) {
     unsigned cap = e->data_fixup_capacity ? e->data_fixup_capacity * 2 : 8;
-    e->data_fixups = realloc(e->data_fixups, cap * sizeof(data_fixup_t));
+    data_fixup_t *grown = arena_alloc(&e->arena, cap * sizeof(data_fixup_t));
+    if (e->data_fixups)
+      memcpy(grown, e->data_fixups, e->data_fixup_count * sizeof(data_fixup_t));
+    e->data_fixups = grown;
     e->data_fixup_capacity = cap;
   }
   data_fixup_t *f = &e->data_fixups[e->data_fixup_count++];
@@ -455,79 +478,40 @@ static void emit_store_byte(emitter_t *e, zp_map_t *map,
 }
 
 
-// Emit CMP against byte N of an operand. Global-aware: uses abs for globals.
-static void emit_cmp_byte(emitter_t *e, zp_map_t *map,
-                          tac_operand_t *op, unsigned byte) {
-  switch (op->kind) {
-    case OPERAND_CONST_INT:
-      cmp_imm(e, (uint8_t)((op->int_val >> (8 * byte)) & 0xFF));
-      break;
-    case OPERAND_VAR: {
-      global_entry_t *g = lookup_global(e, op->name);
-      if (g)
-        cmp_abs(e, (uint16_t)(g->ram_addr + byte));
-      else
-        cmp_zpg(e, (uint8_t)(zp_map_lookup(map, op) + byte));
-      break;
-    }
-    case OPERAND_TEMP:
-      cmp_zpg(e, (uint8_t)(zp_map_lookup(map, op) + byte));
-      break;
-    default: break;
+#define GLOBAL_AWARE_ALU_HELPER(NAME, IMM_FN, ZPG_FN, ABS_FN)            \
+  static void NAME(emitter_t *e, zp_map_t *map,                          \
+                   tac_operand_t *op, unsigned byte) {                   \
+    switch (op->kind) {                                                  \
+      case OPERAND_CONST_INT:                                            \
+        IMM_FN(e, (uint8_t)((op->int_val >> (8 * byte)) & 0xFF));        \
+        break;                                                           \
+      case OPERAND_VAR: {                                                \
+        global_entry_t *g = lookup_global(e, op->name);                  \
+        if (g)                                                           \
+          ABS_FN(e, (uint16_t)(g->ram_addr + byte));                     \
+        else                                                             \
+          ZPG_FN(e, (uint8_t)(zp_map_lookup(map, op) + byte));           \
+        break;                                                           \
+      }                                                                  \
+      case OPERAND_TEMP:                                                 \
+        ZPG_FN(e, (uint8_t)(zp_map_lookup(map, op) + byte));             \
+        break;                                                           \
+      default: break;                                                    \
+    }                                                                    \
   }
-}
 
+GLOBAL_AWARE_ALU_HELPER(emit_ora_byte, ora_imm, ora_zpg, ora_abs)
+GLOBAL_AWARE_ALU_HELPER(emit_cmp_byte, cmp_imm, cmp_zpg, cmp_abs)
+GLOBAL_AWARE_ALU_HELPER(emit_adc_byte, adc_imm, adc_zpg, adc_abs)
+GLOBAL_AWARE_ALU_HELPER(emit_sbc_byte, sbc_imm, sbc_zpg, sbc_abs)
 
-// Emit ADC against byte N of an operand. Global-aware: uses abs for globals.
-static void emit_adc_byte(emitter_t *e, zp_map_t *map,
-                          tac_operand_t *op, unsigned byte) {
-  switch (op->kind) {
-    case OPERAND_CONST_INT:
-      adc_imm(e, (uint8_t)((op->int_val >> (8 * byte)) & 0xFF));
-      break;
-    case OPERAND_VAR: {
-      global_entry_t *g = lookup_global(e, op->name);
-      if (g)
-        adc_abs(e, (uint16_t)(g->ram_addr + byte));
-      else
-        adc_zpg(e, (uint8_t)(zp_map_lookup(map, op) + byte));
-      break;
-    }
-    case OPERAND_TEMP:
-      adc_zpg(e, (uint8_t)(zp_map_lookup(map, op) + byte));
-      break;
-    default: break;
-  }
-}
-
-
-// Emit SBC against byte N of an operand. Global-aware: uses abs for globals.
-static void emit_sbc_byte(emitter_t *e, zp_map_t *map,
-                          tac_operand_t *op, unsigned byte) {
-  switch (op->kind) {
-    case OPERAND_CONST_INT:
-      sbc_imm(e, (uint8_t)((op->int_val >> (8 * byte)) & 0xFF));
-      break;
-    case OPERAND_VAR: {
-      global_entry_t *g = lookup_global(e, op->name);
-      if (g)
-        sbc_abs(e, (uint16_t)(g->ram_addr + byte));
-      else
-        sbc_zpg(e, (uint8_t)(zp_map_lookup(map, op) + byte));
-      break;
-    }
-    case OPERAND_TEMP:
-      sbc_zpg(e, (uint8_t)(zp_map_lookup(map, op) + byte));
-      break;
-    default: break;
-  }
-}
-
-
-// Emit conditional jump: LDA src; BEQ skip; JMP target. Jumps when nonzero.
+// Emit conditional jump: LDA src; [ORA src+1]; BEQ skip; JMP target. Jumps when nonzero.
 static void emit_cond_jump(emitter_t *e, zp_map_t *map,
                            tac_operand_t *src, unsigned label_id) {
+  unsigned width = codegen_type_size(src->type);
   emit_load_byte(e, map, src, 0);
+  if (width > 1)
+    emit_ora_byte(e, map, src, 1);
   beq_rel(e, 3);
   if (e->local_labels[label_id]) {
     jmp_abs(e, e->local_labels[label_id]);
@@ -549,8 +533,7 @@ static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
 
   e->local_label_count = cfg->next_label;
   e->local_fixup_count = 0;
-  e->local_labels = realloc(e->local_labels, cfg->next_label * sizeof(uint16_t));
-  memset(e->local_labels, 0, cfg->next_label * sizeof(uint16_t));
+  e->local_labels = arena_alloc(&e->arena, cfg->next_label * sizeof(uint16_t));
 
   for (unsigned i = 0; i < cfg->block_count; ++i) {
     basic_block_t *block = cfg->blocks[i];
@@ -610,6 +593,10 @@ static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
               emit_load_byte(e, &map, &instruction->src1, b);
               sta_abs(e, (uint16_t)(base_addr + b));
             }
+          } else {
+            fprintf(stderr, "codegen: unhandled TAC_STORE with non-const destination (op kind %d)\n",
+                    instruction->dst.kind);
+            return 0;
           }
           break;
         }
@@ -648,8 +635,16 @@ static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
 
         case TAC_NOT: {
           uint8_t dst_addr = zp_map_lookup(&map, &instruction->dst);
+          unsigned width = codegen_type_size(instruction->src1.type);
           emit_load_byte(e, &map, &instruction->src1, 0);
-          eor_imm(e, 0x01);
+          if (width > 1)
+            emit_ora_byte(e, &map, &instruction->src1, 1);
+          // A is now nonzero iff the original value was truthy.
+          // Convert to boolean: 0 → 1, nonzero → 0.
+          beq_rel(e, 4);       // +4: skip LDA #0 + BEQ +2
+          lda_imm(e, 0);
+          beq_rel(e, 2);       // +2: skip LDA #1 (always taken, Z=1)
+          lda_imm(e, 1);
           sta_zpg(e, dst_addr);
           break;
         }
@@ -898,22 +893,18 @@ static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
 // Main code gen
 // ----------------------------------------------------------------
 
-// Free all heap-allocated emitter resources (labels, fixups, globals).
 static void emitter_free(emitter_t *e) {
-  free(e->func_labels);
-  free(e->fixups);
-  free(e->local_labels);
-  free(e->local_fixups);
-  free(e->global_entries);
-  free(e->data_fixups);
+  arena_free(&e->arena);
 }
 
 
 uint8_t *generate_rom(ir_gen_t *gen, size_t *final_rom_size) {
   emitter_t e = { 0 };
 
+  if (!arena_init(&e.arena, 4096)) return NULL;
+
   e.rom = malloc(ROM_SIZE);
-  if (!e.rom) return NULL;
+  if (!e.rom) { arena_free(&e.arena); return NULL; }
 
   memset(e.rom, 0xEA, ROM_SIZE);
   *final_rom_size = ROM_SIZE;
