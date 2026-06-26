@@ -57,6 +57,9 @@ typedef struct {
   uint16_t ram_pos;
   uint16_t zp_next;
 
+  int needs_mul8;
+  int needs_div8;
+
   func_label_t *func_labels;
   unsigned      func_label_count;
   unsigned      func_label_capacity;

@@ -288,7 +288,9 @@ To maximize compilation density and execution speed, the code generator reserves
 | :--- | :--- | :--- |
 | **`$00`** | `FP` | **Frame Pointer:** Tracks multi-byte local variable frames in main RAM. |
 | **`$02`** | `RET` | **Return Register:** Where every function or conditional puts its return value. |
-| **`$04` – `$EE`** | `r0` – `r117` | **Scratch Registers:** Compiler-managed 16-bit scratchpads for expression temporaries, local variables, and globals. Allocated per-function from `$04` upward. |
+| **`$04` – `$E7`** | `r0` – `r115` | **Scratch Registers:** Compiler-managed scratchpads for expression temporaries, local variables, and globals. Allocated per-function from `$04` upward. |
+| **`$E8` – `$EB`** | — | **Arithmetic Helper Zone:** Fixed argument/result slots for the `__mul8` and `__div8` software routines. `$E8`/`$E9` = inputs, `$EA` = quotient/product, `$EB` = remainder. |
+| **`$EC` – `$EE`** | — | Reserved for helper routines. |
 | **`$EF` – `$FF`** | `a0` – `a8` | **Function ABI Zone:** Rapid parameter passing without stack overhead. Supports up to 8 sixteen-bit parameters. |
 
 ---

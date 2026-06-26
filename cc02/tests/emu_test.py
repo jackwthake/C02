@@ -585,6 +585,42 @@ def test_shr_signed():
     return True, None
 
 
+def test_mul_u8():
+    """7 * 6 == 42."""
+    source = os.path.join(SCRIPT_DIR, "emu_mul_u8.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 42:
+        return False, f"memory[$6000] = {val}, expected 42"
+    return True, None
+
+
+def test_div_u8():
+    """100 / 7 == 14."""
+    source = os.path.join(SCRIPT_DIR, "emu_div_u8.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 14:
+        return False, f"memory[$6000] = {val}, expected 14"
+    return True, None
+
+
+def test_mod_u8():
+    """100 % 7 == 2."""
+    source = os.path.join(SCRIPT_DIR, "emu_mod_u8.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 2:
+        return False, f"memory[$6000] = {val}, expected 2"
+    return True, None
+
+
 def test_implicit_widen():
     """u8 200 widened to u16: low byte=200, high byte=0 (not garbage)."""
     source = os.path.join(SCRIPT_DIR, "emu_implicit_widen.c02")
@@ -668,6 +704,9 @@ TESTS = [
     ("shr_signed", test_shr_signed),
     ("shl_var", test_shl_var),
     ("implicit_widen", test_implicit_widen),
+    ("mul_u8", test_mul_u8),
+    ("div_u8", test_div_u8),
+    ("mod_u8", test_mod_u8),
 ]
 
 

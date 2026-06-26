@@ -70,7 +70,7 @@ should compile to correct code.
 - [ ] **Struct field access codegen** — `TAC_FIELD_LOAD` / `TAC_FIELD_STORE`
       using the computed field offsets already in the IR. Base address + offset
       for by-value structs, indirect + offset for struct pointers.
-- [ ] **Multiply / divide / modulo** — no native 6502 instructions. Needs
+- [x] **Multiply / divide / modulo** — no native 6502 instructions. Needs
       runtime helper routines (shift-and-add for multiply, repeated
       subtraction or restoring division for divide) emitted into ROM.
       8-bit first, 16-bit as a follow-up.
@@ -86,9 +86,11 @@ should compile to correct code.
       `&&`/`||` to labels and conditional jumps, but codegen needs to handle
       the resulting `TAC_AND`/`TAC_OR` if they appear in non-short-circuit
       contexts.
-- [ ] **Compound assignment codegen** (`+=`, `-=`, etc.) — these lower
+- [x] **Compound assignment codegen** (`+=`, `-=`, etc.) — these lower
       through the existing binary op + assignment IR path, so they may
       already work once the underlying ops are implemented. Needs testing.
+      - [ ] `&=, |=, ^=, <<=, >>=` need implementing but arithmetic compound 
+            assignments work
 
 ### v1.0 Non-goals
 

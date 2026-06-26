@@ -17,6 +17,12 @@
 #define REG_START   0x04
 #define PARAM_START 0xEF
 
+// Fixed ZP slots for arithmetic helper subroutines ($E8–$EB, below PARAM_START).
+#define HELPER_ARG1 0xE8  // dividend / multiplicand (modified by helpers)
+#define HELPER_ARG2 0xE9  // divisor  / multiplier   (modified by helpers)
+#define HELPER_RES  0xEA  // quotient / product
+#define HELPER_REM  0xEB  // remainder (division only)
+
 
 // ----------------------------------------------------------------
 // Zero-page operand map
@@ -289,6 +295,7 @@ OP_EMITTER_SINGLE_ARG(cmp_zpg, 0xC5)
 OP_EMITTER_SINGLE_ARG(beq_rel, 0xF0)
 OP_EMITTER_SINGLE_ARG(bne_rel, 0xD0)
 OP_EMITTER_SINGLE_ARG(bcs_rel, 0xB0)
+OP_EMITTER_SINGLE_ARG(bcc_rel, 0x90)
 
 OP_EMITTER_SINGLE_ARG(inc_zpg, 0xE6)
 OP_EMITTER_SINGLE_ARG(dec_zpg, 0xC6)
@@ -935,6 +942,54 @@ static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
 
         // -- arithmetic --
 
+        case TAC_MUL: {
+          if (codegen_type_size(instruction->dst.type) > 1) {
+            fprintf(stderr, "codegen: u16 multiply not yet implemented\n");
+            return 0;
+          }
+          emit_load_byte(e, &map, &instruction->src1, 0);
+          sta_zpg(e, HELPER_ARG1);
+          emit_load_byte(e, &map, &instruction->src2, 0);
+          sta_zpg(e, HELPER_ARG2);
+          jsr(e, "__mul8");
+          lda_zpg(e, HELPER_RES);
+          emit_store_byte(e, &map, &instruction->dst, 0);
+          e->needs_mul8 = 1;
+          break;
+        }
+
+        case TAC_DIV: {
+          if (codegen_type_size(instruction->dst.type) > 1) {
+            fprintf(stderr, "codegen: u16 divide not yet implemented\n");
+            return 0;
+          }
+          emit_load_byte(e, &map, &instruction->src1, 0);
+          sta_zpg(e, HELPER_ARG1);
+          emit_load_byte(e, &map, &instruction->src2, 0);
+          sta_zpg(e, HELPER_ARG2);
+          jsr(e, "__div8");
+          lda_zpg(e, HELPER_RES);
+          emit_store_byte(e, &map, &instruction->dst, 0);
+          e->needs_div8 = 1;
+          break;
+        }
+
+        case TAC_MOD: {
+          if (codegen_type_size(instruction->dst.type) > 1) {
+            fprintf(stderr, "codegen: u16 modulo not yet implemented\n");
+            return 0;
+          }
+          emit_load_byte(e, &map, &instruction->src1, 0);
+          sta_zpg(e, HELPER_ARG1);
+          emit_load_byte(e, &map, &instruction->src2, 0);
+          sta_zpg(e, HELPER_ARG2);
+          jsr(e, "__div8");
+          lda_zpg(e, HELPER_REM);  // remainder, not quotient
+          emit_store_byte(e, &map, &instruction->dst, 0);
+          e->needs_div8 = 1;
+          break;
+        }
+
         case TAC_BAND: {
           unsigned width = codegen_type_size(instruction->dst.type);
           for (unsigned b = 0; b < width; b++) {
@@ -1101,6 +1156,63 @@ static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
 
 
 // ----------------------------------------------------------------
+// Arithmetic helper subroutines
+// ----------------------------------------------------------------
+
+// u8 multiply: HELPER_ARG1 * HELPER_ARG2 → HELPER_RES (shift-and-add).
+// ARG1 and ARG2 are consumed (modified) by the routine.
+//
+// Loop body layout (16 bytes per iteration):
+//   LSR ARG2 (2) | BCC +7 (2) | CLC (1) | LDA RES (2) | ADC ARG1 (2) | STA RES (2)
+//   [BCC target:] ASL ARG1 (2) | DEX (1) | BNE -16 (2)
+static void emit_mul8_helper(emitter_t *e) {
+  register_func_label(e, "__mul8", (uint16_t)(ROM_START + e->code_pos));
+  lda_imm(e, 0);
+  sta_zpg(e, HELPER_RES);
+  ldx_imm(e, 8);
+  // loop:
+  lsr_zpg(e, HELPER_ARG2);          // LSB of multiplier → carry
+  bcc_rel(e, 7);                     // skip add if bit was 0 (7 = CLC+LDA+ADC+STA)
+  clc(e);
+  lda_zpg(e, HELPER_RES);
+  adc_zpg(e, HELPER_ARG1);
+  sta_zpg(e, HELPER_RES);
+  // BCC target:
+  asl_zpg(e, HELPER_ARG1);          // shift multiplicand left
+  dex(e);
+  bne_rel(e, (uint8_t)(256u - 16u)); // back to LSR
+  rts(e);
+}
+
+// u8 divide: HELPER_ARG1 / HELPER_ARG2 → HELPER_RES (quotient), HELPER_REM (remainder).
+// Uses binary long division (shift-subtract). ARG1 is consumed.
+//
+// Loop body layout (18 bytes per iteration):
+//   ASL ARG1 (2) | ROL REM (2) | LDA REM (2) | SEC (1) | SBC ARG2 (2) | BCC +2 (2)
+//   | STA REM (2) | [BCC target:] ROL RES (2) | DEX (1) | BNE -18 (2)
+static void emit_div8_helper(emitter_t *e) {
+  register_func_label(e, "__div8", (uint16_t)(ROM_START + e->code_pos));
+  lda_imm(e, 0);
+  sta_zpg(e, HELPER_REM);
+  sta_zpg(e, HELPER_RES);
+  ldx_imm(e, 8);
+  // loop:
+  asl_zpg(e, HELPER_ARG1);          // shift dividend left, MSB → carry
+  rol_zpg(e, HELPER_REM);           // remainder = (rem << 1) | carry
+  lda_zpg(e, HELPER_REM);
+  sec(e);
+  sbc_zpg(e, HELPER_ARG2);          // try to subtract divisor
+  bcc_rel(e, 2);                     // if borrow (didn't fit), skip STA
+  sta_zpg(e, HELPER_REM);           // commit: remainder -= divisor
+  // BCC target:
+  rol_zpg(e, HELPER_RES);           // quotient bit = carry (1=fit, 0=didn't)
+  dex(e);
+  bne_rel(e, (uint8_t)(256u - 18u)); // back to ASL
+  rts(e);
+}
+
+
+// ----------------------------------------------------------------
 // Main code gen
 // ----------------------------------------------------------------
 
@@ -1136,6 +1248,9 @@ uint8_t *generate_rom(ir_gen_t *gen, size_t *final_rom_size) {
       return NULL;
     }
   }
+
+  if (e.needs_mul8) emit_mul8_helper(&e);
+  if (e.needs_div8) emit_div8_helper(&e);
 
   if (!resolve_func_fixups(&e)) {
     free(e.rom);
