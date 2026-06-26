@@ -264,13 +264,13 @@ static void allocate_globals(emitter_t *e, ir_gen_t *gen) {
     EMIT((uint8_t)(addr >> 8));                    \
   }
 
-OP_EMITTER_SINGLE_ARG(lda_imm, 0xA9)
-OP_EMITTER_SINGLE_ARG(lda_zpg, 0xA5)
+OP_EMITTER_SINGLE_ARG(lda_imm,   0xA9)
+OP_EMITTER_SINGLE_ARG(lda_zpg,   0xA5)
 OP_EMITTER_SINGLE_ARG(lda_ind_y, 0xB1)
 OP_EMITTER_SINGLE_ARG(sta_ind_y, 0x91)
-OP_EMITTER_SINGLE_ARG(ldx_imm, 0xA2)
-OP_EMITTER_SINGLE_ARG(ldy_imm, 0xA0)
-OP_EMITTER_SINGLE_ARG(sta_zpg, 0x85)
+OP_EMITTER_SINGLE_ARG(ldx_imm,   0xA2)
+OP_EMITTER_SINGLE_ARG(ldy_imm,   0xA0)
+OP_EMITTER_SINGLE_ARG(sta_zpg,   0x85)
 
 OP_EMITTER_SINGLE_ARG(ora_imm, 0x09)
 OP_EMITTER_SINGLE_ARG(ora_zpg, 0x05)
@@ -561,10 +561,27 @@ static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
         // -- data movement --
 
         case TAC_COPY: {
-          unsigned width = codegen_type_size(instruction->dst.type);
-          for (unsigned b = 0; b < width; b++) {
+          unsigned src_size = codegen_type_size(instruction->src1.type);
+          unsigned dst_size = codegen_type_size(instruction->dst.type);
+          unsigned copy_size = src_size < dst_size ? src_size : dst_size;
+
+          for (unsigned b = 0; b < copy_size; b++) {
             emit_load_byte(e, &map, &instruction->src1, b);
             emit_store_byte(e, &map, &instruction->dst, b);
+          }
+
+          // Implicit widening: extend hi bytes (A holds hi byte of src after loop)
+          if (dst_size > src_size) {
+            if (is_signed_type(instruction->src1.type)) {
+              cmp_imm(e, 0x80);
+              lda_imm(e, 0xFF);
+              bcs_rel(e, 2);
+              lda_imm(e, 0);
+            } else {
+              lda_imm(e, 0);
+            }
+            for (unsigned b = src_size; b < dst_size; b++)
+              emit_store_byte(e, &map, &instruction->dst, b);
           }
           break;
         }

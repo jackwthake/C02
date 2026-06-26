@@ -62,7 +62,7 @@ should compile to correct code.
       Currently silently no-ops (see BUG_REPORT.md BUG-2).
 - [x] **Address-of** (`&x`) — `TAC_ADDR_OF` needs codegen. For ZP locals:
       load the ZP address as a constant. For globals: load the RAM address.
-- [ ] **Type casts / implicit widening** — `u8` → `u16` must zero-extend
+- [x] **Type casts / implicit widening** — `u8` → `u16` must zero-extend
       the high byte. Currently reads garbage.
 
 #### Should-have (language is painful without these)

@@ -585,6 +585,21 @@ def test_shr_signed():
     return True, None
 
 
+def test_implicit_widen():
+    """u8 200 widened to u16: low byte=200, high byte=0 (not garbage)."""
+    source = os.path.join(SCRIPT_DIR, "emu_implicit_widen.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    lo = mpu.memory[0x6000]
+    hi = mpu.memory[0x6001]
+    if lo != 200:
+        return False, f"low byte = {lo}, expected 200"
+    if hi != 0:
+        return False, f"high byte = {hi}, expected 0 (not garbage)"
+    return True, None
+
+
 def test_shl_var():
     """1 << n where n=4 at runtime == 16."""
     source = os.path.join(SCRIPT_DIR, "emu_shl_var.c02")
@@ -652,6 +667,7 @@ TESTS = [
     ("shr_const", test_shr_const),
     ("shr_signed", test_shr_signed),
     ("shl_var", test_shl_var),
+    ("implicit_widen", test_implicit_widen),
 ]
 
 
