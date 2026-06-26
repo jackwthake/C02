@@ -267,6 +267,7 @@ static void allocate_globals(emitter_t *e, ir_gen_t *gen) {
 OP_EMITTER_SINGLE_ARG(lda_imm, 0xA9)
 OP_EMITTER_SINGLE_ARG(lda_zpg, 0xA5)
 OP_EMITTER_SINGLE_ARG(lda_ind_y, 0xB1)
+OP_EMITTER_SINGLE_ARG(sta_ind_y, 0x91)
 OP_EMITTER_SINGLE_ARG(ldx_imm, 0xA2)
 OP_EMITTER_SINGLE_ARG(ldy_imm, 0xA0)
 OP_EMITTER_SINGLE_ARG(sta_zpg, 0x85)
@@ -586,17 +587,29 @@ static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
         }
 
         case TAC_STORE: {
+          unsigned width = codegen_type_size(instruction->src1.type);
           if (instruction->dst.kind == OPERAND_CONST_INT) {
-            unsigned width = codegen_type_size(instruction->src1.type);
             uint16_t base_addr = (uint16_t)instruction->dst.int_val;
             for (unsigned b = 0; b < width; b++) {
               emit_load_byte(e, &map, &instruction->src1, b);
               sta_abs(e, (uint16_t)(base_addr + b));
             }
           } else {
-            fprintf(stderr, "codegen: unhandled TAC_STORE with non-const destination (op kind %d)\n",
-                    instruction->dst.kind);
-            return 0;
+            uint8_t ptr_zp = zp_map_lookup(&map, &instruction->dst);
+            if (instruction->dst.kind == OPERAND_VAR) {
+              global_entry_t *g = lookup_global(e, instruction->dst.name);
+              if (g) {
+                for (unsigned b = 0; b < 2; b++) {
+                  lda_abs(e, (uint16_t)(g->ram_addr + b));
+                  sta_zpg(e, (uint8_t)(ptr_zp + b));
+                }
+              }
+            }
+            for (unsigned b = 0; b < width; b++) {
+              ldy_imm(e, (uint8_t)b);
+              emit_load_byte(e, &map, &instruction->src1, b);
+              sta_ind_y(e, ptr_zp);
+            }
           }
           break;
         }

@@ -477,6 +477,30 @@ def test_addr_of_global():
     return True, None
 
 
+def test_ptr_store_local():
+    """*p = val where p points to a ZP local — value visible through original var."""
+    source = os.path.join(SCRIPT_DIR, "emu_ptr_store_local.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 77:
+        return False, f"memory[$6000] = {val}, expected 77"
+    return True, None
+
+
+def test_ptr_store_global():
+    """*p = val where p points to a RAM global — value visible through original global."""
+    source = os.path.join(SCRIPT_DIR, "emu_ptr_store_global.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 55:
+        return False, f"memory[$6000] = {val}, expected 55"
+    return True, None
+
+
 # ----------------------------------------------------------------
 # Runner
 # ----------------------------------------------------------------
@@ -522,6 +546,8 @@ TESTS = [
     ("bare_cond_u16", test_bare_cond_u16),
     ("addr_of_local", test_addr_of_local),
     ("addr_of_global", test_addr_of_global),
+    ("ptr_store_local", test_ptr_store_local),
+    ("ptr_store_global", test_ptr_store_global),
 ]
 
 
