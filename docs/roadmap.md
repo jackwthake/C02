@@ -57,7 +57,7 @@ should compile to correct code.
 - [ ] **Function calls** — wire up the ABI zone (`$EF–$FF`), emit caller
       copies args into ABI slots before `JSR`, callee prologue copies from
       ABI into local ZP slots. Return values through `$02` (RET).
-- [ ] **Pointer store** (`*p = val`) — `TAC_STORE` with var/temp
+- [x] **Pointer store** (`*p = val`) — `TAC_STORE` with var/temp
       destination needs codegen via `STA ($nn),Y` indirect indexed.
       Currently silently no-ops (see BUG_REPORT.md BUG-2).
 - [x] **Address-of** (`&x`) — `TAC_ADDR_OF` needs codegen. For ZP locals:
@@ -74,9 +74,9 @@ should compile to correct code.
       runtime helper routines (shift-and-add for multiply, repeated
       subtraction or restoring division for divide) emitted into ROM.
       8-bit first, 16-bit as a follow-up.
-- [ ] **Bitwise ops** (`&`, `|`, `^`, `~`) — straightforward: `AND`, `ORA`,
+- [x] **Bitwise ops** (`&`, `|`, `^`, `~`) — straightforward: `AND`, `ORA`,
       `EOR` instructions, global-aware via the existing helper macro pattern.
-- [ ] **Shift ops** (`<<`, `>>`) — `ASL`/`LSR` for single-bit shifts,
+- [x] **Shift ops** (`<<`, `>>`) — `ASL`/`LSR` for single-bit shifts,
       loop for multi-bit. Arithmetic right shift (`>>` on signed) needs
       sign-extension via `ROR` after checking the sign bit.
 

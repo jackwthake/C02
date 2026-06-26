@@ -501,6 +501,102 @@ def test_ptr_store_global():
     return True, None
 
 
+def test_bitwise_and():
+    """0xFF & 0x0F == 0x0F."""
+    source = os.path.join(SCRIPT_DIR, "emu_bitwise_and.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 0x0F:
+        return False, f"memory[$6000] = ${val:02X}, expected $0F"
+    return True, None
+
+
+def test_bitwise_or():
+    """0xF0 | 0x0F == 0xFF."""
+    source = os.path.join(SCRIPT_DIR, "emu_bitwise_or.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 0xFF:
+        return False, f"memory[$6000] = ${val:02X}, expected $FF"
+    return True, None
+
+
+def test_bitwise_xor():
+    """0xFF ^ 0x0F == 0xF0."""
+    source = os.path.join(SCRIPT_DIR, "emu_bitwise_xor.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 0xF0:
+        return False, f"memory[$6000] = ${val:02X}, expected $F0"
+    return True, None
+
+
+def test_bitwise_not():
+    """~0x0F == 0xF0."""
+    source = os.path.join(SCRIPT_DIR, "emu_bitwise_not.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 0xF0:
+        return False, f"memory[$6000] = ${val:02X}, expected $F0"
+    return True, None
+
+
+def test_shl_const():
+    """1 << 3 == 8."""
+    source = os.path.join(SCRIPT_DIR, "emu_shl_const.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 8:
+        return False, f"memory[$6000] = {val}, expected 8"
+    return True, None
+
+
+def test_shr_const():
+    """0x80 >> 3 == 0x10 (unsigned)."""
+    source = os.path.join(SCRIPT_DIR, "emu_shr_const.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 0x10:
+        return False, f"memory[$6000] = ${val:02X}, expected $10"
+    return True, None
+
+
+def test_shr_signed():
+    """-8 >> 2 == -2 (i.e. 0xFE as u8) — sign bit preserved."""
+    source = os.path.join(SCRIPT_DIR, "emu_shr_signed.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 0xFE:
+        return False, f"memory[$6000] = ${val:02X}, expected $FE (-2)"
+    return True, None
+
+
+def test_shl_var():
+    """1 << n where n=4 at runtime == 16."""
+    source = os.path.join(SCRIPT_DIR, "emu_shl_var.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 16:
+        return False, f"memory[$6000] = {val}, expected 16"
+    return True, None
+
+
 # ----------------------------------------------------------------
 # Runner
 # ----------------------------------------------------------------
@@ -548,6 +644,14 @@ TESTS = [
     ("addr_of_global", test_addr_of_global),
     ("ptr_store_local", test_ptr_store_local),
     ("ptr_store_global", test_ptr_store_global),
+    ("bitwise_and", test_bitwise_and),
+    ("bitwise_or", test_bitwise_or),
+    ("bitwise_xor", test_bitwise_xor),
+    ("bitwise_not", test_bitwise_not),
+    ("shl_const", test_shl_const),
+    ("shr_const", test_shr_const),
+    ("shr_signed", test_shr_signed),
+    ("shl_var", test_shl_var),
 ]
 
 

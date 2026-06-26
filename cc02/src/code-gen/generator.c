@@ -274,12 +274,21 @@ OP_EMITTER_SINGLE_ARG(sta_zpg, 0x85)
 
 OP_EMITTER_SINGLE_ARG(ora_imm, 0x09)
 OP_EMITTER_SINGLE_ARG(ora_zpg, 0x05)
+OP_EMITTER_SINGLE_ARG(and_imm, 0x29)
+OP_EMITTER_SINGLE_ARG(and_zpg, 0x25)
+OP_EMITTER_SINGLE_ARG(eor_imm, 0x49)
+OP_EMITTER_SINGLE_ARG(eor_zpg, 0x45)
+
+OP_EMITTER_SINGLE_ARG(asl_zpg, 0x06)
+OP_EMITTER_SINGLE_ARG(rol_zpg, 0x26)
+OP_EMITTER_SINGLE_ARG(lsr_zpg, 0x46)
+OP_EMITTER_SINGLE_ARG(ror_zpg, 0x66)
 
 OP_EMITTER_SINGLE_ARG(cmp_imm, 0xC9)
 OP_EMITTER_SINGLE_ARG(cmp_zpg, 0xC5)
 OP_EMITTER_SINGLE_ARG(beq_rel, 0xF0)
 OP_EMITTER_SINGLE_ARG(bne_rel, 0xD0)
-OP_EMITTER_SINGLE_ARG(eor_imm, 0x49)
+OP_EMITTER_SINGLE_ARG(bcs_rel, 0xB0)
 
 OP_EMITTER_SINGLE_ARG(inc_zpg, 0xE6)
 OP_EMITTER_SINGLE_ARG(dec_zpg, 0xC6)
@@ -295,12 +304,16 @@ OP_EMITTER_NO_ARG(txs, 0x9A)
 OP_EMITTER_NO_ARG(rts, 0x60)
 OP_EMITTER_NO_ARG(clc, 0x18)
 OP_EMITTER_NO_ARG(sec, 0x38)
+OP_EMITTER_NO_ARG(tax, 0xAA)
+OP_EMITTER_NO_ARG(dex, 0xCA)
 
 
 OP_EMITTER_ABS(jmp_abs, 0x4C)
 OP_EMITTER_ABS(sta_abs, 0x8D)
 OP_EMITTER_ABS(lda_abs, 0xAD)
 OP_EMITTER_ABS(ora_abs, 0x0D)
+OP_EMITTER_ABS(and_abs, 0x2D)
+OP_EMITTER_ABS(eor_abs, 0x4D)
 OP_EMITTER_ABS(cmp_abs, 0xCD)
 OP_EMITTER_ABS(inc_abs, 0xEE)
 OP_EMITTER_ABS(dec_abs, 0xCE)
@@ -502,6 +515,8 @@ static void emit_store_byte(emitter_t *e, zp_map_t *map,
   }
 
 GLOBAL_AWARE_ALU_HELPER(emit_ora_byte, ora_imm, ora_zpg, ora_abs)
+GLOBAL_AWARE_ALU_HELPER(emit_and_byte, and_imm, and_zpg, and_abs)
+GLOBAL_AWARE_ALU_HELPER(emit_eor_byte, eor_imm, eor_zpg, eor_abs)
 GLOBAL_AWARE_ALU_HELPER(emit_cmp_byte, cmp_imm, cmp_zpg, cmp_abs)
 GLOBAL_AWARE_ALU_HELPER(emit_adc_byte, adc_imm, adc_zpg, adc_abs)
 GLOBAL_AWARE_ALU_HELPER(emit_sbc_byte, sbc_imm, sbc_zpg, sbc_abs)
@@ -550,6 +565,35 @@ static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
           for (unsigned b = 0; b < width; b++) {
             emit_load_byte(e, &map, &instruction->src1, b);
             emit_store_byte(e, &map, &instruction->dst, b);
+          }
+          break;
+        }
+
+        case TAC_CAST: {
+          unsigned src_size = codegen_type_size(instruction->src1.type);
+          unsigned dst_size = codegen_type_size(instruction->cast_type);
+          uint8_t dst_zp = zp_map_lookup(&map, &instruction->dst);
+          unsigned copy_size = src_size < dst_size ? src_size : dst_size;
+
+          for (unsigned b = 0; b < copy_size; b++) {
+            emit_load_byte(e, &map, &instruction->src1, b);
+            sta_zpg(e, (uint8_t)(dst_zp + b));
+          }
+
+          if (dst_size > src_size) {
+            // After the loop, A holds the high byte of src. Use it to extend.
+            if (is_signed_type(instruction->src1.type)) {
+              // Sign-extend: CMP #$80 sets C if src is negative (bit 7 = 1).
+              // A = $FF if negative, $00 if positive; BCS skips the LDA #0.
+              cmp_imm(e, 0x80);
+              lda_imm(e, 0xFF);
+              bcs_rel(e, 2);  // skip LDA #0 (2 bytes) if carry set (negative)
+              lda_imm(e, 0);
+            } else {
+              lda_imm(e, 0);
+            }
+            for (unsigned b = src_size; b < dst_size; b++)
+              sta_zpg(e, (uint8_t)(dst_zp + b));
           }
           break;
         }
@@ -873,6 +917,127 @@ static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
         }
 
         // -- arithmetic --
+
+        case TAC_BAND: {
+          unsigned width = codegen_type_size(instruction->dst.type);
+          for (unsigned b = 0; b < width; b++) {
+            emit_load_byte(e, &map, &instruction->src1, b);
+            emit_and_byte(e, &map, &instruction->src2, b);
+            emit_store_byte(e, &map, &instruction->dst, b);
+          }
+          break;
+        }
+
+        case TAC_BOR: {
+          unsigned width = codegen_type_size(instruction->dst.type);
+          for (unsigned b = 0; b < width; b++) {
+            emit_load_byte(e, &map, &instruction->src1, b);
+            emit_ora_byte(e, &map, &instruction->src2, b);
+            emit_store_byte(e, &map, &instruction->dst, b);
+          }
+          break;
+        }
+
+        case TAC_BXOR: {
+          unsigned width = codegen_type_size(instruction->dst.type);
+          for (unsigned b = 0; b < width; b++) {
+            emit_load_byte(e, &map, &instruction->src1, b);
+            emit_eor_byte(e, &map, &instruction->src2, b);
+            emit_store_byte(e, &map, &instruction->dst, b);
+          }
+          break;
+        }
+
+        case TAC_BNOT: {
+          unsigned width = codegen_type_size(instruction->dst.type);
+          for (unsigned b = 0; b < width; b++) {
+            emit_load_byte(e, &map, &instruction->src1, b);
+            eor_imm(e, 0xFF);
+            emit_store_byte(e, &map, &instruction->dst, b);
+          }
+          break;
+        }
+
+        case TAC_SHL: {
+          unsigned width = codegen_type_size(instruction->dst.type);
+          uint8_t dst_zp = zp_map_lookup(&map, &instruction->dst);
+          for (unsigned b = 0; b < width; b++) {
+            emit_load_byte(e, &map, &instruction->src1, b);
+            sta_zpg(e, (uint8_t)(dst_zp + b));
+          }
+          if (instruction->src2.kind == OPERAND_CONST_INT) {
+            unsigned count = (unsigned)instruction->src2.int_val;
+            for (unsigned s = 0; s < count; s++) {
+              asl_zpg(e, dst_zp);
+              if (width > 1) rol_zpg(e, (uint8_t)(dst_zp + 1));
+            }
+          } else {
+            // variable count: loop with X as counter
+            // loop body: asl(2) [+rol(2)] + dex(1) + bne(2) = 2*width+3 bytes
+            unsigned loop_size = 2u * width + 3u;
+            emit_load_byte(e, &map, &instruction->src2, 0);
+            beq_rel(e, (uint8_t)(1u + loop_size));  // skip TAX + loop if count==0
+            tax(e);
+            asl_zpg(e, dst_zp);
+            if (width > 1) rol_zpg(e, (uint8_t)(dst_zp + 1));
+            dex(e);
+            bne_rel(e, (uint8_t)(256u - loop_size));  // back to asl
+          }
+          break;
+        }
+
+        case TAC_SHR: {
+          unsigned width = codegen_type_size(instruction->dst.type);
+          uint8_t dst_zp = zp_map_lookup(&map, &instruction->dst);
+          int is_signed = is_signed_type(instruction->src1.type);
+          for (unsigned b = 0; b < width; b++) {
+            emit_load_byte(e, &map, &instruction->src1, b);
+            sta_zpg(e, (uint8_t)(dst_zp + b));
+          }
+          if (instruction->src2.kind == OPERAND_CONST_INT) {
+            unsigned count = (unsigned)instruction->src2.int_val;
+            for (unsigned s = 0; s < count; s++) {
+              if (is_signed) {
+                // ASR: set carry = sign bit of hi byte, then rotate right
+                lda_zpg(e, (uint8_t)(dst_zp + width - 1));
+                cmp_imm(e, 0x80);
+                ror_zpg(e, (uint8_t)(dst_zp + width - 1));
+                if (width > 1) ror_zpg(e, dst_zp);
+              } else {
+                // LSR: zero-fill MSB
+                if (width > 1) lsr_zpg(e, (uint8_t)(dst_zp + 1));
+                if (width == 1) lsr_zpg(e, dst_zp);
+                else            ror_zpg(e, dst_zp);
+              }
+            }
+          } else {
+            if (is_signed) {
+              // loop body: lda(2)+cmp(2)+ror hi(2)[+ror lo(2)]+dex(1)+bne(2) = 2*width+7
+              unsigned loop_size = 2u * width + 7u;
+              emit_load_byte(e, &map, &instruction->src2, 0);
+              beq_rel(e, (uint8_t)(1u + loop_size));
+              tax(e);
+              lda_zpg(e, (uint8_t)(dst_zp + width - 1));
+              cmp_imm(e, 0x80);
+              ror_zpg(e, (uint8_t)(dst_zp + width - 1));
+              if (width > 1) ror_zpg(e, dst_zp);
+              dex(e);
+              bne_rel(e, (uint8_t)(256u - loop_size));
+            } else {
+              // loop body: lsr hi(2)[+ror lo(2)]+dex(1)+bne(2) = 2*width+3
+              unsigned loop_size = 2u * width + 3u;
+              emit_load_byte(e, &map, &instruction->src2, 0);
+              beq_rel(e, (uint8_t)(1u + loop_size));
+              tax(e);
+              if (width > 1) lsr_zpg(e, (uint8_t)(dst_zp + 1));
+              if (width == 1) lsr_zpg(e, dst_zp);
+              else            ror_zpg(e, dst_zp);
+              dex(e);
+              bne_rel(e, (uint8_t)(256u - loop_size));
+            }
+          }
+          break;
+        }
 
         case TAC_NEG: {
           unsigned width = codegen_type_size(instruction->dst.type);
