@@ -33,22 +33,21 @@ C02 is under active, early development. The **complete frontend** (tokenizer, pa
 
 #### What works today
 
-- **Data movement:** variable copies, constant stores, hardware register writes.
+- **Data movement:** variable copies, constant stores, hardware register writes. Implicit widening (u8→u16) zero-extends correctly; narrowing copies the low bytes.
 - **Control flow:** `if`/`else`, `while`, `for` loops via label/jump/conditional-jump.
-- **Arithmetic:** `+`, `-`, and unary `-` for all integer types (u8, i8, u16, i16). Width-aware multi-byte emission for 16-bit operations with carry/borrow propagation.
+- **Arithmetic:** `+`, `-`, unary `-`, `*`, `/`, `%` for all integer types (u8, i8, u16, i16). Width-aware multi-byte emission for 16-bit operations with carry/borrow propagation. Multiply and divide via `__mul8`/`__div8` software subroutines.
+- **Bitwise & shift ops:** `&`, `|`, `^`, `~`, `<<`, `>>` for all widths. Signed right shift uses the carry-from-sign-bit pattern for correct arithmetic extension.
 - **Comparisons:** all six relational operators (`<`, `<=`, `==`, `!=`, `>=`, `>`) for all widths (u8, u16) and signedness (unsigned via carry-flag, signed via N⊕V). 16-bit comparisons use a high-byte-first pattern.
 - **Increment/decrement:** `++`/`--` for both u8 and 16-bit values (pointers, u16), including globals.
-- **Pointer dereference:** `*p` via indirect indexed addressing (`LDA ($nn),Y`).
+- **Pointer dereference & store:** `*p` reads via `LDA ($nn),Y`; `*p = val` writes via `STA ($nn),Y`. Both work for local and global pointer variables.
+- **Address-of:** `&x` resolves to the variable's ZP slot address for locals or its RAM address for globals, stored as a 16-bit pointer.
+- **Type casts:** `(type)expr` — widening zero/sign-extends, narrowing copies low bytes.
 - **Global variables:** RAM-allocated globals with bootstrap initialization, correctly accessed via absolute addressing throughout all codegen paths. String literals placed in a ROM data section with backpatching fixups.
 
 #### Not yet implemented
 
-- **Function calls** — the ABI zone ($EF–$FF) is reserved but `JSR`/parameter passing is not wired up yet.
-- **Multiplication, division, modulo** (`*`, `/`, `%`) — no native 6502 instructions; needs runtime helper routines.
+- **Function calls** — the ABI zone (`$EF–$FF`) is reserved but `JSR`/parameter passing is not wired up yet.
 - **Struct field access** (`s.field` codegen).
-- **Type casts** — implicit widening (u8→u16) reads a garbage high byte; needs explicit zero-extension.
-- **Address-of** (`&x`) — parsed and analysed but no codegen.
-- **Pointer store** (`*p = val`) — parsed and analysed but no codegen for variable-destination stores.
 - **Arrays** — no array type or subscript syntax (`a[i]`).
 - **Missing-return detection is shallow.** A non-void function with no `return` at the end is flagged, but the analyzer does not perform full path-coverage analysis.
 

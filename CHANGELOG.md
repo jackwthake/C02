@@ -7,6 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/) - while
 the project is in `0.x`, breaking changes may land in MINOR releases; PATCH
 releases are reserved for bug fixes only.
 
+## [Unreleased]
+
+## [v0.2.14] 2026-06-26
+
+- **`TAC_ADDR_OF` (`&x`)** — address-of operator codegen. Globals resolve to
+  their RAM address (`g->ram_addr`); locals/temporaries resolve to their ZP
+  slot address. The 16-bit address is stored into the destination via two
+  `LDA imm; STA zpg` pairs (lo byte then hi byte).
+- **`TAC_STORE` pointer destination (`*p = val`)** — variable-destination
+  pointer stores now emit byte-wise `LDA src; STA ($ptr),Y` indirect indexed
+  writes. The pointer's ZP slot is kept in sync from its RAM address before
+  indirect access when the pointer is a global.
+- **Bitwise ops (`TAC_BAND`, `TAC_BOR`, `TAC_BXOR`, `TAC_BNOT`)** — width-aware
+  byte loops. `AND`/`ORA`/`EOR` use global-aware helpers (`emit_and_byte`,
+  `emit_ora_byte`, `emit_eor_byte`) dispatching imm/zpg/abs variants.
+  `TAC_BNOT` byte-loop `EOR #$FF`s each byte. New opcode emitters: `and_imm`,
+  `and_zpg`, `and_abs`, `eor_zpg`, `eor_abs`.
+- **Shift ops (`TAC_SHL`, `TAC_SHR`)** — both constant-count and variable-count
+  variants. Constant shifts unroll `ASL/ROL` (left) or `LSR/ROR` (right) pairs
+  per byte. Variable shifts use an X-register counter loop with hardcoded
+  relative branch offsets derived from fixed loop body sizes. Signed right shift
+  (`i8`/`i16`) uses the `CMP #$80; ROR` pattern — CMP sets carry = sign bit,
+  ROR shifts it in as the new MSB. New opcode emitters: `asl_zpg`, `rol_zpg`,
+  `lsr_zpg`, `ror_zpg`, `tax`, `dex`, `bcs_rel`, `bcc_rel`.
+- **`TAC_CAST` (type cast codegen)** — same-width copies, narrowing (low bytes
+  only), and widening with zero-extension (u8→u16) or sign-extension via
+  `CMP #$80; LDA #$FF; BCS +2; LDA #0` (i8→i16).
+- **`TAC_COPY` implicit widening fix** — `TAC_COPY` previously used the
+  destination size for all byte indices, reading garbage from adjacent ZP slots
+  when widening (e.g. u8→u16). Now computes `src_size`, `dst_size`, and
+  `copy_size = min(src_size, dst_size)`, then zero/sign-extends the remaining
+  bytes when `dst_size > src_size`.
+- **`TAC_MUL`, `TAC_DIV`, `TAC_MOD` software helpers** — 8-bit
+  multiply/divide/modulo via subroutines `__mul8` (shift-and-add) and `__div8`
+  (binary long-division). Arguments pass through fixed ZP slots `$E8`/`$E9`;
+  quotient/product at `$EA`, remainder at `$EB`. Helpers use lazy emission:
+  `needs_mul8`/`needs_div8` flags are set during CFG walk; helpers are emitted
+  after all functions and registered as function labels so the existing JSR
+  fixup system resolves their addresses. `TAC_DIV` and `TAC_MOD` share
+  `__div8`, reading `$EA` vs. `$EB` for the result.
+- **ZP arithmetic helper zone** — `$E8–$EB` carved from the scratch register
+  range and reserved for `__mul8`/`__div8` argument slots. Scratch registers
+  now span `$04–$E7`. `$EC–$EE` reserved for future helpers. README and ZP
+  layout table updated.
+- **LOC table reformatted** — `test.py --cloc` output is now a single
+  tree-style ASCII table with `├─`/`└─` prefixes, aligned columns, and a grand
+  total footer. Adding a new toolchain component = one `Section(...)` entry.
+- Emulator tests: `addr_of_local`, `addr_of_global`, `ptr_store_local`,
+  `ptr_store_global`, `bitwise_and`, `bitwise_or`, `bitwise_xor`,
+  `bitwise_not`, `shl_const`, `shr_const`, `shr_signed`, `shl_var`,
+  `implicit_widen`, `mul_u8` (7×6=42), `div_u8` (100÷7=14), `mod_u8`
+  (100%7=2).
+
 ## [v.0.2.13] 2026-06-24
 
 - **Codegen diagnostic for unhandled TAC ops** — the `default: break` in the
