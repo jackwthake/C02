@@ -2,6 +2,7 @@
 import subprocess
 import os
 import sys
+from collections import namedtuple
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 BIN = os.path.join(SCRIPT_DIR, "../../bin/cc02")
@@ -187,16 +188,6 @@ def update_golden(path):
 
 REPO_ROOT = os.path.join(SCRIPT_DIR, "../..")
 
-EXTENSION_LABELS = {
-    ".c": "C",
-    ".h": "C Header",
-    ".inc": "C Include",
-    ".c02": "C02",
-    ".py": "Python",
-    ".mk": "Makefile",
-    ".rs": "Rust",
-}
-
 COMPILER_EXTS = {".c", ".h", ".inc", ".mk"}
 HARNESS_EXTS = {".py", ".c02"}
 OBJDUMP_EXTS = {".rs", ".mk"}
@@ -208,6 +199,9 @@ COMPILER_MAKEFILES = ["Makefile", os.path.join("cc02", "Makefile")]
 OBJDUMP_DIR = "c02-objdump"
 TESTS_REL = os.path.join("cc02", "tests")
 EXAMPLES_DIR = "examples"
+
+# label, total lines, list of (child_label, lines) for tree expansion
+Section = namedtuple("Section", ["label", "total", "children"])
 
 def count_lines_in(root_dir, extensions):
     counts = {}
@@ -229,46 +223,17 @@ def count_lines_in(root_dir, extensions):
             counts[ext] = counts.get(ext, 0) + lines
     return counts
 
-def count_file(rel_path):
-    try:
-        with open(os.path.join(REPO_ROOT, rel_path)) as fh:
-            return sum(1 for _ in fh)
-    except (OSError, UnicodeDecodeError):
-        return 0
-
-def print_section(title, counts, label_map=None):
-    if not counts:
-        return
-    total = sum(counts.values())
-    if label_map:
-        max_label = max(len(label_map.get(k, k)) for k in counts)
-    else:
-        max_label = max(len(EXTENSION_LABELS[e]) for e in counts)
-    max_digits = len(str(max(counts.values())))
-    print(f"\n  {title}")
-    for key in sorted(counts, key=lambda k: counts[k], reverse=True):
-        label_str = label_map.get(key, key) if label_map else EXTENSION_LABELS[key]
-        label = (label_str + ":").ljust(max_label + 1)
-        pct = counts[key] / total * 100
-        print(f"    {label} {counts[key]:<{max_digits}} lines ({pct:.1f}%)")
-    print(f"    {'Total:'.ljust(max_label + 1)} {total} lines")
-
-def count_lines():
-    compiler_counts = count_lines_in(COMPILER_SRC_DIR, COMPILER_EXTS)
-    for mkfile in COMPILER_MAKEFILES:
-        lines = count_file(mkfile)
-        if lines:
-            compiler_counts[".mk"] = compiler_counts.get(".mk", 0) + lines
-
+def count_lines_by_folder(root_dir, extensions, default_folder="driver"):
+    """Count lines grouped by immediate subdirectory; files at the root go into default_folder."""
     folder_counts = {}
-    abs_src = os.path.join(REPO_ROOT, COMPILER_SRC_DIR)
-    for dirpath, dirnames, filenames in os.walk(abs_src):
+    abs_root = os.path.join(REPO_ROOT, root_dir)
+    for dirpath, dirnames, filenames in os.walk(abs_root):
         dirnames[:] = [d for d in dirnames if d not in IGNORED_DIRS]
         for f in filenames:
             ext = os.path.splitext(f)[1]
             if f == "Makefile" and not ext:
                 ext = ".mk"
-            if ext not in COMPILER_EXTS:
+            if ext not in extensions:
                 continue
             filepath = os.path.join(dirpath, f)
             try:
@@ -276,30 +241,84 @@ def count_lines():
                     lines = sum(1 for _ in fh)
             except (OSError, UnicodeDecodeError):
                 continue
-            relpath = os.path.relpath(filepath, abs_src)
+            relpath = os.path.relpath(filepath, abs_root)
             parts = relpath.split(os.sep)
-            folder = parts[0] if len(parts) > 1 else "driver"
+            folder = parts[0] if len(parts) > 1 else default_folder
             folder_counts[folder] = folder_counts.get(folder, 0) + lines
+    return folder_counts
 
-    harness_counts = count_lines_in(TESTS_REL, {*COMPILER_EXTS, *HARNESS_EXTS})
-    for ext, lines in count_lines_in(EXAMPLES_DIR, HARNESS_EXTS).items():
-        harness_counts[ext] = harness_counts.get(ext, 0) + lines
+def count_file(rel_path):
+    try:
+        with open(os.path.join(REPO_ROOT, rel_path)) as fh:
+            return sum(1 for _ in fh)
+    except (OSError, UnicodeDecodeError):
+        return 0
 
-    objdump_counts = count_lines_in(OBJDUMP_DIR, OBJDUMP_EXTS)
-
-    if not compiler_counts and not harness_counts:
+def print_loc_table(sections):
+    grand_total = sum(s.total for s in sections)
+    if grand_total == 0:
         print("no recognized source files found")
         return
 
-    print_section("Compiler (by language)", compiler_counts)
-    if folder_counts:
-        print_section("Compiler (by module)", folder_counts, label_map={k: k for k in folder_counts})
-    print_section("Test Harness", harness_counts)
-    print_section("Disassembler", objdump_counts)
+    # measure column widths from actual data
+    all_labels = [s.label for s in sections] + ["Grand Total"]
+    for s in sections:
+        for i, (child_label, _) in enumerate(s.children):
+            prefix = "  └─ " if i == len(s.children) - 1 else "  ├─ "
+            all_labels.append(prefix + child_label)
+    label_w = max(len(l) for l in all_labels)
+    lines_w = max(len(f"{grand_total:,}"), len("Lines"))
 
-    sections = [compiler_counts, harness_counts, objdump_counts]
-    grand_total = sum(sum(s.values()) for s in sections)
-    print(f"\n  Grand Total: {grand_total} lines")
+    sep = "─" * (label_w + lines_w + 11)
+    print(f"\n{'Module':<{label_w}}  {'Lines':>{lines_w}}   % Total")
+    print(sep)
+
+    for s in sections:
+        pct = s.total / grand_total * 100
+        print(f"{s.label:<{label_w}}  {s.total:>{lines_w},}   {pct:5.1f}%")
+        for i, (child_label, child_lines) in enumerate(s.children):
+            prefix = "  └─ " if i == len(s.children) - 1 else "  ├─ "
+            child_pct = child_lines / grand_total * 100
+            full_label = prefix + child_label
+            print(f"{full_label:<{label_w}}  {child_lines:>{lines_w},}   {child_pct:5.1f}%")
+
+    print(sep)
+    print(f"{'Grand Total':<{label_w}}  {grand_total:>{lines_w},}   100.0%")
+
+def count_lines():
+    # --- Compiler ---
+    compiler_ext_counts = count_lines_in(COMPILER_SRC_DIR, COMPILER_EXTS)
+    for mkfile in COMPILER_MAKEFILES:
+        lines = count_file(mkfile)
+        if lines:
+            compiler_ext_counts[".mk"] = compiler_ext_counts.get(".mk", 0) + lines
+    compiler_total = sum(compiler_ext_counts.values())
+
+    folder_counts = count_lines_by_folder(COMPILER_SRC_DIR, COMPILER_EXTS)
+    compiler_children = sorted(folder_counts.items(), key=lambda x: x[1], reverse=True)
+
+    # --- Test Harness ---
+    harness_counts = count_lines_in(TESTS_REL, {*COMPILER_EXTS, *HARNESS_EXTS})
+    for ext, lines in count_lines_in(EXAMPLES_DIR, HARNESS_EXTS).items():
+        harness_counts[ext] = harness_counts.get(ext, 0) + lines
+    harness_total = sum(harness_counts.values())
+
+    # --- Disassembler ---
+    objdump_total = sum(count_lines_in(OBJDUMP_DIR, OBJDUMP_EXTS).values())
+
+    # To add a new toolchain component, append a Section here and add its
+    # directory/extension constants above.
+    sections = [
+        Section("Compiler",     compiler_total, compiler_children),
+        Section("Test Harness", harness_total,  []),
+        Section("Disassembler", objdump_total,  []),
+    ]
+
+    if compiler_total == 0 and harness_total == 0:
+        print("no recognized source files found")
+        return
+
+    print_loc_table(sections)
 
 if __name__ == "__main__":
     if "--cloc" in sys.argv:
