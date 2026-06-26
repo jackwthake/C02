@@ -453,6 +453,30 @@ def test_bare_cond_u16():
     return True, None
 
 
+def test_addr_of_local():
+    """&local — take address of ZP local, dereference it, write to PORTB."""
+    source = os.path.join(SCRIPT_DIR, "emu_addr_of_local.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 42:
+        return False, f"memory[$6000] = {val}, expected 42"
+    return True, None
+
+
+def test_addr_of_global():
+    """&global — take address of RAM global, dereference it, write to PORTB."""
+    source = os.path.join(SCRIPT_DIR, "emu_addr_of_global.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 99:
+        return False, f"memory[$6000] = {val}, expected 99"
+    return True, None
+
+
 # ----------------------------------------------------------------
 # Runner
 # ----------------------------------------------------------------
@@ -496,6 +520,8 @@ TESTS = [
     ("logical_not", test_logical_not),
     ("bare_cond_u8", test_bare_cond_u8),
     ("bare_cond_u16", test_bare_cond_u16),
+    ("addr_of_local", test_addr_of_local),
+    ("addr_of_global", test_addr_of_global),
 ]
 
 

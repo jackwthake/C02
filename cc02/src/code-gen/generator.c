@@ -601,6 +601,22 @@ static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
           break;
         }
 
+        case TAC_ADDR_OF: {
+          uint8_t dst_zp = zp_map_lookup(&map, &instruction->dst);
+          uint16_t addr;
+          global_entry_t *g = lookup_global(e, instruction->src1.name);
+          if (g) {
+            addr = g->ram_addr;
+          } else {
+            addr = (uint16_t)zp_map_lookup(&map, &instruction->src1);
+          }
+          lda_imm(e, (uint8_t)(addr & 0xFF));
+          sta_zpg(e, dst_zp);
+          lda_imm(e, (uint8_t)(addr >> 8));
+          sta_zpg(e, (uint8_t)(dst_zp + 1));
+          break;
+        }
+
         // -- control flow --
 
         case TAC_LABEL: e->local_labels[instruction->label] = (uint16_t)(ROM_START + e->code_pos); break;
