@@ -64,10 +64,14 @@ should compile to correct code.
       load the ZP address as a constant. For globals: load the RAM address.
 - [x] **Type casts / implicit widening** — `u8` → `u16` must zero-extend
       the high byte. Currently reads garbage.
+- [ ] Variables holding string have to be initialized as globals, this needs fixing
+- [ ] `*(ptr + i)` gives analyzer error, complaining that there is a type mismatch
+      because ptr is a ptr and i is a normal integer value
+- [ ] Language currently does not support `break` or `continue` keywords
 
 #### Should-have (language is painful without these)
 
-- [ ] **Struct field access codegen** — `TAC_FIELD_LOAD` / `TAC_FIELD_STORE`
+- [x] **Struct field access codegen** — `TAC_FIELD_LOAD` / `TAC_FIELD_STORE`
       using the computed field offsets already in the IR. Base address + offset
       for by-value structs, indirect + offset for struct pointers.
 - [x] **Multiply / divide / modulo** — no native 6502 instructions. Needs

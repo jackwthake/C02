@@ -38,6 +38,31 @@ static unsigned codegen_type_size(type_t type) {
   }
 }
 
+static unsigned full_type_size(emitter_t *e, type_t type) {
+  if (type.is_ptr) return 2;
+  if (type.kind == TYPE_STRUCT && e->gen) {
+    for (unsigned i = 0; i < e->gen->module.struct_count; i++) {
+      if (strcmp(e->gen->module.structs[i].name, type.struct_name) == 0)
+        return e->gen->module.structs[i].total_size;
+    }
+  }
+  return codegen_type_size(type);
+}
+
+static ir_field_def_t *lookup_struct_field(emitter_t *e,
+                                            const char *struct_name,
+                                            const char *field_name) {
+  for (unsigned i = 0; i < e->gen->module.struct_count; i++) {
+    ir_struct_def_t *s = &e->gen->module.structs[i];
+    if (strcmp(s->name, struct_name) != 0) continue;
+    for (unsigned j = 0; j < s->field_count; j++) {
+      if (strcmp(s->fields[j].name, field_name) == 0)
+        return &s->fields[j];
+    }
+  }
+  return NULL;
+}
+
 
 // True if the type requires signed comparison semantics.
 static int is_signed_type(type_t type) {
@@ -62,7 +87,7 @@ static uint8_t zp_map_lookup(zp_map_t *map, tac_operand_t *op) {
 
 
 // Assign the next available ZP slot to an operand (deduped, type-stride-aware).
-static void zp_map_add(zp_map_t *map, tac_operand_kind_t kind,
+static void zp_map_add(emitter_t *e, zp_map_t *map, tac_operand_kind_t kind,
                         char *name, unsigned temp_id, type_t type) {
   tac_operand_t probe = { .kind = kind };
   if (kind == OPERAND_VAR) probe.name = name;
@@ -74,33 +99,33 @@ static void zp_map_add(zp_map_t *map, tac_operand_kind_t kind,
     return;
   }
 
-  unsigned size = codegen_type_size(type);
-  zp_entry_t *e = &map->entries[map->count++];
-  e->kind = kind;
-  if (kind == OPERAND_VAR) e->name = name;
-  else                     e->temp_id = temp_id;
-  e->zp_addr = map->next_addr;
-  e->size = (uint8_t)size;
+  unsigned size = full_type_size(e, type);
+  zp_entry_t *entry = &map->entries[map->count++];
+  entry->kind = kind;
+  if (kind == OPERAND_VAR) entry->name = name;
+  else                     entry->temp_id = temp_id;
+  entry->zp_addr = map->next_addr;
+  entry->size = (uint8_t)size;
   map->next_addr += (uint8_t)size;
 }
 
 
 // Register a TAC operand in the ZP map (dispatches var vs temp).
-static void zp_map_add_operand(zp_map_t *map, tac_operand_t *op) {
+static void zp_map_add_operand(emitter_t *e, zp_map_t *map, tac_operand_t *op) {
   if (op->kind == OPERAND_VAR)
-    zp_map_add(map, OPERAND_VAR, op->name, 0, op->type);
+    zp_map_add(e, map, OPERAND_VAR, op->name, 0, op->type);
   else if (op->kind == OPERAND_TEMP)
-    zp_map_add(map, OPERAND_TEMP, NULL, op->temp_id, op->type);
+    zp_map_add(e, map, OPERAND_TEMP, NULL, op->temp_id, op->type);
 }
 
 
 // Build the per-function ZP map: params first, then all referenced operands.
-static void zp_map_build(zp_map_t *map, cfg_t *cfg) {
+static void zp_map_build(emitter_t *e, zp_map_t *map, cfg_t *cfg) {
   map->count = 0;
   map->next_addr = REG_START;
 
   for (unsigned i = 0; i < cfg->params.count; i++) {
-    zp_map_add(map, OPERAND_VAR, cfg->params.items[i].name, 0,
+    zp_map_add(e, map, OPERAND_VAR, cfg->params.items[i].name, 0,
                cfg->params.items[i].type);
   }
 
@@ -108,9 +133,9 @@ static void zp_map_build(zp_map_t *map, cfg_t *cfg) {
     basic_block_t *block = cfg->blocks[i];
     for (unsigned j = 0; j < block->instr_count; j++) {
       tac_instr_t *inst = &block->instrs[j];
-      zp_map_add_operand(map, &inst->dst);
-      zp_map_add_operand(map, &inst->src1);
-      zp_map_add_operand(map, &inst->src2);
+      zp_map_add_operand(e, map, &inst->dst);
+      zp_map_add_operand(e, map, &inst->src1);
+      zp_map_add_operand(e, map, &inst->src2);
     }
   }
 }
@@ -235,7 +260,7 @@ static void allocate_globals(emitter_t *e, ir_gen_t *gen) {
 
   for (unsigned i = 0; i < count; i++) {
     ir_global_t *g = &gen->module.globals[i];
-    unsigned size = codegen_type_size(g->type);
+    unsigned size = full_type_size(e, g->type);
     global_entry_t *entry = &e->global_entries[i];
     entry->name = g->name;
     entry->ram_addr = e->ram_pos;
@@ -552,7 +577,7 @@ static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
   register_func_label(e, cfg->name, (uint16_t)(ROM_START + e->code_pos));
 
   zp_map_t map;
-  zp_map_build(&map, cfg);
+  zp_map_build(e, &map, cfg);
 
   e->local_label_count = cfg->next_label;
   e->local_fixup_count = 0;
@@ -568,8 +593,8 @@ static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
         // -- data movement --
 
         case TAC_COPY: {
-          unsigned src_size = codegen_type_size(instruction->src1.type);
-          unsigned dst_size = codegen_type_size(instruction->dst.type);
+          unsigned src_size = full_type_size(e, instruction->src1.type);
+          unsigned dst_size = full_type_size(e, instruction->dst.type);
           unsigned copy_size = src_size < dst_size ? src_size : dst_size;
 
           for (unsigned b = 0; b < copy_size; b++) {
@@ -1144,6 +1169,82 @@ static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
           break;
         }
 
+        case TAC_FIELD_LOAD: {
+          // dst = src1.field  (src1 may be a struct value or a Struct*)
+          const char *sname = instruction->src1.type.struct_name;
+          ir_field_def_t *field = lookup_struct_field(e, sname, instruction->field_name);
+          if (!field) {
+            fprintf(stderr, "codegen: unknown field '%s' on struct '%s'\n",
+                    instruction->field_name, sname);
+            return 0;
+          }
+          unsigned fsize = full_type_size(e, field->type);
+
+          if (instruction->src1.type.is_ptr) {
+            // pointer-to-struct: LDY #(offset+b); LDA ($ptr),Y
+            uint8_t ptr_zp = zp_map_lookup(&map, &instruction->src1);
+            if (instruction->src1.kind == OPERAND_VAR) {
+              global_entry_t *g = lookup_global(e, instruction->src1.name);
+              if (g) {
+                for (unsigned b = 0; b < 2; b++) {
+                  lda_abs(e, (uint16_t)(g->ram_addr + b));
+                  sta_zpg(e, (uint8_t)(ptr_zp + b));
+                }
+              }
+            }
+            for (unsigned b = 0; b < fsize; b++) {
+              ldy_imm(e, (uint8_t)(field->offset + b));
+              lda_ind_y(e, ptr_zp);
+              emit_store_byte(e, &map, &instruction->dst, b);
+            }
+          } else {
+            // struct value: use emit_load_byte at (field->offset + b) so globals get abs
+            for (unsigned b = 0; b < fsize; b++) {
+              emit_load_byte(e, &map, &instruction->src1, field->offset + b);
+              emit_store_byte(e, &map, &instruction->dst, b);
+            }
+          }
+          break;
+        }
+
+        case TAC_FIELD_STORE: {
+          // dst.field = src1  (dst may be a struct value or a Struct*)
+          const char *sname = instruction->dst.type.struct_name;
+          ir_field_def_t *field = lookup_struct_field(e, sname, instruction->field_name);
+          if (!field) {
+            fprintf(stderr, "codegen: unknown field '%s' on struct '%s'\n",
+                    instruction->field_name, sname);
+            return 0;
+          }
+          unsigned fsize = full_type_size(e, field->type);
+
+          if (instruction->dst.type.is_ptr) {
+            // pointer-to-struct: load value, then STA ($ptr),Y
+            uint8_t ptr_zp = zp_map_lookup(&map, &instruction->dst);
+            if (instruction->dst.kind == OPERAND_VAR) {
+              global_entry_t *g = lookup_global(e, instruction->dst.name);
+              if (g) {
+                for (unsigned b = 0; b < 2; b++) {
+                  lda_abs(e, (uint16_t)(g->ram_addr + b));
+                  sta_zpg(e, (uint8_t)(ptr_zp + b));
+                }
+              }
+            }
+            for (unsigned b = 0; b < fsize; b++) {
+              emit_load_byte(e, &map, &instruction->src1, b);
+              ldy_imm(e, (uint8_t)(field->offset + b));
+              sta_ind_y(e, ptr_zp);
+            }
+          } else {
+            // struct value: emit_load_byte + emit_store_byte at (field->offset + b)
+            for (unsigned b = 0; b < fsize; b++) {
+              emit_load_byte(e, &map, &instruction->src1, b);
+              emit_store_byte(e, &map, &instruction->dst, field->offset + b);
+            }
+          }
+          break;
+        }
+
         default:
           fprintf(stderr, "codegen: unhandled TAC op %d\n", instruction->op);
           return 0;
@@ -1232,6 +1333,7 @@ uint8_t *generate_rom(ir_gen_t *gen, size_t *final_rom_size) {
   memset(e.rom, 0xEA, ROM_SIZE);
   *final_rom_size = ROM_SIZE;
 
+  e.gen = gen;
   e.ram_pos = RAM_START;
   e.zp_next = REG_START;
 

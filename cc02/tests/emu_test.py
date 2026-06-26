@@ -648,6 +648,42 @@ def test_shl_var():
     return True, None
 
 
+def test_field_local():
+    """Local struct: p.y where p = Point{.x=10, .y=42}."""
+    source = os.path.join(SCRIPT_DIR, "emu_field_local.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 42:
+        return False, f"memory[$6000] = {val}, expected 42"
+    return True, None
+
+
+def test_field_global():
+    """Global struct: origin.x where origin = Point{.x=7, .y=99}."""
+    source = os.path.join(SCRIPT_DIR, "emu_field_global.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 7:
+        return False, f"memory[$6000] = {val}, expected 7"
+    return True, None
+
+
+def test_field_ptr():
+    """Pointer-to-struct: q.x where q = &p, p = Point{.x=55, .y=22}."""
+    source = os.path.join(SCRIPT_DIR, "emu_field_ptr.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 55:
+        return False, f"memory[$6000] = {val}, expected 55"
+    return True, None
+
+
 # ----------------------------------------------------------------
 # Runner
 # ----------------------------------------------------------------
@@ -707,6 +743,9 @@ TESTS = [
     ("mul_u8", test_mul_u8),
     ("div_u8", test_div_u8),
     ("mod_u8", test_mod_u8),
+    ("field_local", test_field_local),
+    ("field_global", test_field_global),
+    ("field_ptr", test_field_ptr),
 ]
 
 

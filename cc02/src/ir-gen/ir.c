@@ -412,9 +412,25 @@ static tac_operand_t lower_expr(ir_gen_t *gen, cfg_t *cfg, node_t *node) {
 
     case NODE_UNARY: {
       if (node->unary.op == OP_INCREMENT || node->unary.op == OP_DECREMENT) {
-        tac_operand_t operand = lower_expr(gen, cfg, node->unary.operand);
         tac_op_t op = node->unary.op == OP_INCREMENT ? TAC_INC : TAC_DEC;
 
+        if (node->unary.operand->kind == NODE_FIELD_ACCESS) {
+          node_t *fa = node->unary.operand;
+          tac_operand_t base = lower_expr(gen, cfg, fa->field_access.base);
+          tac_operand_t tmp = new_temp(cfg, fa->field_access.resolved_type);
+          emit(gen, cfg, (tac_instr_t){
+            .op = TAC_FIELD_LOAD, .dst = tmp, .src1 = base,
+            .field_name = fa->field_access.field,
+          });
+          emit(gen, cfg, (tac_instr_t){ .op = op, .dst = tmp });
+          emit(gen, cfg, (tac_instr_t){
+            .op = TAC_FIELD_STORE, .dst = base, .src1 = tmp,
+            .field_name = fa->field_access.field,
+          });
+          return tmp;
+        }
+
+        tac_operand_t operand = lower_expr(gen, cfg, node->unary.operand);
         emit(gen, cfg, (tac_instr_t){ .op = op, .dst = operand });
         return operand;
       }

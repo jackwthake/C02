@@ -1,0 +1,13 @@
+reg u8 PORTB @ 0x6000;
+
+struct Point {
+  u8 x;
+  u8 y;
+}
+
+fn main() -> void {
+  Point p;
+  p = Point{ .x = 55, .y = 22 };
+  Point *q = &p;
+  PORTB = q.x;
+}

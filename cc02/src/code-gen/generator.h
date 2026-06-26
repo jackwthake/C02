@@ -49,6 +49,8 @@ typedef struct {
 } data_fixup_t;
 
 typedef struct {
+  ir_gen_t *gen;
+
   arena_t  arena;
   uint8_t *rom;
   size_t   rom_size;
