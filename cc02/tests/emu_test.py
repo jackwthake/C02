@@ -621,6 +621,30 @@ def test_mod_u8():
     return True, None
 
 
+def test_div_i8():
+    """-6 / 2 == -3 (0xFD). Exercises quotient sign-fix path in __sdiv8."""
+    source = os.path.join(SCRIPT_DIR, "emu_div_i8.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 0xFD:
+        return False, f"memory[$6000] = ${val:02X}, expected $FD (-3)"
+    return True, None
+
+
+def test_mod_i8():
+    """-7 % 2 == -1 (0xFF). Exercises remainder sign-fix path in __sdiv8."""
+    source = os.path.join(SCRIPT_DIR, "emu_mod_i8.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 0xFF:
+        return False, f"memory[$6000] = ${val:02X}, expected $FF (-1)"
+    return True, None
+
+
 def test_implicit_widen():
     """u8 200 widened to u16: low byte=200, high byte=0 (not garbage)."""
     source = os.path.join(SCRIPT_DIR, "emu_implicit_widen.c02")
@@ -846,6 +870,8 @@ TESTS = [
     ("mul_u8", test_mul_u8),
     ("div_u8", test_div_u8),
     ("mod_u8", test_mod_u8),
+    ("div_i8", test_div_i8),
+    ("mod_i8", test_mod_i8),
     ("lcd_simplified", test_lcd_simplified),
     ("field_local", test_field_local),
     ("field_global", test_field_global),

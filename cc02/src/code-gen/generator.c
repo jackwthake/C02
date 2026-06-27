@@ -33,6 +33,7 @@
 #define HELPER_ARG2 0xE9  // divisor  / multiplier   (modified by helpers)
 #define HELPER_RES  0xEA  // quotient / product
 #define HELPER_REM  0xEB  // remainder (division only)
+#define HELPER_SIGN 0xEC  // sign flags for __sdiv8 (bit7=negate quotient, bit6=negate remainder)
 
 
 // ----------------------------------------------------------------
@@ -332,6 +333,7 @@ OP_EMITTER_SINGLE_ARG(beq_rel, 0xF0)
 OP_EMITTER_SINGLE_ARG(bne_rel, 0xD0)
 OP_EMITTER_SINGLE_ARG(bcs_rel, 0xB0)
 OP_EMITTER_SINGLE_ARG(bcc_rel, 0x90)
+OP_EMITTER_SINGLE_ARG(bpl_rel, 0x10)
 
 OP_EMITTER_SINGLE_ARG(inc_zpg, 0xE6)
 OP_EMITTER_SINGLE_ARG(dec_zpg, 0xC6)
@@ -1090,8 +1092,48 @@ static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
         }
 
         EMIT_INT8_HELPER(TAC_MUL, "__mul8", HELPER_RES, needs_mul8, "multiply")
-        EMIT_INT8_HELPER(TAC_DIV, "__div8", HELPER_RES, needs_div8, "divide")
-        EMIT_INT8_HELPER(TAC_MOD, "__div8", HELPER_REM, needs_div8, "modulo")
+
+        case TAC_DIV: {
+          if (codegen_type_size(instruction->dst.type) > 1) {
+            fprintf(stderr, "codegen: u16 divide not yet implemented\n");
+            return 0;
+          }
+          emit_load_byte(e, &map, &instruction->src1, 0);
+          sta_zpg(e, HELPER_ARG1);
+          emit_load_byte(e, &map, &instruction->src2, 0);
+          sta_zpg(e, HELPER_ARG2);
+          if (is_signed_type(instruction->dst.type)) {
+            jsr(e, "__sdiv8");
+            e->needs_sdiv8 = 1;
+          } else {
+            jsr(e, "__div8");
+            e->needs_div8 = 1;
+          }
+          lda_zpg(e, HELPER_RES);
+          emit_store_byte(e, &map, &instruction->dst, 0);
+          break;
+        }
+
+        case TAC_MOD: {
+          if (codegen_type_size(instruction->dst.type) > 1) {
+            fprintf(stderr, "codegen: u16 modulo not yet implemented\n");
+            return 0;
+          }
+          emit_load_byte(e, &map, &instruction->src1, 0);
+          sta_zpg(e, HELPER_ARG1);
+          emit_load_byte(e, &map, &instruction->src2, 0);
+          sta_zpg(e, HELPER_ARG2);
+          if (is_signed_type(instruction->dst.type)) {
+            jsr(e, "__sdiv8");
+            e->needs_sdiv8 = 1;
+          } else {
+            jsr(e, "__div8");
+            e->needs_div8 = 1;
+          }
+          lda_zpg(e, HELPER_REM);
+          emit_store_byte(e, &map, &instruction->dst, 0);
+          break;
+        }
 
 #undef EMIT_INT8_HELPER
 
@@ -1365,6 +1407,57 @@ static void emit_mul8_helper(emitter_t *e) {
   rts(e);
 }
 
+// i8 signed divide: HELPER_ARG1 / HELPER_ARG2 → HELPER_RES (quotient), HELPER_REM (remainder).
+// Encodes signs in HELPER_SIGN (bit7=negate quotient, bit6=negate remainder), takes absolute
+// values, calls __div8, then restores signs. Follows C truncation-toward-zero convention.
+static void emit_sdiv8_helper(emitter_t *e) {
+  register_func_label(e, "__sdiv8", (uint16_t)(ROM_START + e->code_pos));
+  lda_imm(e, 0);
+  sta_zpg(e, HELPER_SIGN);
+
+  // If dividend (ARG1) negative: negate it, set bits 7+6 in SIGN (quotient and remainder both flip).
+  lda_zpg(e, HELPER_ARG1);
+  bpl_rel(e, 11);        // skip 11 bytes if positive:
+  sec(e);                //   SEC
+  lda_imm(e, 0);         //   LDA #0
+  sbc_zpg(e, HELPER_ARG1); // SBC ARG1
+  sta_zpg(e, HELPER_ARG1); // STA ARG1  (= -ARG1)
+  lda_imm(e, 0xC0);     //   LDA #$C0
+  sta_zpg(e, HELPER_SIGN); // STA SIGN  (bits 7+6)
+
+  // If divisor (ARG2) negative: negate it, toggle bit 7 in SIGN (quotient sign flips again).
+  lda_zpg(e, HELPER_ARG2);
+  bpl_rel(e, 13);        // skip 13 bytes if positive:
+  sec(e);                //   SEC
+  lda_imm(e, 0);         //   LDA #0
+  sbc_zpg(e, HELPER_ARG2); // SBC ARG2
+  sta_zpg(e, HELPER_ARG2); // STA ARG2  (= -ARG2)
+  lda_zpg(e, HELPER_SIGN); // LDA SIGN
+  eor_imm(e, 0x80);     //   EOR #$80   (toggle bit 7)
+  sta_zpg(e, HELPER_SIGN); // STA SIGN
+
+  jsr(e, "__div8");
+
+  // Negate quotient if bit 7 of SIGN is set.
+  lda_zpg(e, HELPER_SIGN);
+  bpl_rel(e, 7);         // skip 7 bytes if bit 7 = 0:
+  sec(e);                //   SEC
+  lda_imm(e, 0);         //   LDA #0
+  sbc_zpg(e, HELPER_RES); //  SBC RES
+  sta_zpg(e, HELPER_RES); //  STA RES
+
+  // Negate remainder if bit 6 of SIGN is set.
+  lda_zpg(e, HELPER_SIGN);
+  and_imm(e, 0x40);
+  beq_rel(e, 7);         // skip 7 bytes if bit 6 = 0:
+  sec(e);                //   SEC
+  lda_imm(e, 0);         //   LDA #0
+  sbc_zpg(e, HELPER_REM); //  SBC REM
+  sta_zpg(e, HELPER_REM); //  STA REM
+
+  rts(e);
+}
+
 // u8 divide: HELPER_ARG1 / HELPER_ARG2 → HELPER_RES (quotient), HELPER_REM (remainder).
 // Uses binary long division (shift-subtract). ARG1 is consumed.
 //
@@ -1432,6 +1525,7 @@ uint8_t *generate_rom(ir_gen_t *gen, size_t *final_rom_size) {
   }
 
   if (e.needs_mul8) emit_mul8_helper(&e);
+  if (e.needs_sdiv8) { emit_sdiv8_helper(&e); e.needs_div8 = 1; }
   if (e.needs_div8) emit_div8_helper(&e);
 
   if (!resolve_func_fixups(&e)) {

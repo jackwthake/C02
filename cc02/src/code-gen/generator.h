@@ -61,6 +61,7 @@ typedef struct {
 
   int needs_mul8;
   int needs_div8;
+  int needs_sdiv8;
 
   func_label_t *func_labels;
   unsigned      func_label_count;
