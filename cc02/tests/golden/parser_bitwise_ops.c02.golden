@@ -1,202 +1,203 @@
 `- TranslationUnitDecl
-   `- FunctionDecl main() -> void
-      `- CompoundStmt
-         |- VarDecl a : u8
-         |  `- BinaryOperator &
-         |     |- IntegerLiteral (5)
-         |     `- IntegerLiteral (3)
-         |- VarDecl b : u8
-         |  `- BinaryOperator |
-         |     |- IntegerLiteral (5)
-         |     `- IntegerLiteral (2)
-         |- VarDecl c : u8
-         |  `- BinaryOperator ^
-         |     |- IntegerLiteral (5)
-         |     `- IntegerLiteral (1)
-         |- VarDecl d : u8
-         |  `- UnaryOperator ~
-         |     `- IntegerLiteral (5)
-         |- VarDecl e : u8
-         |  `- BinaryOperator <<
-         |     |- IntegerLiteral (1)
-         |     `- IntegerLiteral (2)
-         |- VarDecl f : u8
-         |  `- BinaryOperator >>
-         |     |- IntegerLiteral (16)
-         |     `- IntegerLiteral (2)
-         |- VarDecl g : u8
-         |  `- BinaryOperator |
-         |     |- BinaryOperator |
-         |     |  |- IntegerLiteral (1)
-         |     |  `- IntegerLiteral (2)
-         |     `- IntegerLiteral (4)
-         |- VarDecl h : u8
-         |  `- BinaryOperator &
-         |     |- BinaryOperator &
-         |     |  |- IntegerLiteral (1)
-         |     |  `- IntegerLiteral (2)
-         |     `- IntegerLiteral (4)
-         |- VarDecl i : u8
-         |  `- BinaryOperator ^
-         |     |- BinaryOperator ^
-         |     |  |- IntegerLiteral (1)
-         |     |  `- IntegerLiteral (2)
-         |     `- IntegerLiteral (4)
-         |- VarDecl j : u8
-         |  `- BinaryOperator <<
-         |     |- BinaryOperator <<
-         |     |  |- IntegerLiteral (1)
-         |     |  `- IntegerLiteral (1)
-         |     `- IntegerLiteral (1)
-         |- VarDecl k : u8
-         |  `- BinaryOperator >>
-         |     |- BinaryOperator >>
-         |     |  |- IntegerLiteral (16)
-         |     |  `- IntegerLiteral (1)
-         |     `- IntegerLiteral (1)
-         |- VarDecl l : u8
-         |  `- BinaryOperator |
-         |     |- IntegerLiteral (1)
-         |     `- BinaryOperator ^
-         |        |- BinaryOperator &
-         |        |  |- IntegerLiteral (2)
-         |        |  `- IntegerLiteral (3)
-         |        `- IntegerLiteral (4)
-         |- VarDecl m : u8
-         |  `- BinaryOperator <<
-         |     |- IntegerLiteral (1)
-         |     `- BinaryOperator +
-         |        |- IntegerLiteral (2)
-         |        `- IntegerLiteral (1)
-         |- VarDecl n : u8
-         |  `- BinaryOperator <<
-         |     |- BinaryOperator +
-         |     |  |- IntegerLiteral (1)
-         |     |  `- IntegerLiteral (2)
-         |     `- IntegerLiteral (1)
-         |- VarDecl o : u8
-         |  `- BinaryOperator <
-         |     |- BinaryOperator <<
-         |     |  |- IntegerLiteral (1)
-         |     |  `- IntegerLiteral (2)
-         |     `- IntegerLiteral (8)
-         |- VarDecl p : u8
-         |  `- BinaryOperator &&
-         |     |- BinaryOperator &
-         |     |  |- IntegerLiteral (1)
-         |     |  `- IntegerLiteral (1)
-         |     `- BinaryOperator |
-         |        |- IntegerLiteral (2)
-         |        `- IntegerLiteral (0)
-         |- VarDecl q : u8
-         |  `- BinaryOperator &
-         |     |- BinaryOperator ==
-         |     |  |- IntegerLiteral (1)
-         |     |  `- IntegerLiteral (1)
-         |     `- IntegerLiteral (1)
-         |- VarDecl r : u8
-         |  `- UnaryOperator ~
-         |     `- UnaryOperator ~
-         |        `- IntegerLiteral (5)
-         |- VarDecl s : u8
-         |  `- UnaryOperator ~
-         |     `- BinaryOperator &
-         |        |- IntegerLiteral (5)
-         |        `- IntegerLiteral (3)
-         |- VarDecl t : u8
-         |  `- BinaryOperator |
-         |     |- UnaryOperator ~
-         |     |  `- IntegerLiteral (5)
-         |     `- IntegerLiteral (2)
-         |- VarDecl x : u8
-         |  `- IntegerLiteral (10)
-         |- VarDecl y : u8
-         |  `- BinaryOperator &
-         |     |- Identifier x
-         |     `- IntegerLiteral (1)
-         |- VarDecl z : u8*
-         |  `- UnaryOperator &
-         |     `- Identifier x
-         |- IfStmt
-         |  |- [cond]
-         |  |  `- BinaryOperator ==
-         |  |     |- BinaryOperator &
-         |  |     |  |- Identifier x
-         |  |     |  `- IntegerLiteral (1)
-         |  |     `- IntegerLiteral (0)
-         |  |- [then body]
-         |  |  `- CompoundStmt
-         |  |     `- AssignStmt
-         |  |        |- [target]
-         |  |        |  `- Identifier x
-         |  |        `- [value]
-         |  |           `- BinaryOperator |
-         |  |              |- Identifier x
-         |  |              `- IntegerLiteral (1)
-         |     `- IfStmt
-         |        |- [cond]
-         |        |  `- BinaryOperator >
-         |        |     |- BinaryOperator >>
-         |        |     |  |- Identifier x
-         |        |     |  `- IntegerLiteral (1)
-         |        |     `- IntegerLiteral (2)
-         |        |- [then body]
-         |        |  `- CompoundStmt
-         |        |     `- AssignStmt
-         |        |        |- [target]
-         |        |        |  `- Identifier x
-         |        |        `- [value]
-         |        |           `- BinaryOperator ^
-         |        |              |- Identifier x
-         |        |              `- IntegerLiteral (255)
-         |           `- CompoundStmt
-         |              `- AssignStmt
-         |                 |- [target]
-         |                 |  `- Identifier x
-         |                 `- [value]
-         |                    `- UnaryOperator ~
-         |                       `- Identifier x
-         |- WhileStmt
-         |  |- [cond]
-         |  |  `- BinaryOperator !=
-         |  |     |- BinaryOperator &
-         |  |     |  |- Identifier x
-         |  |     |  `- IntegerLiteral (15)
-         |  |     `- IntegerLiteral (0)
-         |  `- [body]
-         |     `- CompoundStmt
-         |        `- AssignStmt
-         |           |- [target]
-         |           |  `- Identifier x
-         |           `- [value]
-         |              `- BinaryOperator >>
-         |                 |- Identifier x
-         |                 `- IntegerLiteral (1)
-         |- ForStmt
-         |  |- [init]
-         |  |  `- VarDecl i : u8
-         |  |     `- IntegerLiteral (0)
-         |  |- [cond]
-         |  |  `- BinaryOperator <
-         |  |     |- Identifier i
-         |  |     `- IntegerLiteral (8)
-         |  |- [step]
-         |  |  `- AssignStmt
-         |  |     |- [target]
-         |  |     |  `- Identifier i
-         |  |     `- [value]
-         |  |        `- BinaryOperator +
-         |  |           |- Identifier i
-         |  |           `- IntegerLiteral (1)
-         |  `- [body]
-         |     `- CompoundStmt
-         |        `- AssignStmt
-         |           |- [target]
-         |           |  `- Identifier x
-         |           `- [value]
-         |              `- BinaryOperator |
-         |                 |- Identifier x
-         |                 `- BinaryOperator <<
-         |                    |- IntegerLiteral (1)
-         |                    `- Identifier i
-         `- ReturnStmt
+   |- FunctionDecl main() -> void
+   |  `- CompoundStmt
+   |     |- VarDecl a : u8
+   |     |  `- BinaryOperator &
+   |     |     |- IntegerLiteral (5)
+   |     |     `- IntegerLiteral (3)
+   |     |- VarDecl b : u8
+   |     |  `- BinaryOperator |
+   |     |     |- IntegerLiteral (5)
+   |     |     `- IntegerLiteral (2)
+   |     |- VarDecl c : u8
+   |     |  `- BinaryOperator ^
+   |     |     |- IntegerLiteral (5)
+   |     |     `- IntegerLiteral (1)
+   |     |- VarDecl d : u8
+   |     |  `- UnaryOperator ~
+   |     |     `- IntegerLiteral (5)
+   |     |- VarDecl e : u8
+   |     |  `- BinaryOperator <<
+   |     |     |- IntegerLiteral (1)
+   |     |     `- IntegerLiteral (2)
+   |     |- VarDecl f : u8
+   |     |  `- BinaryOperator >>
+   |     |     |- IntegerLiteral (16)
+   |     |     `- IntegerLiteral (2)
+   |     |- VarDecl g : u8
+   |     |  `- BinaryOperator |
+   |     |     |- BinaryOperator |
+   |     |     |  |- IntegerLiteral (1)
+   |     |     |  `- IntegerLiteral (2)
+   |     |     `- IntegerLiteral (4)
+   |     |- VarDecl h : u8
+   |     |  `- BinaryOperator &
+   |     |     |- BinaryOperator &
+   |     |     |  |- IntegerLiteral (1)
+   |     |     |  `- IntegerLiteral (2)
+   |     |     `- IntegerLiteral (4)
+   |     |- VarDecl i : u8
+   |     |  `- BinaryOperator ^
+   |     |     |- BinaryOperator ^
+   |     |     |  |- IntegerLiteral (1)
+   |     |     |  `- IntegerLiteral (2)
+   |     |     `- IntegerLiteral (4)
+   |     |- VarDecl j : u8
+   |     |  `- BinaryOperator <<
+   |     |     |- BinaryOperator <<
+   |     |     |  |- IntegerLiteral (1)
+   |     |     |  `- IntegerLiteral (1)
+   |     |     `- IntegerLiteral (1)
+   |     |- VarDecl k : u8
+   |     |  `- BinaryOperator >>
+   |     |     |- BinaryOperator >>
+   |     |     |  |- IntegerLiteral (16)
+   |     |     |  `- IntegerLiteral (1)
+   |     |     `- IntegerLiteral (1)
+   |     |- VarDecl l : u8
+   |     |  `- BinaryOperator |
+   |     |     |- IntegerLiteral (1)
+   |     |     `- BinaryOperator ^
+   |     |        |- BinaryOperator &
+   |     |        |  |- IntegerLiteral (2)
+   |     |        |  `- IntegerLiteral (3)
+   |     |        `- IntegerLiteral (4)
+   |     |- VarDecl m : u8
+   |     |  `- BinaryOperator <<
+   |     |     |- IntegerLiteral (1)
+   |     |     `- BinaryOperator +
+   |     |        |- IntegerLiteral (2)
+   |     |        `- IntegerLiteral (1)
+   |     |- VarDecl n : u8
+   |     |  `- BinaryOperator <<
+   |     |     |- BinaryOperator +
+   |     |     |  |- IntegerLiteral (1)
+   |     |     |  `- IntegerLiteral (2)
+   |     |     `- IntegerLiteral (1)
+   |     |- VarDecl o : u8
+   |     |  `- BinaryOperator <
+   |     |     |- BinaryOperator <<
+   |     |     |  |- IntegerLiteral (1)
+   |     |     |  `- IntegerLiteral (2)
+   |     |     `- IntegerLiteral (8)
+   |     |- VarDecl p : u8
+   |     |  `- BinaryOperator &&
+   |     |     |- BinaryOperator &
+   |     |     |  |- IntegerLiteral (1)
+   |     |     |  `- IntegerLiteral (1)
+   |     |     `- BinaryOperator |
+   |     |        |- IntegerLiteral (2)
+   |     |        `- IntegerLiteral (0)
+   |     |- VarDecl q : u8
+   |     |  `- BinaryOperator &
+   |     |     |- BinaryOperator ==
+   |     |     |  |- IntegerLiteral (1)
+   |     |     |  `- IntegerLiteral (1)
+   |     |     `- IntegerLiteral (1)
+   |     |- VarDecl r : u8
+   |     |  `- UnaryOperator ~
+   |     |     `- UnaryOperator ~
+   |     |        `- IntegerLiteral (5)
+   |     |- VarDecl s : u8
+   |     |  `- UnaryOperator ~
+   |     |     `- BinaryOperator &
+   |     |        |- IntegerLiteral (5)
+   |     |        `- IntegerLiteral (3)
+   |     |- VarDecl t : u8
+   |     |  `- BinaryOperator |
+   |     |     |- UnaryOperator ~
+   |     |     |  `- IntegerLiteral (5)
+   |     |     `- IntegerLiteral (2)
+   |     |- VarDecl x : u8
+   |     |  `- IntegerLiteral (10)
+   |     |- VarDecl y : u8
+   |     |  `- BinaryOperator &
+   |     |     |- Identifier x
+   |     |     `- IntegerLiteral (1)
+   |     |- VarDecl z : u8*
+   |     |  `- UnaryOperator &
+   |     |     `- Identifier x
+   |     |- IfStmt
+   |     |  |- [cond]
+   |     |  |  `- BinaryOperator ==
+   |     |  |     |- BinaryOperator &
+   |     |  |     |  |- Identifier x
+   |     |  |     |  `- IntegerLiteral (1)
+   |     |  |     `- IntegerLiteral (0)
+   |     |  |- [then body]
+   |     |  |  `- CompoundStmt
+   |     |  |     `- AssignStmt
+   |     |  |        |- [target]
+   |     |  |        |  `- Identifier x
+   |     |  |        `- [value]
+   |     |  |           `- BinaryOperator |
+   |     |  |              |- Identifier x
+   |     |  |              `- IntegerLiteral (1)
+   |     |     `- IfStmt
+   |     |        |- [cond]
+   |     |        |  `- BinaryOperator >
+   |     |        |     |- BinaryOperator >>
+   |     |        |     |  |- Identifier x
+   |     |        |     |  `- IntegerLiteral (1)
+   |     |        |     `- IntegerLiteral (2)
+   |     |        |- [then body]
+   |     |        |  `- CompoundStmt
+   |     |        |     `- AssignStmt
+   |     |        |        |- [target]
+   |     |        |        |  `- Identifier x
+   |     |        |        `- [value]
+   |     |        |           `- BinaryOperator ^
+   |     |        |              |- Identifier x
+   |     |        |              `- IntegerLiteral (255)
+   |     |           `- CompoundStmt
+   |     |              `- AssignStmt
+   |     |                 |- [target]
+   |     |                 |  `- Identifier x
+   |     |                 `- [value]
+   |     |                    `- UnaryOperator ~
+   |     |                       `- Identifier x
+   |     |- WhileStmt
+   |     |  |- [cond]
+   |     |  |  `- BinaryOperator !=
+   |     |  |     |- BinaryOperator &
+   |     |  |     |  |- Identifier x
+   |     |  |     |  `- IntegerLiteral (15)
+   |     |  |     `- IntegerLiteral (0)
+   |     |  `- [body]
+   |     |     `- CompoundStmt
+   |     |        `- AssignStmt
+   |     |           |- [target]
+   |     |           |  `- Identifier x
+   |     |           `- [value]
+   |     |              `- BinaryOperator >>
+   |     |                 |- Identifier x
+   |     |                 `- IntegerLiteral (1)
+   |     |- ForStmt
+   |     |  |- [init]
+   |     |  |  `- VarDecl i : u8
+   |     |  |     `- IntegerLiteral (0)
+   |     |  |- [cond]
+   |     |  |  `- BinaryOperator <
+   |     |  |     |- Identifier i
+   |     |  |     `- IntegerLiteral (8)
+   |     |  |- [step]
+   |     |  |  `- AssignStmt
+   |     |  |     |- [target]
+   |     |  |     |  `- Identifier i
+   |     |  |     `- [value]
+   |     |  |        `- BinaryOperator +
+   |     |  |           |- Identifier i
+   |     |  |           `- IntegerLiteral (1)
+   |     |  `- [body]
+   |     |     `- CompoundStmt
+   |     |        `- AssignStmt
+   |     |           |- [target]
+   |     |           |  `- Identifier x
+   |     |           `- [value]
+   |     |              `- BinaryOperator |
+   |     |                 |- Identifier x
+   |     |                 `- BinaryOperator <<
+   |     |                    |- IntegerLiteral (1)
+   |     |                    `- Identifier i
+   |     `- ReturnStmt
+   `- ForwardDecl __heap_start : u16

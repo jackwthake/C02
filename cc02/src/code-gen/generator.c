@@ -1693,6 +1693,42 @@ static void emit_symbol_table(emitter_t *e) {
 } 
 
 
+// Allocate RAM and emit initialisers for compiler-defined externs (decl).
+// Called after emit_global_init so the init sequence is contiguous, and before
+// function emission so lookup_global() finds these symbols via absolute addressing.
+// Unknown externs and function externs are silently skipped — those are resolved
+// at IR-link time, not here.
+static void emit_compiler_extern_inits(emitter_t *e, ir_gen_t *gen) {
+  for (unsigned i = 0; i < gen->module.extern_count; i++) {
+    ir_extern_t *ext = &gen->module.externs[i];
+    if (ext->is_function) continue;
+
+    if (strcmp(ext->name, "__heap_start") == 0) {
+      uint16_t addr = e->ram_pos;
+      e->ram_pos += 2;
+
+      // Extend global_entries so lookup_global() uses absolute addressing.
+      unsigned new_count    = e->global_entry_count + 1;
+      global_entry_t *grown = arena_alloc(&e->arena, new_count * sizeof(global_entry_t));
+      if (e->global_entry_count > 0)
+        memcpy(grown, e->global_entries, e->global_entry_count * sizeof(global_entry_t));
+      grown[e->global_entry_count] = (global_entry_t){
+        .name = ext->name, .ram_addr = addr, .size = 2, .type = ext->type
+      };
+      e->global_entries     = grown;
+      e->global_entry_count = new_count;
+
+      // Store the heap-start address (first free RAM byte after all globals).
+      lda_imm(e, (uint8_t)(e->ram_pos & 0xFF));
+      sta_abs(e, addr);
+      lda_imm(e, (uint8_t)(e->ram_pos >> 8));
+      sta_abs(e, (uint16_t)(addr + 1));
+    }
+    // Future compiler externs: add else-if branches here.
+  }
+}
+
+
 // ----------------------------------------------------------------
 // Main code gen
 // ----------------------------------------------------------------
@@ -1720,6 +1756,7 @@ uint8_t *generate_rom(ir_gen_t *gen, size_t *final_rom_size, int emit_symbols) {
   allocate_globals(&e, gen);
   emit_bootstrap(&e);
   emit_global_init(&e, gen);
+  emit_compiler_extern_inits(&e, gen);
   emit_call_main(&e);
 
   for (unsigned i = 0; i < gen->module.cfg_count; ++i) {

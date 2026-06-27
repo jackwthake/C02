@@ -689,6 +689,18 @@ def test_div_u16():
     return True, None
 
 
+def test_global_ram_top():
+    """__heap_start == $0203: u8 x at $0200, __heap_start at $0201, heap starts at $0203."""
+    source = os.path.join(SCRIPT_DIR, "emu_global_ram_top.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000] | (mpu.memory[0x6001] << 8)
+    if val != 0x0203:
+        return False, f"__heap_start = {val:#06x}, expected 0x0203"
+    return True, None
+
+
 def test_binop_widen():
     """u8(1) + u16(500): narrow operand widened, result is 501 = 0x01F5 (high byte = 1)."""
     source = os.path.join(SCRIPT_DIR, "emu_binop_widen.c02")
@@ -943,6 +955,7 @@ TESTS = [
     ("mul_u16", test_mul_u16),
     ("mul_u16_wrap", test_mul_u16_wrap),
     ("div_u16", test_div_u16),
+    ("global_ram_top", test_global_ram_top),
     ("binop_widen", test_binop_widen),
     ("cmp_mixed_sign", test_cmp_mixed_sign),
     ("lcd_simplified", test_lcd_simplified),

@@ -211,8 +211,23 @@ int run_compiler(params_t *params, timing_t *timing) {
 
   int status = load_source(params, &c, timing);
 
-  if (status == 0 && !params->is_input_bin)
+  if (status == 0 && !params->is_input_bin) {
+    // inject compiler globals;
+    const char *externs = "\ndecl u16 __heap_start;";
+    size_t extern_length = strlen(externs);
+
+    c.source_size += (long)extern_length;
+    char *new_source = realloc(c.source_code, (size_t)c.source_size);
+    if (!new_source) {
+      compiler_cleanup(&c);
+      return TOKEN_ERROR_RET_CODE;
+    }
+    
+    c.source_code = new_source;
+    strcat(c.source_code, externs);
+
     status = run_frontend(params, &c, timing);
+  }
 
   if (status == 0 && !params->syntax_only)
     status = run_ir(params, &c, timing);

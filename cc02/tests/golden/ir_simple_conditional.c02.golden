@@ -1,4 +1,7 @@
 
+--- Externs ---
+  decl u16 __heap_start
+
 --- Functions ---
 fn main() -> void {
 block0:

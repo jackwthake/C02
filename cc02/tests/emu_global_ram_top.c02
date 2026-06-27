@@ -1,0 +1,7 @@
+reg u16 PORT16 @ 0x6000;
+
+u8 x = 42;
+
+fn main() -> void {
+  PORT16 = __heap_start;
+}

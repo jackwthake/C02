@@ -2,6 +2,7 @@
 --- Externs ---
   decl fn send_byte(u8 b) -> void
   decl u8 counter
+  decl u16 __heap_start
 
 --- Functions ---
 fn main() -> void {
