@@ -33,7 +33,13 @@
 #define HELPER_ARG2 0xE9  // divisor  / multiplier   (modified by helpers)
 #define HELPER_RES  0xEA  // quotient / product
 #define HELPER_REM  0xEB  // remainder (division only)
-#define HELPER_SIGN 0xEC  // sign flags for __sdiv8 (bit7=negate quotient, bit6=negate remainder)
+#define HELPER_SIGN 0xEC  // sign flags for __sdiv8/__sdiv16 (bit7=negate quotient, bit6=negate remainder)
+
+// 16-bit helper ZP slots ($E0–$E7, below the 8-bit helper zone at $E8)
+#define HELPER16_ARG1 0xE0  // 2 bytes: dividend/multiplicand (lo=$E0, hi=$E1)
+#define HELPER16_ARG2 0xE2  // 2 bytes: divisor/multiplier   (lo=$E2, hi=$E3)
+#define HELPER16_RES  0xE4  // 2 bytes: quotient/product     (lo=$E4, hi=$E5)
+#define HELPER16_REM  0xE6  // 2 bytes: remainder            (lo=$E6, hi=$E7)
 
 
 // ----------------------------------------------------------------
@@ -112,6 +118,12 @@ static void zp_map_add(emitter_t *e, zp_map_t *map, tac_operand_kind_t kind,
   }
 
   unsigned size = full_type_size(e, type);
+  if ((unsigned)map->next_addr + size > HELPER16_ARG1) {
+    fprintf(stderr, "codegen: ZP space exhausted (next=$%02X, need %u bytes, limit=$%02X)\n",
+            map->next_addr, size, HELPER16_ARG1);
+    return;
+  }
+
   zp_entry_t *entry = &map->entries[map->count++];
   entry->kind = kind;
   if (kind == OPERAND_VAR) entry->name = name;
@@ -1074,68 +1086,59 @@ static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
 
         // -- arithmetic --
 
-#define EMIT_INT8_HELPER(OP, ROUTINE, RESULT_SLOT, NEEDS_FLAG, ERR)            \
-        case OP: {                                                             \
-          if (codegen_type_size(instruction->dst.type) > 1) {                  \
-            fprintf(stderr, "codegen: u16 " ERR " not yet implemented\n");     \
-            return 0;                                                          \
-          }                                                                    \
-          emit_load_byte(e, &map, &instruction->src1, 0);                      \
-          sta_zpg(e, HELPER_ARG1);                                             \
-          emit_load_byte(e, &map, &instruction->src2, 0);                      \
-          sta_zpg(e, HELPER_ARG2);                                             \
-          jsr(e, ROUTINE);                                                     \
-          lda_zpg(e, RESULT_SLOT);                                             \
-          emit_store_byte(e, &map, &instruction->dst, 0);                      \
-          e->NEEDS_FLAG = 1;                                                   \
-          break;                                                               \
+// Load src1/src2 into 8-bit helper slots, JSR, read one result byte.
+#define EMIT_ARITH8(ROUTINE, RES_SLOT, NEEDS_FLAG) do {                                   \
+  emit_load_byte(e, &map, &instruction->src1, 0); sta_zpg(e, HELPER_ARG1);                \
+  emit_load_byte(e, &map, &instruction->src2, 0); sta_zpg(e, HELPER_ARG2);                \
+  jsr(e, ROUTINE); e->NEEDS_FLAG = 1;                                                     \
+  lda_zpg(e, RES_SLOT); emit_store_byte(e, &map, &instruction->dst, 0);                   \
+} while (0)
+
+// Load src1/src2 into 16-bit helper slots, JSR, read two result bytes.
+#define EMIT_ARITH16(ROUTINE, RES_SLOT, NEEDS_FLAG) do {                                  \
+  emit_load_byte(e, &map, &instruction->src1, 0); sta_zpg(e, HELPER16_ARG1);              \
+  emit_load_byte(e, &map, &instruction->src1, 1); sta_zpg(e, (uint8_t)(HELPER16_ARG1+1)); \
+  emit_load_byte(e, &map, &instruction->src2, 0); sta_zpg(e, HELPER16_ARG2);              \
+  emit_load_byte(e, &map, &instruction->src2, 1); sta_zpg(e, (uint8_t)(HELPER16_ARG2+1)); \
+  jsr(e, ROUTINE); e->NEEDS_FLAG = 1;                                                     \
+  lda_zpg(e, RES_SLOT); emit_store_byte(e, &map, &instruction->dst, 0);                   \
+  lda_zpg(e, (uint8_t)((RES_SLOT)+1)); emit_store_byte(e, &map, &instruction->dst, 1);    \
+} while (0)
+
+        case TAC_MUL: {
+          if (codegen_type_size(instruction->dst.type) > 1)
+            EMIT_ARITH16("__mul16", HELPER16_RES, needs_mul16);
+          else
+            EMIT_ARITH8("__mul8", HELPER_RES, needs_mul8);
+          break;
         }
 
-        EMIT_INT8_HELPER(TAC_MUL, "__mul8", HELPER_RES, needs_mul8, "multiply")
-
         case TAC_DIV: {
+          int is_s = is_signed_type(instruction->dst.type);
           if (codegen_type_size(instruction->dst.type) > 1) {
-            fprintf(stderr, "codegen: u16 divide not yet implemented\n");
-            return 0;
-          }
-          emit_load_byte(e, &map, &instruction->src1, 0);
-          sta_zpg(e, HELPER_ARG1);
-          emit_load_byte(e, &map, &instruction->src2, 0);
-          sta_zpg(e, HELPER_ARG2);
-          if (is_signed_type(instruction->dst.type)) {
-            jsr(e, "__sdiv8");
-            e->needs_sdiv8 = 1;
+            if (is_s) EMIT_ARITH16("__sdiv16", HELPER16_RES, needs_sdiv16);
+            else      EMIT_ARITH16("__div16",  HELPER16_RES, needs_div16);
           } else {
-            jsr(e, "__div8");
-            e->needs_div8 = 1;
+            if (is_s) EMIT_ARITH8("__sdiv8", HELPER_RES, needs_sdiv8);
+            else      EMIT_ARITH8("__div8",  HELPER_RES, needs_div8);
           }
-          lda_zpg(e, HELPER_RES);
-          emit_store_byte(e, &map, &instruction->dst, 0);
           break;
         }
 
         case TAC_MOD: {
+          int is_s = is_signed_type(instruction->dst.type);
           if (codegen_type_size(instruction->dst.type) > 1) {
-            fprintf(stderr, "codegen: u16 modulo not yet implemented\n");
-            return 0;
-          }
-          emit_load_byte(e, &map, &instruction->src1, 0);
-          sta_zpg(e, HELPER_ARG1);
-          emit_load_byte(e, &map, &instruction->src2, 0);
-          sta_zpg(e, HELPER_ARG2);
-          if (is_signed_type(instruction->dst.type)) {
-            jsr(e, "__sdiv8");
-            e->needs_sdiv8 = 1;
+            if (is_s) EMIT_ARITH16("__sdiv16", HELPER16_REM, needs_sdiv16);
+            else      EMIT_ARITH16("__div16",  HELPER16_REM, needs_div16);
           } else {
-            jsr(e, "__div8");
-            e->needs_div8 = 1;
+            if (is_s) EMIT_ARITH8("__sdiv8", HELPER_REM, needs_sdiv8);
+            else      EMIT_ARITH8("__div8",  HELPER_REM, needs_div8);
           }
-          lda_zpg(e, HELPER_REM);
-          emit_store_byte(e, &map, &instruction->dst, 0);
           break;
         }
 
-#undef EMIT_INT8_HELPER
+#undef EMIT_ARITH8
+#undef EMIT_ARITH16
 
         case TAC_BAND: {
           unsigned width = codegen_type_size(instruction->dst.type);
@@ -1407,6 +1410,7 @@ static void emit_mul8_helper(emitter_t *e) {
   rts(e);
 }
 
+
 // i8 signed divide: HELPER_ARG1 / HELPER_ARG2 → HELPER_RES (quotient), HELPER_REM (remainder).
 // Encodes signs in HELPER_SIGN (bit7=negate quotient, bit6=negate remainder), takes absolute
 // values, calls __div8, then restores signs. Follows C truncation-toward-zero convention.
@@ -1458,6 +1462,7 @@ static void emit_sdiv8_helper(emitter_t *e) {
   rts(e);
 }
 
+
 // u8 divide: HELPER_ARG1 / HELPER_ARG2 → HELPER_RES (quotient), HELPER_REM (remainder).
 // Uses binary long division (shift-subtract). ARG1 is consumed.
 //
@@ -1484,6 +1489,204 @@ static void emit_div8_helper(emitter_t *e) {
   bne_rel(e, (uint8_t)(256u - 18u)); // back to ASL
   rts(e);
 }
+
+
+// u16 multiply: HELPER16_ARG1 * HELPER16_ARG2 → HELPER16_RES (shift-and-add).
+// Both ARG operands are consumed. Correct for signed i16 (low 16 bits are sign-agnostic).
+//
+// Loop body layout (26 bytes per iteration):
+//   LSR ARG2_HI (2) | ROR ARG2_LO (2) | BCC +13 (2) | CLC (1) | LDA RES_LO (2)
+//   | ADC ARG1_LO (2) | STA RES_LO (2) | LDA RES_HI (2) | ADC ARG1_HI (2)
+//   | STA RES_HI (2) [BCC target:] | ASL ARG1_LO (2) | ROL ARG1_HI (2)
+//   | DEX (1) | BNE -26 (2)
+static void emit_mul16_helper(emitter_t *e) {
+  register_func_label(e, "__mul16", (uint16_t)(ROM_START + e->code_pos));
+  lda_imm(e, 0);
+  sta_zpg(e, HELPER16_RES);
+  sta_zpg(e, (uint8_t)(HELPER16_RES + 1));
+  ldx_imm(e, 16);
+  // loop:
+  lsr_zpg(e, (uint8_t)(HELPER16_ARG2 + 1)); // shift multiplier right, LSB of full 16-bit → carry
+  ror_zpg(e, HELPER16_ARG2);
+  bcc_rel(e, 13);                             // skip add if LSB was 0
+  clc(e);
+  lda_zpg(e, HELPER16_RES);
+  adc_zpg(e, HELPER16_ARG1);
+  sta_zpg(e, HELPER16_RES);
+  lda_zpg(e, (uint8_t)(HELPER16_RES + 1));
+  adc_zpg(e, (uint8_t)(HELPER16_ARG1 + 1));
+  sta_zpg(e, (uint8_t)(HELPER16_RES + 1));
+  // no_add (BCC target, byte 19 from loop start):
+  asl_zpg(e, HELPER16_ARG1);
+  rol_zpg(e, (uint8_t)(HELPER16_ARG1 + 1));
+  dex(e);
+  bne_rel(e, (uint8_t)(256u - 26u));          // back to LSR
+  rts(e);
+}
+
+
+// u16 divide: HELPER16_ARG1 / HELPER16_ARG2 → HELPER16_RES (quotient), HELPER16_REM (remainder).
+// Uses CMP-based comparison to correctly handle divisors with bit 15 set (≥ $8000).
+// ARG1 is consumed. Sets carry correctly for ROL quotient: 1=subtracted, 0=skipped.
+//
+// Loop body layout (45 bytes per iteration):
+//   ASL ARG1 (2) | ROL ARG1_HI (2) | ROL REM (2) | ROL REM_HI (2) | BCS dosub+14 (2)
+//   | LDA REM_HI (2) | CMP ARG2_HI (2) | BCC nosub+22 (2) | BNE dosub+6 (2)
+//   | LDA REM (2) | CMP ARG2 (2) | BCC nosub+14 (2)
+//   [dosub:] SEC (1) | LDA REM (2) | SBC ARG2 (2) | STA REM (2) | LDA REM_HI (2)
+//   | SBC ARG2_HI (2) | STA REM_HI (2) | SEC (1)
+//   [nosub:] ROL RES (2) | ROL RES_HI (2) | DEX (1) | BNE -45 (2)
+static void emit_div16_helper(emitter_t *e) {
+  register_func_label(e, "__div16", (uint16_t)(ROM_START + e->code_pos));
+  lda_imm(e, 0);
+  sta_zpg(e, HELPER16_REM);
+  sta_zpg(e, (uint8_t)(HELPER16_REM + 1));
+  sta_zpg(e, HELPER16_RES);
+  sta_zpg(e, (uint8_t)(HELPER16_RES + 1));
+  ldx_imm(e, 16);
+  // loop:
+  asl_zpg(e, HELPER16_ARG1);
+  rol_zpg(e, (uint8_t)(HELPER16_ARG1 + 1));
+  rol_zpg(e, HELPER16_REM);
+  rol_zpg(e, (uint8_t)(HELPER16_REM + 1));   // carry = 17th-bit overflow (REM ≥ $10000)
+  bcs_rel(e, 14);                              // overflow → must subtract regardless of compare
+  lda_zpg(e, (uint8_t)(HELPER16_REM + 1));
+  cmp_zpg(e, (uint8_t)(HELPER16_ARG2 + 1));
+  bcc_rel(e, 22);                              // REM_HI < ARG2_HI → no subtract
+  bne_rel(e, 6);                               // REM_HI > ARG2_HI → subtract
+  lda_zpg(e, HELPER16_REM);
+  cmp_zpg(e, HELPER16_ARG2);
+  bcc_rel(e, 14);                              // REM_LO < ARG2_LO (hi equal) → no subtract
+  // dosub (byte 24 from loop start):
+  sec(e);
+  lda_zpg(e, HELPER16_REM);
+  sbc_zpg(e, HELPER16_ARG2);
+  sta_zpg(e, HELPER16_REM);
+  lda_zpg(e, (uint8_t)(HELPER16_REM + 1));
+  sbc_zpg(e, (uint8_t)(HELPER16_ARG2 + 1));
+  sta_zpg(e, (uint8_t)(HELPER16_REM + 1));
+  sec(e);                                      // carry = 1: quotient bit = 1
+  // nosub (byte 38 from loop start):
+  rol_zpg(e, HELPER16_RES);
+  rol_zpg(e, (uint8_t)(HELPER16_RES + 1));
+  dex(e);
+  bne_rel(e, (uint8_t)(256u - 45u));           // back to ASL
+  rts(e);
+}
+
+
+// i16 signed divide: HELPER16_ARG1 / HELPER16_ARG2 → HELPER16_RES, HELPER16_REM.
+// Records sign in HELPER_SIGN (bit7=negate quotient, bit6=negate remainder),
+// takes absolute values, calls __div16, then restores signs. Truncates toward zero.
+static void emit_sdiv16_helper(emitter_t *e) {
+  register_func_label(e, "__sdiv16", (uint16_t)(ROM_START + e->code_pos));
+  lda_imm(e, 0);
+  sta_zpg(e, HELPER_SIGN);
+
+  // If ARG1 negative: negate it, set bits 7+6 in SIGN (both quotient and remainder flip).
+  lda_zpg(e, (uint8_t)(HELPER16_ARG1 + 1));
+  bpl_rel(e, 17);                              // skip 17 bytes if positive
+  sec(e);
+  lda_imm(e, 0);
+  sbc_zpg(e, HELPER16_ARG1);
+  sta_zpg(e, HELPER16_ARG1);
+  lda_imm(e, 0);
+  sbc_zpg(e, (uint8_t)(HELPER16_ARG1 + 1));
+  sta_zpg(e, (uint8_t)(HELPER16_ARG1 + 1));
+  lda_imm(e, 0xC0);
+  sta_zpg(e, HELPER_SIGN);
+  // pos_arg1 (byte 25 from function start):
+
+  // If ARG2 negative: negate it, toggle bit 7 in SIGN (quotient sign flips again).
+  lda_zpg(e, (uint8_t)(HELPER16_ARG2 + 1));
+  bpl_rel(e, 19);                              // skip 19 bytes if positive
+  sec(e);
+  lda_imm(e, 0);
+  sbc_zpg(e, HELPER16_ARG2);
+  sta_zpg(e, HELPER16_ARG2);
+  lda_imm(e, 0);
+  sbc_zpg(e, (uint8_t)(HELPER16_ARG2 + 1));
+  sta_zpg(e, (uint8_t)(HELPER16_ARG2 + 1));
+  lda_zpg(e, HELPER_SIGN);
+  eor_imm(e, 0x80);
+  sta_zpg(e, HELPER_SIGN);
+  // pos_arg2 (byte 48 from function start):
+
+  jsr(e, "__div16");
+
+  // Negate quotient if bit 7 of SIGN set.
+  lda_zpg(e, HELPER_SIGN);
+  bpl_rel(e, 13);                              // skip 13 bytes if bit 7 = 0
+  sec(e);
+  lda_imm(e, 0);
+  sbc_zpg(e, HELPER16_RES);
+  sta_zpg(e, HELPER16_RES);
+  lda_imm(e, 0);
+  sbc_zpg(e, (uint8_t)(HELPER16_RES + 1));
+  sta_zpg(e, (uint8_t)(HELPER16_RES + 1));
+  // pos_res (byte 68 from function start):
+
+  // Negate remainder if bit 6 of SIGN set.
+  lda_zpg(e, HELPER_SIGN);
+  and_imm(e, 0x40);
+  beq_rel(e, 13);                              // skip 13 bytes if bit 6 = 0
+  sec(e);
+  lda_imm(e, 0);
+  sbc_zpg(e, HELPER16_REM);
+  sta_zpg(e, HELPER16_REM);
+  lda_imm(e, 0);
+  sbc_zpg(e, (uint8_t)(HELPER16_REM + 1));
+  sta_zpg(e, (uint8_t)(HELPER16_REM + 1));
+  // pos_rem (byte 87 from function start):
+
+  rts(e);
+}
+
+
+// ROM footer layout (offsets from ROM_START):
+//   $FFF6-$FFF7  SYMTABLE_START_PTR:   little-endian absolute address of the "C02S" symbol
+//                table header, or $EAEA (NOP fill) if no table was written. The disassembler
+//                reads this first; old binaries that lack a table have $EAEA here, which is
+//                in range but fails the magic-byte check, so they degrade gracefully.
+//   $FFF8-$FFF9  SYMTABLE_BOUNDARY_PTR: little-endian absolute address of the first byte
+//                past the code+data region (= start of NOP fill). Used by the disassembler
+//                to know where executable/data bytes end and padding begins.
+//   $FFFA-$FFFF  NMI / Reset / IRQ vectors (written by emit_vectors).
+#define SYMTABLE_START_PTR    (0xFFF6 - ROM_START)
+#define SYMTABLE_BOUNDARY_PTR (0xFFF8 - ROM_START)
+
+// Write the "C02S" symbol table into the NOP fill area immediately after the data section,
+// then store its absolute address at SYMTABLE_START_PTR so the disassembler can find it.
+// Each entry is: u16 address (LE) + null-terminated name. The table is silently omitted if
+// the code+data section is too large to fit it before the footer (extremely unlikely in
+// practice — a fully packed 32KB image still leaves the footer region intact).
+static void emit_symbol_table(emitter_t *e) {
+  size_t sym_size = 6; // "C02S" (4) + count u16 (2)
+  for (unsigned i = 0; i < e->func_label_count; i++)
+    sym_size += 2 + strlen(e->func_labels[i].name) + 1;
+  
+  if (e->code_pos + sym_size <= SYMTABLE_START_PTR) {
+    uint16_t symtab_addr = (uint16_t)(ROM_START + e->code_pos);
+    uint8_t *p = e->rom + e->code_pos;
+    
+    // magic number then number of labels
+    *p++ = 'C'; *p++ = '0'; *p++ = '2'; *p++ = 'S';
+    *p++ = (uint8_t)(e->func_label_count & 0xFF);
+    *p++ = (uint8_t)(e->func_label_count >> 8);
+
+    for (unsigned i = 0; i < e->func_label_count; i++) {
+      uint16_t addr = e->func_labels[i].addr;
+      *p++ = (uint8_t)(addr & 0xFF);
+      *p++ = (uint8_t)(addr >> 8);
+      size_t len = strlen(e->func_labels[i].name);
+      memcpy(p, e->func_labels[i].name, len + 1);
+      p += len + 1;
+    }
+
+    e->rom[SYMTABLE_START_PTR]     = (uint8_t)(symtab_addr & 0xFF);
+    e->rom[SYMTABLE_START_PTR + 1] = (uint8_t)(symtab_addr >> 8);
+  }
+} 
 
 
 // ----------------------------------------------------------------
@@ -1524,9 +1727,14 @@ uint8_t *generate_rom(ir_gen_t *gen, size_t *final_rom_size, int emit_symbols) {
     }
   }
 
+  // add helpers
   if (e.needs_mul8) emit_mul8_helper(&e);
   if (e.needs_sdiv8) { emit_sdiv8_helper(&e); e.needs_div8 = 1; }
   if (e.needs_div8) emit_div8_helper(&e);
+
+  if (e.needs_mul16) emit_mul16_helper(&e);
+  if (e.needs_sdiv16) { emit_sdiv16_helper(&e); e.needs_div16 = 1; }
+  if (e.needs_div16) emit_div16_helper(&e);
 
   if (!resolve_func_fixups(&e)) {
     free(e.rom);
@@ -1537,38 +1745,13 @@ uint8_t *generate_rom(ir_gen_t *gen, size_t *final_rom_size, int emit_symbols) {
 
   emit_data_section(&e, gen);
 
-  // Symbol table lives in the NOP fill area between .data and $FFF6.
-  // $FFF6-$FFF7 = absolute address of the table (0xEAEA = absent).
-  // $FFF8-$FFF9 = code/data boundary (unchanged).
-  unsigned symtab_ptr_pos = 0xFFF6 - ROM_START;
-  unsigned boundary_pos   = 0xFFF8 - ROM_START;
-
   if (emit_symbols && e.func_label_count > 0) {
-    size_t sym_size = 6; // "C02S" (4) + count u16 (2)
-    for (unsigned i = 0; i < e.func_label_count; i++)
-      sym_size += 2 + strlen(e.func_labels[i].name) + 1;
-    if (e.code_pos + sym_size <= symtab_ptr_pos) {
-      uint16_t symtab_addr = (uint16_t)(ROM_START + e.code_pos);
-      uint8_t *p = e.rom + e.code_pos;
-      *p++ = 'C'; *p++ = '0'; *p++ = '2'; *p++ = 'S';
-      *p++ = (uint8_t)(e.func_label_count & 0xFF);
-      *p++ = (uint8_t)(e.func_label_count >> 8);
-      for (unsigned i = 0; i < e.func_label_count; i++) {
-        uint16_t addr = e.func_labels[i].addr;
-        *p++ = (uint8_t)(addr & 0xFF);
-        *p++ = (uint8_t)(addr >> 8);
-        size_t len = strlen(e.func_labels[i].name);
-        memcpy(p, e.func_labels[i].name, len + 1);
-        p += len + 1;
-      }
-      e.rom[symtab_ptr_pos]     = (uint8_t)(symtab_addr & 0xFF);
-      e.rom[symtab_ptr_pos + 1] = (uint8_t)(symtab_addr >> 8);
-    }
+    emit_symbol_table(&e);
   }
 
   uint16_t code_end_addr = (uint16_t)(ROM_START + e.data_pos);
-  e.rom[boundary_pos]     = (uint8_t)(code_end_addr & 0xFF);
-  e.rom[boundary_pos + 1] = (uint8_t)(code_end_addr >> 8);
+  e.rom[SYMTABLE_BOUNDARY_PTR]     = (uint8_t)(code_end_addr & 0xFF);
+  e.rom[SYMTABLE_BOUNDARY_PTR + 1] = (uint8_t)(code_end_addr >> 8);
 
   emit_vectors(&e);
   emitter_free(&e);

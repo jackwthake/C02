@@ -646,6 +646,49 @@ def test_mod_i8():
     return True, None
 
 
+def test_mul_u16():
+    """300 * 13 == 3900 (0x0F3C): tests 16-bit shift-and-add with carry propagation."""
+    source = os.path.join(SCRIPT_DIR, "emu_mul_u16.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    lo = mpu.memory[0x6000]
+    hi = mpu.memory[0x6001]
+    val = lo | (hi << 8)
+    if val != 3900:
+        return False, f"memory[$6000:$6001] = {val:#06x}, expected {3900:#06x}"
+    return True, None
+
+
+def test_mul_u16_wrap():
+    """256 * 256 == 0 (overflow wraps to low 16 bits)."""
+    source = os.path.join(SCRIPT_DIR, "emu_mul_u16_wrap.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    lo = mpu.memory[0x6000]
+    hi = mpu.memory[0x6001]
+    val = lo | (hi << 8)
+    if val != 0:
+        return False, f"memory[$6000:$6001] = {val:#06x}, expected 0x0000"
+    return True, None
+
+
+def test_div_u16():
+    """50000 / 0xC001 == 1, 50000 % 0xC001 == 847: tests high-bit divisor path."""
+    source = os.path.join(SCRIPT_DIR, "emu_div_u16.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    quot = mpu.memory[0x6000] | (mpu.memory[0x6001] << 8)
+    rem  = mpu.memory[0x6002] | (mpu.memory[0x6003] << 8)
+    if quot != 1:
+        return False, f"quotient = {quot:#06x}, expected 0x0001"
+    if rem != 847:
+        return False, f"remainder = {rem:#06x}, expected {847:#06x}"
+    return True, None
+
+
 def test_binop_widen():
     """u8(1) + u16(500): narrow operand widened, result is 501 = 0x01F5 (high byte = 1)."""
     source = os.path.join(SCRIPT_DIR, "emu_binop_widen.c02")
@@ -897,6 +940,9 @@ TESTS = [
     ("mod_u8", test_mod_u8),
     ("div_i8", test_div_i8),
     ("mod_i8", test_mod_i8),
+    ("mul_u16", test_mul_u16),
+    ("mul_u16_wrap", test_mul_u16_wrap),
+    ("div_u16", test_div_u16),
     ("binop_widen", test_binop_widen),
     ("cmp_mixed_sign", test_cmp_mixed_sign),
     ("lcd_simplified", test_lcd_simplified),
