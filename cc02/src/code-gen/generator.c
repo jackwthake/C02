@@ -191,6 +191,7 @@ static void register_func_label(emitter_t *e, char *name, uint16_t addr) {
 
 // Backpatch all JSR placeholders with resolved function addresses.
 static int resolve_func_fixups(emitter_t *e) {
+  if (e->overflow) return 1; // ROM already corrupt; generate_rom will catch it
   for (unsigned i = 0; i < e->fixup_count; i++) {
     fixup_t *f = &e->fixups[i];
     uint16_t addr = 0;
@@ -232,6 +233,7 @@ static void add_fixup(emitter_t *e, char *func_name) {
 
 // Backpatch all local label placeholders (JMP/COND_JUMP) within a function.
 static int resolve_local_fixups(emitter_t *e) {
+  if (e->overflow) return 1; // ROM already corrupt; generate_rom will catch it
   for (unsigned i = 0; i < e->local_fixup_count; i++) {
     fixup_t *f = &e->local_fixups[i];
     uint16_t addr = e->local_labels[f->label_id];
@@ -303,24 +305,34 @@ static void allocate_globals(emitter_t *e, ir_gen_t *gen) {
 // Op code emitters
 // ----------------------------------------------------------------
 
-#define EMIT(OP_CODE) e->rom[e->code_pos++] = OP_CODE
+#define EMIT(OP_CODE) do {                              \
+  if (e->code_pos >= ROM_SIZE) { e->overflow = 1; }     \
+  else { e->rom[e->code_pos++] = (uint8_t)(OP_CODE); }  \
+} while (0)
 
-#define OP_EMITTER_SINGLE_ARG(NAME, OP_CODE)       \
-  static void NAME(emitter_t *e, uint8_t byte) {   \
-    EMIT(OP_CODE);                                 \
-    EMIT(byte);                                    \
+// Write one byte to an already-emitted position (branch offset backpatch).
+// Guards against positions recorded after an overflow (which would be >= ROM_SIZE).
+#define PATCH_BYTE(POS, VAL) do {                       \
+  if ((POS) < ROM_SIZE) e->rom[(POS)] = (uint8_t)(VAL); \
+  else e->overflow = 1;                                 \
+} while (0)
+
+#define OP_EMITTER_SINGLE_ARG(NAME, OP_CODE)            \
+  static void NAME(emitter_t *e, uint8_t byte) {        \
+    EMIT(OP_CODE);                                      \
+    EMIT(byte);                                         \
   }
 
-#define OP_EMITTER_NO_ARG(NAME, OP_CODE)           \
-  static void NAME(emitter_t *e) {                 \
-    EMIT(OP_CODE);                                 \
+#define OP_EMITTER_NO_ARG(NAME, OP_CODE)                \
+  static void NAME(emitter_t *e) {                      \
+    EMIT(OP_CODE);                                      \
   }
 
-#define OP_EMITTER_ABS(NAME, OP_CODE)              \
-  static void NAME(emitter_t *e, uint16_t addr) {  \
-    EMIT(OP_CODE);                                 \
-    EMIT((uint8_t)(addr & 0xFF));                  \
-    EMIT((uint8_t)(addr >> 8));                    \
+#define OP_EMITTER_ABS(NAME, OP_CODE)                   \
+  static void NAME(emitter_t *e, uint16_t addr) {       \
+    EMIT(OP_CODE);                                      \
+    EMIT((uint8_t)(addr & 0xFF));                       \
+    EMIT((uint8_t)(addr >> 8));                         \
   }
 
 OP_EMITTER_SINGLE_ARG(lda_imm,   0xA9)
@@ -464,6 +476,11 @@ static void emit_data_section(emitter_t *e, ir_gen_t *gen) {
     for (size_t j = 0; j <= len; j++) {
       EMIT((uint8_t)g->str_val[j]);
     }
+  }
+
+  if (e->overflow) {
+    free(str_addrs);
+    return;
   }
 
   for (unsigned i = 0; i < e->data_fixup_count; i++) {
@@ -936,10 +953,10 @@ static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
             lda_imm(e, 0);
             EMIT(0xF0); p_done = e->code_pos; EMIT(0); // BEQ done
             // true:
-            e->rom[p_true] = (uint8_t)(e->code_pos - p_true - 1);
+            PATCH_BYTE(p_true, e->code_pos - p_true - 1);
             lda_imm(e, 1);
             // done:
-            e->rom[p_done] = (uint8_t)(e->code_pos - p_done - 1);
+            PATCH_BYTE(p_done, e->code_pos - p_done - 1);
             if (branch_op == 0xB0) {
               eor_imm(e, 0x01);
             }
@@ -954,14 +971,14 @@ static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
               emit_cmp_byte(e, &map, right, 0);
               EMIT(0xF0); p2 = e->code_pos; EMIT(0); // BEQ true
               // false:
-              e->rom[p1] = (uint8_t)(e->code_pos - p1 - 1);
+              PATCH_BYTE(p1, e->code_pos - p1 - 1);
               lda_imm(e, 0);
               EMIT(0xF0); p3 = e->code_pos; EMIT(0); // BEQ done
               // true:
-              e->rom[p2] = (uint8_t)(e->code_pos - p2 - 1);
+              PATCH_BYTE(p2, e->code_pos - p2 - 1);
               lda_imm(e, 1);
               // done:
-              e->rom[p3] = (uint8_t)(e->code_pos - p3 - 1);
+              PATCH_BYTE(p3, e->code_pos - p3 - 1);
             } else {
               emit_load_byte(e, &map, left, 1);
               emit_cmp_byte(e, &map, right, 1);
@@ -973,11 +990,11 @@ static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
               lda_imm(e, 0);
               EMIT(0xF0); p3 = e->code_pos; EMIT(0); // BEQ done
               // true:
-              e->rom[p1] = (uint8_t)(e->code_pos - p1 - 1);
-              e->rom[p2] = (uint8_t)(e->code_pos - p2 - 1);
+              PATCH_BYTE(p1, e->code_pos - p1 - 1);
+              PATCH_BYTE(p2, e->code_pos - p2 - 1);
               lda_imm(e, 1);
               // done:
-              e->rom[p3] = (uint8_t)(e->code_pos - p3 - 1);
+              PATCH_BYTE(p3, e->code_pos - p3 - 1);
             }
           } else if (!is_signed) {
             // u16 unsigned ordering
@@ -990,15 +1007,15 @@ static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
             emit_cmp_byte(e, &map, right, 0);
             EMIT(0x90); p_true2 = e->code_pos; EMIT(0);  // BCC true
             // false:
-            e->rom[p_false] = (uint8_t)(e->code_pos - p_false - 1);
+            PATCH_BYTE(p_false, e->code_pos - p_false - 1);
             lda_imm(e, 0);
             EMIT(0xF0); p_done = e->code_pos; EMIT(0);   // BEQ done
             // true:
-            e->rom[p_true1] = (uint8_t)(e->code_pos - p_true1 - 1);
-            e->rom[p_true2] = (uint8_t)(e->code_pos - p_true2 - 1);
+            PATCH_BYTE(p_true1, e->code_pos - p_true1 - 1);
+            PATCH_BYTE(p_true2, e->code_pos - p_true2 - 1);
             lda_imm(e, 1);
             // done:
-            e->rom[p_done] = (uint8_t)(e->code_pos - p_done - 1);
+            PATCH_BYTE(p_done, e->code_pos - p_done - 1);
             if (branch_op == 0xB0) {
               eor_imm(e, 0x01);
             }
@@ -1015,24 +1032,24 @@ static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
             // high bytes differ, not less → skip to false
             EMIT(0x4C); p_skip = e->code_pos; EMIT(0); EMIT(0); // JMP false
             // low_compare:
-            e->rom[p_low] = (uint8_t)(e->code_pos - p_low - 1);
+            PATCH_BYTE(p_low, e->code_pos - p_low - 1);
             emit_load_byte(e, &map, left, 0);
             emit_cmp_byte(e, &map, right, 0);
             EMIT(0x90); p_true2 = e->code_pos; EMIT(0);  // BCC true
             // false:
             {
               uint16_t false_addr = (uint16_t)(ROM_START + e->code_pos);
-              e->rom[p_skip]     = (uint8_t)(false_addr & 0xFF);
-              e->rom[p_skip + 1] = (uint8_t)(false_addr >> 8);
+              PATCH_BYTE(p_skip,     false_addr & 0xFF);
+              PATCH_BYTE(p_skip + 1, false_addr >> 8);
             }
             lda_imm(e, 0);
             EMIT(0xF0); p_done = e->code_pos; EMIT(0);   // BEQ done
             // true:
-            e->rom[p_true1] = (uint8_t)(e->code_pos - p_true1 - 1);
-            e->rom[p_true2] = (uint8_t)(e->code_pos - p_true2 - 1);
+            PATCH_BYTE(p_true1, e->code_pos - p_true1 - 1);
+            PATCH_BYTE(p_true2, e->code_pos - p_true2 - 1);
             lda_imm(e, 1);
             // done:
-            e->rom[p_done] = (uint8_t)(e->code_pos - p_done - 1);
+            PATCH_BYTE(p_done, e->code_pos - p_done - 1);
             if (branch_op == 0xB0) {
               eor_imm(e, 0x01);
             }
@@ -1668,28 +1685,27 @@ static void emit_symbol_table(emitter_t *e) {
   size_t sym_size = 6; // "C02S" (4) + count u16 (2)
   for (unsigned i = 0; i < e->func_label_count; i++)
     sym_size += 2 + strlen(e->func_labels[i].name) + 1;
-  
-  if (e->code_pos + sym_size <= SYMTABLE_START_PTR) {
-    uint16_t symtab_addr = (uint16_t)(ROM_START + e->code_pos);
-    uint8_t *p = e->rom + e->code_pos;
-    
-    // magic number then number of labels
-    *p++ = 'C'; *p++ = '0'; *p++ = '2'; *p++ = 'S';
-    *p++ = (uint8_t)(e->func_label_count & 0xFF);
-    *p++ = (uint8_t)(e->func_label_count >> 8);
 
-    for (unsigned i = 0; i < e->func_label_count; i++) {
-      uint16_t addr = e->func_labels[i].addr;
-      *p++ = (uint8_t)(addr & 0xFF);
-      *p++ = (uint8_t)(addr >> 8);
-      size_t len = strlen(e->func_labels[i].name);
-      memcpy(p, e->func_labels[i].name, len + 1);
-      p += len + 1;
-    }
+  if (e->code_pos + sym_size > SYMTABLE_START_PTR)
+    return;
 
-    e->rom[SYMTABLE_START_PTR]     = (uint8_t)(symtab_addr & 0xFF);
-    e->rom[SYMTABLE_START_PTR + 1] = (uint8_t)(symtab_addr >> 8);
+  uint16_t symtab_addr = (uint16_t)(ROM_START + e->code_pos);
+
+  // Magic number followed by number of symbols
+  EMIT('C'); EMIT('0'); EMIT('2'); EMIT('S');
+  EMIT((uint8_t)(e->func_label_count & 0xFF));
+  EMIT((uint8_t)(e->func_label_count >> 8));
+
+  for (unsigned i = 0; i < e->func_label_count; i++) {
+    uint16_t addr = e->func_labels[i].addr;
+    EMIT((uint8_t)(addr & 0xFF));
+    EMIT((uint8_t)(addr >> 8));
+    for (const char *n = e->func_labels[i].name; *n; n++) EMIT((uint8_t)*n);
+    EMIT(0);
   }
+
+  PATCH_BYTE(SYMTABLE_START_PTR,     symtab_addr & 0xFF);
+  PATCH_BYTE(SYMTABLE_START_PTR + 1, symtab_addr >> 8);
 } 
 
 
@@ -1784,10 +1800,33 @@ uint8_t *generate_rom(ir_gen_t *gen, size_t *final_rom_size, int emit_symbols) {
     return NULL;
   }
 
+  if (e.overflow) {
+    fprintf(stderr, "Code section generation failed: output exceeds 32 KB ROM.\n");
+    free(e.rom);
+    emitter_free(&e);
+    *final_rom_size = 0;
+    return NULL;
+  }
+
   emit_data_section(&e, gen);
+
+  if (e.overflow) {
+    fprintf(stderr, "Data section generation failed: output exceeds 32 KB ROM.\n");
+    free(e.rom);
+    emitter_free(&e);
+    *final_rom_size = 0;
+    return NULL;
+  }
 
   if (emit_symbols && e.func_label_count > 0) {
     emit_symbol_table(&e);
+    if (e.overflow) {
+      fprintf(stderr, "Symbol table generation failed: output exceeds 32 KB ROM.\n");
+      free(e.rom);
+      emitter_free(&e);
+      *final_rom_size = 0;
+      return NULL;
+    }
   }
 
   uint16_t code_end_addr = (uint16_t)(ROM_START + e.data_pos);

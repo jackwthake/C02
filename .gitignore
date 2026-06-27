@@ -7,3 +7,4 @@ bin/
 *.out
 *.bin
 __pycache__/
+compile_commands.json

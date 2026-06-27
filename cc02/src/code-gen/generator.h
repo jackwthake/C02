@@ -67,6 +67,8 @@ typedef struct {
   int needs_div16;
   int needs_sdiv16;
 
+  int overflow;
+
   func_label_t *func_labels;
   unsigned      func_label_count;
   unsigned      func_label_capacity;
