@@ -49,6 +49,8 @@ typedef struct {
 } data_fixup_t;
 
 typedef struct {
+  ir_gen_t *gen;
+
   arena_t  arena;
   uint8_t *rom;
   size_t   rom_size;
@@ -56,6 +58,9 @@ typedef struct {
   size_t   data_pos;
   uint16_t ram_pos;
   uint16_t zp_next;
+
+  int needs_mul8;
+  int needs_div8;
 
   func_label_t *func_labels;
   unsigned      func_label_count;

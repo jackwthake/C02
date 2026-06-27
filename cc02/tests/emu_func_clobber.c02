@@ -1,0 +1,11 @@
+reg u8 PORTB @ 0x6000;
+
+fn double_val(u8 a) -> u8 {
+  return a + a;
+}
+
+fn main() -> void {
+  u8 x = 5;
+  u8 r = double_val(3);
+  PORTB = x + r;
+}

@@ -7,6 +7,122 @@ and this project adheres to [Semantic Versioning](https://semver.org/) - while
 the project is in `0.x`, breaking changes may land in MINOR releases; PATCH
 releases are reserved for bug fixes only.
 
+## [v0.2.15] 2026-06-26
+
+- **Function call codegen (`TAC_CALL`)** — full caller/callee ABI using a fixed
+  2-byte ZP slot per parameter in the `$EF–$FE` ABI zone. Caller copies each
+  argument into its slot (`$EF`/`$F0` for arg 0, `$F1`/`$F2` for arg 1, etc.)
+  via `emit_load_byte`, which zero-extends u8 args into the hi byte automatically.
+  Callee prologue (`emit_function_prologue`) copies the ABI zone into the
+  function's own ZP slots at function entry; no-arg functions (including `main`)
+  skip the prologue entirely. Return values are already handled by the existing
+  `TAC_RETURN`→`$02/$03` path; `TAC_CALL` copies `$02/$03` into the destination
+  temp after `JSR`. Void calls skip the copy (`TYPE_VOID` guard). Max 8
+  parameters enforced at codegen with a hard error. Note: signed narrower→wider
+  widening at call sites (e.g. i8 arg into i16 param) is zero-extended, not
+  sign-extended; a future IR pass should insert explicit `TAC_CAST` nodes for
+  implicit widening in call arguments.
+- **Callee-saves ZP preservation** — every function (except `main`) pushes all
+  of its ZP slots onto the hardware stack at entry (via `PHA`) and pops them
+  in reverse order before every `RTS` (via `PLA`). This ensures the caller's
+  locals and temporaries survive across calls regardless of ZP slot overlap.
+  As a direct consequence, bounded recursion is now supported — stack depth is
+  limited to ≈256 / (function's ZP byte count) levels.
+- Emulator tests: `func_call_u8` (add(10,32)=42), `func_call_void`
+  (write_port(99)→PORTB=99), `func_call_u16` (sum16(200,300)=500, lo byte=244),
+  `func_clobber` (x=5 survives callee overwriting its ZP slot; result=11),
+  `func_recursive` (factorial(5)=120, exercises 5-level LIFO stack discipline).
+
+- **Struct field access codegen (`TAC_FIELD_LOAD` / `TAC_FIELD_STORE`)** — field
+  reads and writes for both by-value and pointer-to-struct operands. By-value
+  structs use `emit_load_byte`/`emit_store_byte` with `field->offset + b` so
+  global structs automatically get absolute addressing. Pointer-to-struct uses
+  `LDY #(offset+b); LDA/STA ($ptr),Y` with RAM→ZP sync when the pointer is a
+  global.
+  - `full_type_size(e, type)` — struct-aware sizing that consults
+    `ir_module_t.structs` for `TYPE_STRUCT`, replacing the silent `default:
+    return 1` fallback. Used in ZP map allocation (`zp_map_add`),
+    `allocate_globals`, `TAC_COPY`, and the new field ops. `zp_map_build` now
+    takes `emitter_t *e` so struct sizes are available during map construction.
+  - `lookup_struct_field(e, struct_name, field_name)` — field offset/type
+    lookup from the IR module, used by both `TAC_FIELD_LOAD` and
+    `TAC_FIELD_STORE`.
+  - `ir_gen_t *gen` added to `emitter_t` so the module's struct table is
+    reachable from all codegen paths.
+- **Bug fix: `++field` / `--field` not writing back** — `NODE_INC`/`NODE_DEC`
+  on a field-access target (`++str.val`) was loading the field into a temp,
+  incrementing the temp, then silently discarding it. The field was never
+  updated so the loop advanced zero steps each iteration. Fixed in the IR
+  generator: field-access targets now emit `TAC_FIELD_LOAD → TAC_INC/DEC →
+  TAC_FIELD_STORE` rather than loading a throwaway temp.
+- **Pointer arithmetic (`ptr + int`, `ptr - int`)** — the analyzer's
+  `NODE_BINOP` type-check now recognises pointer+integer as valid, returning
+  the pointer type unchanged. The IR already lowered this to `TAC_ADD`; codegen
+  and `TAC_LOAD` already handled the resulting pointer correctly, so no codegen
+  changes were needed.
+- **Zero-extension fix in `emit_load_byte` and `GLOBAL_AWARE_ALU_HELPER`** —
+  both helpers were reading `ZP + byte` even when `byte >= operand_size`,
+  pulling in whatever occupies the adjacent ZP slot as a phantom high byte.
+  Classic symptom: `u8 i` used as an index into a `u8*` pointer computes
+  `ptr + i + (adjacent_slot × 256)` — always a wrong address, always the same
+  garbage byte. Both paths now emit `LDA #0` / `IMM_FN(e, 0)` for
+  out-of-range byte indices. `OPERAND_CONST_INT` was already correct via
+  shift+mask. Fixes `lcd_hello_world_simplified.c02` printing one garbage
+  character in a loop instead of "Hello C02!".
+- Emulator tests: `field_local`, `field_global`, `field_ptr`, `lcd_simplified`
+  (verifies all 10 PORTB writes match "Hello C02!" in order).
+
+## [v0.2.14] 2026-06-26
+
+- **`TAC_ADDR_OF` (`&x`)** — address-of operator codegen. Globals resolve to
+  their RAM address (`g->ram_addr`); locals/temporaries resolve to their ZP
+  slot address. The 16-bit address is stored into the destination via two
+  `LDA imm; STA zpg` pairs (lo byte then hi byte).
+- **`TAC_STORE` pointer destination (`*p = val`)** — variable-destination
+  pointer stores now emit byte-wise `LDA src; STA ($ptr),Y` indirect indexed
+  writes. The pointer's ZP slot is kept in sync from its RAM address before
+  indirect access when the pointer is a global.
+- **Bitwise ops (`TAC_BAND`, `TAC_BOR`, `TAC_BXOR`, `TAC_BNOT`)** — width-aware
+  byte loops. `AND`/`ORA`/`EOR` use global-aware helpers (`emit_and_byte`,
+  `emit_ora_byte`, `emit_eor_byte`) dispatching imm/zpg/abs variants.
+  `TAC_BNOT` byte-loop `EOR #$FF`s each byte. New opcode emitters: `and_imm`,
+  `and_zpg`, `and_abs`, `eor_zpg`, `eor_abs`.
+- **Shift ops (`TAC_SHL`, `TAC_SHR`)** — both constant-count and variable-count
+  variants. Constant shifts unroll `ASL/ROL` (left) or `LSR/ROR` (right) pairs
+  per byte. Variable shifts use an X-register counter loop with hardcoded
+  relative branch offsets derived from fixed loop body sizes. Signed right shift
+  (`i8`/`i16`) uses the `CMP #$80; ROR` pattern — CMP sets carry = sign bit,
+  ROR shifts it in as the new MSB. New opcode emitters: `asl_zpg`, `rol_zpg`,
+  `lsr_zpg`, `ror_zpg`, `tax`, `dex`, `bcs_rel`, `bcc_rel`.
+- **`TAC_CAST` (type cast codegen)** — same-width copies, narrowing (low bytes
+  only), and widening with zero-extension (u8→u16) or sign-extension via
+  `CMP #$80; LDA #$FF; BCS +2; LDA #0` (i8→i16).
+- **`TAC_COPY` implicit widening fix** — `TAC_COPY` previously used the
+  destination size for all byte indices, reading garbage from adjacent ZP slots
+  when widening (e.g. u8→u16). Now computes `src_size`, `dst_size`, and
+  `copy_size = min(src_size, dst_size)`, then zero/sign-extends the remaining
+  bytes when `dst_size > src_size`.
+- **`TAC_MUL`, `TAC_DIV`, `TAC_MOD` software helpers** — 8-bit
+  multiply/divide/modulo via subroutines `__mul8` (shift-and-add) and `__div8`
+  (binary long-division). Arguments pass through fixed ZP slots `$E8`/`$E9`;
+  quotient/product at `$EA`, remainder at `$EB`. Helpers use lazy emission:
+  `needs_mul8`/`needs_div8` flags are set during CFG walk; helpers are emitted
+  after all functions and registered as function labels so the existing JSR
+  fixup system resolves their addresses. `TAC_DIV` and `TAC_MOD` share
+  `__div8`, reading `$EA` vs. `$EB` for the result.
+- **ZP arithmetic helper zone** — `$E8–$EB` carved from the scratch register
+  range and reserved for `__mul8`/`__div8` argument slots. Scratch registers
+  now span `$04–$E7`. `$EC–$EE` reserved for future helpers. README and ZP
+  layout table updated.
+- **LOC table reformatted** — `test.py --cloc` output is now a single
+  tree-style ASCII table with `├─`/`└─` prefixes, aligned columns, and a grand
+  total footer. Adding a new toolchain component = one `Section(...)` entry.
+- Emulator tests: `addr_of_local`, `addr_of_global`, `ptr_store_local`,
+  `ptr_store_global`, `bitwise_and`, `bitwise_or`, `bitwise_xor`,
+  `bitwise_not`, `shl_const`, `shr_const`, `shr_signed`, `shl_var`,
+  `implicit_widen`, `mul_u8` (7×6=42), `div_u8` (100÷7=14), `mod_u8`
+  (100%7=2).
+
 ## [v.0.2.13] 2026-06-24
 
 - **Codegen diagnostic for unhandled TAC ops** — the `default: break` in the

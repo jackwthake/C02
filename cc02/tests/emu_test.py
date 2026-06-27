@@ -453,6 +453,340 @@ def test_bare_cond_u16():
     return True, None
 
 
+def test_addr_of_local():
+    """&local — take address of ZP local, dereference it, write to PORTB."""
+    source = os.path.join(SCRIPT_DIR, "emu_addr_of_local.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 42:
+        return False, f"memory[$6000] = {val}, expected 42"
+    return True, None
+
+
+def test_addr_of_global():
+    """&global — take address of RAM global, dereference it, write to PORTB."""
+    source = os.path.join(SCRIPT_DIR, "emu_addr_of_global.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 99:
+        return False, f"memory[$6000] = {val}, expected 99"
+    return True, None
+
+
+def test_ptr_store_local():
+    """*p = val where p points to a ZP local — value visible through original var."""
+    source = os.path.join(SCRIPT_DIR, "emu_ptr_store_local.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 77:
+        return False, f"memory[$6000] = {val}, expected 77"
+    return True, None
+
+
+def test_ptr_store_global():
+    """*p = val where p points to a RAM global — value visible through original global."""
+    source = os.path.join(SCRIPT_DIR, "emu_ptr_store_global.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 55:
+        return False, f"memory[$6000] = {val}, expected 55"
+    return True, None
+
+
+def test_bitwise_and():
+    """0xFF & 0x0F == 0x0F."""
+    source = os.path.join(SCRIPT_DIR, "emu_bitwise_and.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 0x0F:
+        return False, f"memory[$6000] = ${val:02X}, expected $0F"
+    return True, None
+
+
+def test_bitwise_or():
+    """0xF0 | 0x0F == 0xFF."""
+    source = os.path.join(SCRIPT_DIR, "emu_bitwise_or.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 0xFF:
+        return False, f"memory[$6000] = ${val:02X}, expected $FF"
+    return True, None
+
+
+def test_bitwise_xor():
+    """0xFF ^ 0x0F == 0xF0."""
+    source = os.path.join(SCRIPT_DIR, "emu_bitwise_xor.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 0xF0:
+        return False, f"memory[$6000] = ${val:02X}, expected $F0"
+    return True, None
+
+
+def test_bitwise_not():
+    """~0x0F == 0xF0."""
+    source = os.path.join(SCRIPT_DIR, "emu_bitwise_not.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 0xF0:
+        return False, f"memory[$6000] = ${val:02X}, expected $F0"
+    return True, None
+
+
+def test_shl_const():
+    """1 << 3 == 8."""
+    source = os.path.join(SCRIPT_DIR, "emu_shl_const.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 8:
+        return False, f"memory[$6000] = {val}, expected 8"
+    return True, None
+
+
+def test_shr_const():
+    """0x80 >> 3 == 0x10 (unsigned)."""
+    source = os.path.join(SCRIPT_DIR, "emu_shr_const.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 0x10:
+        return False, f"memory[$6000] = ${val:02X}, expected $10"
+    return True, None
+
+
+def test_shr_signed():
+    """-8 >> 2 == -2 (i.e. 0xFE as u8) — sign bit preserved."""
+    source = os.path.join(SCRIPT_DIR, "emu_shr_signed.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 0xFE:
+        return False, f"memory[$6000] = ${val:02X}, expected $FE (-2)"
+    return True, None
+
+
+def test_mul_u8():
+    """7 * 6 == 42."""
+    source = os.path.join(SCRIPT_DIR, "emu_mul_u8.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 42:
+        return False, f"memory[$6000] = {val}, expected 42"
+    return True, None
+
+
+def test_div_u8():
+    """100 / 7 == 14."""
+    source = os.path.join(SCRIPT_DIR, "emu_div_u8.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 14:
+        return False, f"memory[$6000] = {val}, expected 14"
+    return True, None
+
+
+def test_mod_u8():
+    """100 % 7 == 2."""
+    source = os.path.join(SCRIPT_DIR, "emu_mod_u8.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 2:
+        return False, f"memory[$6000] = {val}, expected 2"
+    return True, None
+
+
+def test_implicit_widen():
+    """u8 200 widened to u16: low byte=200, high byte=0 (not garbage)."""
+    source = os.path.join(SCRIPT_DIR, "emu_implicit_widen.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    lo = mpu.memory[0x6000]
+    hi = mpu.memory[0x6001]
+    if lo != 200:
+        return False, f"low byte = {lo}, expected 200"
+    if hi != 0:
+        return False, f"high byte = {hi}, expected 0 (not garbage)"
+    return True, None
+
+
+def test_shl_var():
+    """1 << n where n=4 at runtime == 16."""
+    source = os.path.join(SCRIPT_DIR, "emu_shl_var.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 16:
+        return False, f"memory[$6000] = {val}, expected 16"
+    return True, None
+
+
+def test_lcd_simplified():
+    """*(msg + i) loop writes 'Hello C02!' to PORTB in order."""
+    source = os.path.join(SCRIPT_DIR, "emu_lcd_simplified.c02")
+    with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as tmp:
+        bin_path = tmp.name
+    try:
+        ok, stderr = compile_c02(source, bin_path)
+        if not ok:
+            return False, f"compilation failed: {stderr}"
+        mpu = load_and_run(bin_path, max_cycles=200000)
+
+        # Capture all writes to PORTB by re-running with tracking
+        mpu2 = MPU65C02()
+        with open(bin_path, "rb") as f:
+            rom = f.read()
+        for i, b in enumerate(rom):
+            mpu2.memory[ROM_START + i] = b
+        mpu2.pc = mpu2.memory[0xFFFC] | (mpu2.memory[0xFFFD] << 8)
+
+        writes = []
+        class TrackingMem(list):
+            def __setitem__(self, addr, val):
+                if addr == 0x6000:
+                    writes.append(val)
+                super().__setitem__(addr, val)
+        mpu2.memory = TrackingMem(list(mpu2.memory))
+        for _ in range(200000):
+            old_pc = mpu2.pc
+            mpu2.step()
+            if mpu2.pc == old_pc:
+                break
+
+        expected = [ord(c) for c in "Hello C02!"]
+        char_writes = writes[-10:]
+        if char_writes != expected:
+            got_str = "".join(chr(b) if 32 <= b < 127 else f"\\x{b:02x}" for b in char_writes)
+            return False, f"last 10 PORTB writes = {got_str!r}, expected 'Hello C02!'"
+        return True, None
+    finally:
+        if os.path.exists(bin_path):
+            os.unlink(bin_path)
+
+
+def test_field_local():
+    """Local struct: p.y where p = Point{.x=10, .y=42}."""
+    source = os.path.join(SCRIPT_DIR, "emu_field_local.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 42:
+        return False, f"memory[$6000] = {val}, expected 42"
+    return True, None
+
+
+def test_field_global():
+    """Global struct: origin.x where origin = Point{.x=7, .y=99}."""
+    source = os.path.join(SCRIPT_DIR, "emu_field_global.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 7:
+        return False, f"memory[$6000] = {val}, expected 7"
+    return True, None
+
+
+def test_field_ptr():
+    """Pointer-to-struct: q.x where q = &p, p = Point{.x=55, .y=22}."""
+    source = os.path.join(SCRIPT_DIR, "emu_field_ptr.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 55:
+        return False, f"memory[$6000] = {val}, expected 55"
+    return True, None
+
+
+def test_func_call_u8():
+    """fn add(a, b: u8) -> u8; add(10, 32) → PORTB=42."""
+    source = os.path.join(SCRIPT_DIR, "emu_func_call_u8.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 42:
+        return False, f"memory[$6000] = {val}, expected 42"
+    return True, None
+
+
+def test_func_call_void():
+    """fn write_port(val: u8) -> void; write_port(99) → PORTB=99."""
+    source = os.path.join(SCRIPT_DIR, "emu_func_call_void.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 99:
+        return False, f"memory[$6000] = {val}, expected 99"
+    return True, None
+
+
+def test_func_call_u16():
+    """fn sum16(a, b: u16) -> u16; sum16(200, 300) → 500, PORTB=(u8)500=244."""
+    source = os.path.join(SCRIPT_DIR, "emu_func_call_u16.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 244:
+        return False, f"memory[$6000] = {val}, expected 244"
+    return True, None
+
+
+def test_func_clobber():
+    """Callee-saves: x=5 survives double_val(3) call; PORTB = x+r = 5+6 = 11."""
+    source = os.path.join(SCRIPT_DIR, "emu_func_clobber.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 11:
+        return False, f"memory[$6000] = {val}, expected 11"
+    return True, None
+
+
+def test_func_recursive():
+    """Recursion: factorial(5) = 120; callee-saves allows bounded recursion."""
+    source = os.path.join(SCRIPT_DIR, "emu_func_recursive.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 120:
+        return False, f"memory[$6000] = {val}, expected 120"
+    return True, None
+
+
 # ----------------------------------------------------------------
 # Runner
 # ----------------------------------------------------------------
@@ -496,6 +830,31 @@ TESTS = [
     ("logical_not", test_logical_not),
     ("bare_cond_u8", test_bare_cond_u8),
     ("bare_cond_u16", test_bare_cond_u16),
+    ("addr_of_local", test_addr_of_local),
+    ("addr_of_global", test_addr_of_global),
+    ("ptr_store_local", test_ptr_store_local),
+    ("ptr_store_global", test_ptr_store_global),
+    ("bitwise_and", test_bitwise_and),
+    ("bitwise_or", test_bitwise_or),
+    ("bitwise_xor", test_bitwise_xor),
+    ("bitwise_not", test_bitwise_not),
+    ("shl_const", test_shl_const),
+    ("shr_const", test_shr_const),
+    ("shr_signed", test_shr_signed),
+    ("shl_var", test_shl_var),
+    ("implicit_widen", test_implicit_widen),
+    ("mul_u8", test_mul_u8),
+    ("div_u8", test_div_u8),
+    ("mod_u8", test_mod_u8),
+    ("lcd_simplified", test_lcd_simplified),
+    ("field_local", test_field_local),
+    ("field_global", test_field_global),
+    ("field_ptr", test_field_ptr),
+    ("func_call_u8", test_func_call_u8),
+    ("func_call_void", test_func_call_void),
+    ("func_call_u16", test_func_call_u16),
+    ("func_clobber", test_func_clobber),
+    ("func_recursive", test_func_recursive),
 ]
 
 

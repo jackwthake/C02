@@ -17,6 +17,23 @@
 #define REG_START   0x04
 #define PARAM_START 0xEF
 
+// ABI zone: fixed 2-byte slots per parameter ($EF/$F0, $F1/$F2, ..., $FD/$FE).
+// Using fixed 2-byte slots simplifies caller/callee agreement at the cost of 1 byte
+// per u8 parameter. Callee-saves via PHA/PLA preserves the caller's ZP slots across
+// the call, which also enables bounded recursion (limited by the 256-byte hw stack).
+// NOTE: signed narrower→wider widening (e.g. i8 arg into i16 param) is zero-extended
+// at the call site, not sign-extended. The IR does not insert explicit cast nodes for
+// implicit widening in call arguments. For now this means negative i8 args passed to
+// i16 params produce wrong values; a future IR pass should insert TAC_CAST nodes here.
+#define ABI_SLOT_SIZE  2
+#define ABI_MAX_PARAMS 8
+
+// Fixed ZP slots for arithmetic helper subroutines ($E8–$EB, below PARAM_START).
+#define HELPER_ARG1 0xE8  // dividend / multiplicand (modified by helpers)
+#define HELPER_ARG2 0xE9  // divisor  / multiplier   (modified by helpers)
+#define HELPER_RES  0xEA  // quotient / product
+#define HELPER_REM  0xEB  // remainder (division only)
+
 
 // ----------------------------------------------------------------
 // Zero-page operand map
@@ -30,6 +47,31 @@ static unsigned codegen_type_size(type_t type) {
     case TYPE_U16: case TYPE_I16: return 2;
     default: return 1;
   }
+}
+
+static unsigned full_type_size(emitter_t *e, type_t type) {
+  if (type.is_ptr) return 2;
+  if (type.kind == TYPE_STRUCT && e->gen) {
+    for (unsigned i = 0; i < e->gen->module.struct_count; i++) {
+      if (strcmp(e->gen->module.structs[i].name, type.struct_name) == 0)
+        return e->gen->module.structs[i].total_size;
+    }
+  }
+  return codegen_type_size(type);
+}
+
+static ir_field_def_t *lookup_struct_field(emitter_t *e,
+                                            const char *struct_name,
+                                            const char *field_name) {
+  for (unsigned i = 0; i < e->gen->module.struct_count; i++) {
+    ir_struct_def_t *s = &e->gen->module.structs[i];
+    if (strcmp(s->name, struct_name) != 0) continue;
+    for (unsigned j = 0; j < s->field_count; j++) {
+      if (strcmp(s->fields[j].name, field_name) == 0)
+        return &s->fields[j];
+    }
+  }
+  return NULL;
 }
 
 
@@ -56,7 +98,7 @@ static uint8_t zp_map_lookup(zp_map_t *map, tac_operand_t *op) {
 
 
 // Assign the next available ZP slot to an operand (deduped, type-stride-aware).
-static void zp_map_add(zp_map_t *map, tac_operand_kind_t kind,
+static void zp_map_add(emitter_t *e, zp_map_t *map, tac_operand_kind_t kind,
                         char *name, unsigned temp_id, type_t type) {
   tac_operand_t probe = { .kind = kind };
   if (kind == OPERAND_VAR) probe.name = name;
@@ -68,33 +110,33 @@ static void zp_map_add(zp_map_t *map, tac_operand_kind_t kind,
     return;
   }
 
-  unsigned size = codegen_type_size(type);
-  zp_entry_t *e = &map->entries[map->count++];
-  e->kind = kind;
-  if (kind == OPERAND_VAR) e->name = name;
-  else                     e->temp_id = temp_id;
-  e->zp_addr = map->next_addr;
-  e->size = (uint8_t)size;
+  unsigned size = full_type_size(e, type);
+  zp_entry_t *entry = &map->entries[map->count++];
+  entry->kind = kind;
+  if (kind == OPERAND_VAR) entry->name = name;
+  else                     entry->temp_id = temp_id;
+  entry->zp_addr = map->next_addr;
+  entry->size = (uint8_t)size;
   map->next_addr += (uint8_t)size;
 }
 
 
 // Register a TAC operand in the ZP map (dispatches var vs temp).
-static void zp_map_add_operand(zp_map_t *map, tac_operand_t *op) {
+static void zp_map_add_operand(emitter_t *e, zp_map_t *map, tac_operand_t *op) {
   if (op->kind == OPERAND_VAR)
-    zp_map_add(map, OPERAND_VAR, op->name, 0, op->type);
+    zp_map_add(e, map, OPERAND_VAR, op->name, 0, op->type);
   else if (op->kind == OPERAND_TEMP)
-    zp_map_add(map, OPERAND_TEMP, NULL, op->temp_id, op->type);
+    zp_map_add(e, map, OPERAND_TEMP, NULL, op->temp_id, op->type);
 }
 
 
 // Build the per-function ZP map: params first, then all referenced operands.
-static void zp_map_build(zp_map_t *map, cfg_t *cfg) {
+static void zp_map_build(emitter_t *e, zp_map_t *map, cfg_t *cfg) {
   map->count = 0;
   map->next_addr = REG_START;
 
   for (unsigned i = 0; i < cfg->params.count; i++) {
-    zp_map_add(map, OPERAND_VAR, cfg->params.items[i].name, 0,
+    zp_map_add(e, map, OPERAND_VAR, cfg->params.items[i].name, 0,
                cfg->params.items[i].type);
   }
 
@@ -102,9 +144,9 @@ static void zp_map_build(zp_map_t *map, cfg_t *cfg) {
     basic_block_t *block = cfg->blocks[i];
     for (unsigned j = 0; j < block->instr_count; j++) {
       tac_instr_t *inst = &block->instrs[j];
-      zp_map_add_operand(map, &inst->dst);
-      zp_map_add_operand(map, &inst->src1);
-      zp_map_add_operand(map, &inst->src2);
+      zp_map_add_operand(e, map, &inst->dst);
+      zp_map_add_operand(e, map, &inst->src1);
+      zp_map_add_operand(e, map, &inst->src2);
     }
   }
 }
@@ -229,7 +271,7 @@ static void allocate_globals(emitter_t *e, ir_gen_t *gen) {
 
   for (unsigned i = 0; i < count; i++) {
     ir_global_t *g = &gen->module.globals[i];
-    unsigned size = codegen_type_size(g->type);
+    unsigned size = full_type_size(e, g->type);
     global_entry_t *entry = &e->global_entries[i];
     entry->name = g->name;
     entry->ram_addr = e->ram_pos;
@@ -264,21 +306,32 @@ static void allocate_globals(emitter_t *e, ir_gen_t *gen) {
     EMIT((uint8_t)(addr >> 8));                    \
   }
 
-OP_EMITTER_SINGLE_ARG(lda_imm, 0xA9)
-OP_EMITTER_SINGLE_ARG(lda_zpg, 0xA5)
+OP_EMITTER_SINGLE_ARG(lda_imm,   0xA9)
+OP_EMITTER_SINGLE_ARG(lda_zpg,   0xA5)
 OP_EMITTER_SINGLE_ARG(lda_ind_y, 0xB1)
-OP_EMITTER_SINGLE_ARG(ldx_imm, 0xA2)
-OP_EMITTER_SINGLE_ARG(ldy_imm, 0xA0)
-OP_EMITTER_SINGLE_ARG(sta_zpg, 0x85)
+OP_EMITTER_SINGLE_ARG(sta_ind_y, 0x91)
+OP_EMITTER_SINGLE_ARG(ldx_imm,   0xA2)
+OP_EMITTER_SINGLE_ARG(ldy_imm,   0xA0)
+OP_EMITTER_SINGLE_ARG(sta_zpg,   0x85)
 
 OP_EMITTER_SINGLE_ARG(ora_imm, 0x09)
 OP_EMITTER_SINGLE_ARG(ora_zpg, 0x05)
+OP_EMITTER_SINGLE_ARG(and_imm, 0x29)
+OP_EMITTER_SINGLE_ARG(and_zpg, 0x25)
+OP_EMITTER_SINGLE_ARG(eor_imm, 0x49)
+OP_EMITTER_SINGLE_ARG(eor_zpg, 0x45)
+
+OP_EMITTER_SINGLE_ARG(asl_zpg, 0x06)
+OP_EMITTER_SINGLE_ARG(rol_zpg, 0x26)
+OP_EMITTER_SINGLE_ARG(lsr_zpg, 0x46)
+OP_EMITTER_SINGLE_ARG(ror_zpg, 0x66)
 
 OP_EMITTER_SINGLE_ARG(cmp_imm, 0xC9)
 OP_EMITTER_SINGLE_ARG(cmp_zpg, 0xC5)
 OP_EMITTER_SINGLE_ARG(beq_rel, 0xF0)
 OP_EMITTER_SINGLE_ARG(bne_rel, 0xD0)
-OP_EMITTER_SINGLE_ARG(eor_imm, 0x49)
+OP_EMITTER_SINGLE_ARG(bcs_rel, 0xB0)
+OP_EMITTER_SINGLE_ARG(bcc_rel, 0x90)
 
 OP_EMITTER_SINGLE_ARG(inc_zpg, 0xE6)
 OP_EMITTER_SINGLE_ARG(dec_zpg, 0xC6)
@@ -294,12 +347,18 @@ OP_EMITTER_NO_ARG(txs, 0x9A)
 OP_EMITTER_NO_ARG(rts, 0x60)
 OP_EMITTER_NO_ARG(clc, 0x18)
 OP_EMITTER_NO_ARG(sec, 0x38)
+OP_EMITTER_NO_ARG(tax, 0xAA)
+OP_EMITTER_NO_ARG(dex, 0xCA)
+OP_EMITTER_NO_ARG(pha, 0x48)
+OP_EMITTER_NO_ARG(pla, 0x68)
 
 
 OP_EMITTER_ABS(jmp_abs, 0x4C)
 OP_EMITTER_ABS(sta_abs, 0x8D)
 OP_EMITTER_ABS(lda_abs, 0xAD)
 OP_EMITTER_ABS(ora_abs, 0x0D)
+OP_EMITTER_ABS(and_abs, 0x2D)
+OP_EMITTER_ABS(eor_abs, 0x4D)
 OP_EMITTER_ABS(cmp_abs, 0xCD)
 OP_EMITTER_ABS(inc_abs, 0xEE)
 OP_EMITTER_ABS(dec_abs, 0xCE)
@@ -449,6 +508,7 @@ static void emit_load_byte(emitter_t *e, zp_map_t *map,
       lda_imm(e, (uint8_t)((op->int_val >> (8 * byte)) & 0xFF));
       break;
     case OPERAND_VAR: {
+      if (byte >= full_type_size(e, op->type)) { lda_imm(e, 0); break; }
       global_entry_t *g = lookup_global(e, op->name);
       if (g)
         lda_abs(e, (uint16_t)(g->ram_addr + byte));
@@ -457,6 +517,7 @@ static void emit_load_byte(emitter_t *e, zp_map_t *map,
       break;
     }
     case OPERAND_TEMP:
+      if (byte >= full_type_size(e, op->type)) { lda_imm(e, 0); break; }
       lda_zpg(e, (uint8_t)(zp_map_lookup(map, op) + byte));
       break;
     default: break;
@@ -486,6 +547,7 @@ static void emit_store_byte(emitter_t *e, zp_map_t *map,
         IMM_FN(e, (uint8_t)((op->int_val >> (8 * byte)) & 0xFF));        \
         break;                                                           \
       case OPERAND_VAR: {                                                \
+        if (byte >= full_type_size(e, op->type)) { IMM_FN(e, 0); break; } \
         global_entry_t *g = lookup_global(e, op->name);                  \
         if (g)                                                           \
           ABS_FN(e, (uint16_t)(g->ram_addr + byte));                     \
@@ -494,6 +556,7 @@ static void emit_store_byte(emitter_t *e, zp_map_t *map,
         break;                                                           \
       }                                                                  \
       case OPERAND_TEMP:                                                 \
+        if (byte >= full_type_size(e, op->type)) { IMM_FN(e, 0); break; } \
         ZPG_FN(e, (uint8_t)(zp_map_lookup(map, op) + byte));             \
         break;                                                           \
       default: break;                                                    \
@@ -501,6 +564,8 @@ static void emit_store_byte(emitter_t *e, zp_map_t *map,
   }
 
 GLOBAL_AWARE_ALU_HELPER(emit_ora_byte, ora_imm, ora_zpg, ora_abs)
+GLOBAL_AWARE_ALU_HELPER(emit_and_byte, and_imm, and_zpg, and_abs)
+GLOBAL_AWARE_ALU_HELPER(emit_eor_byte, eor_imm, eor_zpg, eor_abs)
 GLOBAL_AWARE_ALU_HELPER(emit_cmp_byte, cmp_imm, cmp_zpg, cmp_abs)
 GLOBAL_AWARE_ALU_HELPER(emit_adc_byte, adc_imm, adc_zpg, adc_abs)
 GLOBAL_AWARE_ALU_HELPER(emit_sbc_byte, sbc_imm, sbc_zpg, sbc_abs)
@@ -524,12 +589,69 @@ static void emit_cond_jump(emitter_t *e, zp_map_t *map,
 }
 
 
+// Push every byte of every ZP slot this function uses onto the hardware stack.
+// Called at function entry (before the ABI-zone copy) so that whatever the caller
+// had at those ZP addresses is preserved across the call.
+static void emit_zp_save(emitter_t *e, zp_map_t *map) {
+  for (unsigned i = 0; i < map->count; i++) {
+    for (unsigned b = 0; b < map->entries[i].size; b++) {
+      lda_zpg(e, (uint8_t)(map->entries[i].zp_addr + b));
+      pha(e);
+    }
+  }
+}
+
+// Pop every byte back in reverse order (LIFO) and store into the ZP slots.
+// Called before every RTS so the caller's ZP values are restored on return.
+static void emit_zp_restore(emitter_t *e, zp_map_t *map) {
+  unsigned i = map->count;
+  while (i--) {
+    unsigned b = map->entries[i].size;
+    while (b--) {
+      pla(e);
+      sta_zpg(e, (uint8_t)(map->entries[i].zp_addr + b));
+    }
+  }
+}
+
+
+// Copy each argument from the fixed ABI zone into the function's own ZP slots.
+// Skipped when param_count == 0 (covers main and any no-arg function).
+static int emit_function_prologue(emitter_t *e, zp_map_t *map, cfg_t *cfg) {
+  if (cfg->params.count > ABI_MAX_PARAMS) {
+    fprintf(stderr, "codegen: function '%s' has %u parameters, max is %d\n",
+            cfg->name, cfg->params.count, ABI_MAX_PARAMS);
+    return 0;
+  }
+  for (unsigned i = 0; i < cfg->params.count; i++) {
+    param_t *param = &cfg->params.items[i];
+    unsigned size = codegen_type_size(param->type);
+    tac_operand_t op = { .kind = OPERAND_VAR, .name = param->name, .type = param->type };
+    uint8_t zp = zp_map_lookup(map, &op);
+    for (unsigned b = 0; b < size; b++) {
+      lda_zpg(e, (uint8_t)(PARAM_START + i * ABI_SLOT_SIZE + b));
+      sta_zpg(e, (uint8_t)(zp + b));
+    }
+  }
+  return 1;
+}
+
+
 // Lower a function's TAC instruction stream to 65C02 machine code.
 static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
   register_func_label(e, cfg->name, (uint16_t)(ROM_START + e->code_pos));
 
   zp_map_t map;
-  zp_map_build(&map, cfg);
+  zp_map_build(e, &map, cfg);
+
+  // main is only called by the bootstrap, which has no ZP state to preserve.
+  // Every other callee saves the caller's ZP slots on entry and restores on return.
+  int is_main = (strcmp(cfg->name, "main") == 0);
+  if (!is_main)
+    emit_zp_save(e, &map);
+
+  if (cfg->params.count > 0 && !emit_function_prologue(e, &map, cfg))
+    return 0;
 
   e->local_label_count = cfg->next_label;
   e->local_fixup_count = 0;
@@ -545,10 +667,56 @@ static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
         // -- data movement --
 
         case TAC_COPY: {
-          unsigned width = codegen_type_size(instruction->dst.type);
-          for (unsigned b = 0; b < width; b++) {
+          unsigned src_size = full_type_size(e, instruction->src1.type);
+          unsigned dst_size = full_type_size(e, instruction->dst.type);
+          unsigned copy_size = src_size < dst_size ? src_size : dst_size;
+
+          for (unsigned b = 0; b < copy_size; b++) {
             emit_load_byte(e, &map, &instruction->src1, b);
             emit_store_byte(e, &map, &instruction->dst, b);
+          }
+
+          // Implicit widening: extend hi bytes (A holds hi byte of src after loop)
+          if (dst_size > src_size) {
+            if (is_signed_type(instruction->src1.type)) {
+              cmp_imm(e, 0x80);
+              lda_imm(e, 0xFF);
+              bcs_rel(e, 2);
+              lda_imm(e, 0);
+            } else {
+              lda_imm(e, 0);
+            }
+            for (unsigned b = src_size; b < dst_size; b++)
+              emit_store_byte(e, &map, &instruction->dst, b);
+          }
+          break;
+        }
+
+        case TAC_CAST: {
+          unsigned src_size = codegen_type_size(instruction->src1.type);
+          unsigned dst_size = codegen_type_size(instruction->cast_type);
+          uint8_t dst_zp = zp_map_lookup(&map, &instruction->dst);
+          unsigned copy_size = src_size < dst_size ? src_size : dst_size;
+
+          for (unsigned b = 0; b < copy_size; b++) {
+            emit_load_byte(e, &map, &instruction->src1, b);
+            sta_zpg(e, (uint8_t)(dst_zp + b));
+          }
+
+          if (dst_size > src_size) {
+            // After the loop, A holds the high byte of src. Use it to extend.
+            if (is_signed_type(instruction->src1.type)) {
+              // Sign-extend: CMP #$80 sets C if src is negative (bit 7 = 1).
+              // A = $FF if negative, $00 if positive; BCS skips the LDA #0.
+              cmp_imm(e, 0x80);
+              lda_imm(e, 0xFF);
+              bcs_rel(e, 2);  // skip LDA #0 (2 bytes) if carry set (negative)
+              lda_imm(e, 0);
+            } else {
+              lda_imm(e, 0);
+            }
+            for (unsigned b = src_size; b < dst_size; b++)
+              sta_zpg(e, (uint8_t)(dst_zp + b));
           }
           break;
         }
@@ -586,18 +754,46 @@ static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
         }
 
         case TAC_STORE: {
+          unsigned width = codegen_type_size(instruction->src1.type);
           if (instruction->dst.kind == OPERAND_CONST_INT) {
-            unsigned width = codegen_type_size(instruction->src1.type);
             uint16_t base_addr = (uint16_t)instruction->dst.int_val;
             for (unsigned b = 0; b < width; b++) {
               emit_load_byte(e, &map, &instruction->src1, b);
               sta_abs(e, (uint16_t)(base_addr + b));
             }
           } else {
-            fprintf(stderr, "codegen: unhandled TAC_STORE with non-const destination (op kind %d)\n",
-                    instruction->dst.kind);
-            return 0;
+            uint8_t ptr_zp = zp_map_lookup(&map, &instruction->dst);
+            if (instruction->dst.kind == OPERAND_VAR) {
+              global_entry_t *g = lookup_global(e, instruction->dst.name);
+              if (g) {
+                for (unsigned b = 0; b < 2; b++) {
+                  lda_abs(e, (uint16_t)(g->ram_addr + b));
+                  sta_zpg(e, (uint8_t)(ptr_zp + b));
+                }
+              }
+            }
+            for (unsigned b = 0; b < width; b++) {
+              ldy_imm(e, (uint8_t)b);
+              emit_load_byte(e, &map, &instruction->src1, b);
+              sta_ind_y(e, ptr_zp);
+            }
           }
+          break;
+        }
+
+        case TAC_ADDR_OF: {
+          uint8_t dst_zp = zp_map_lookup(&map, &instruction->dst);
+          uint16_t addr;
+          global_entry_t *g = lookup_global(e, instruction->src1.name);
+          if (g) {
+            addr = g->ram_addr;
+          } else {
+            addr = (uint16_t)zp_map_lookup(&map, &instruction->src1);
+          }
+          lda_imm(e, (uint8_t)(addr & 0xFF));
+          sta_zpg(e, dst_zp);
+          lda_imm(e, (uint8_t)(addr >> 8));
+          sta_zpg(e, (uint8_t)(dst_zp + 1));
           break;
         }
 
@@ -627,7 +823,38 @@ static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
               sta_zpg(e, (uint8_t)(RET + b));
             }
           }
+          // Restore the caller's ZP slots before returning (balances emit_zp_save).
+          // Return value is already in RET ($02/$03) above the restored region.
+          if (!is_main)
+            emit_zp_restore(e, &map);
           rts(e);
+          break;
+        }
+
+        case TAC_CALL: {
+          if (instruction->call_arg_count > ABI_MAX_PARAMS) {
+            fprintf(stderr, "codegen: call to '%s' passes %u arguments, max is %d\n",
+                    instruction->call_name, instruction->call_arg_count, ABI_MAX_PARAMS);
+            return 0;
+          }
+          // Copy each argument into its fixed 2-byte ABI zone slot. emit_load_byte
+          // zero-extends naturally for byte indices past the operand's type width.
+          for (unsigned ai = 0; ai < instruction->call_arg_count; ai++) {
+            tac_operand_t *arg = &instruction->call_args[ai];
+            for (unsigned ab = 0; ab < ABI_SLOT_SIZE; ab++) {
+              emit_load_byte(e, &map, arg, ab);
+              sta_zpg(e, (uint8_t)(PARAM_START + ai * ABI_SLOT_SIZE + ab));
+            }
+          }
+          jsr(e, instruction->call_name);
+          // Copy return value from ZP_RET into the destination temp (skip for void).
+          if (instruction->dst.type.kind != TYPE_VOID) {
+            unsigned ret_size = codegen_type_size(instruction->dst.type);
+            for (unsigned rb = 0; rb < ret_size; rb++) {
+              lda_zpg(e, (uint8_t)(RET + rb));
+              emit_store_byte(e, &map, &instruction->dst, rb);
+            }
+          }
           break;
         }
 
@@ -845,6 +1072,150 @@ static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
 
         // -- arithmetic --
 
+#define EMIT_INT8_HELPER(OP, ROUTINE, RESULT_SLOT, NEEDS_FLAG, ERR)            \
+        case OP: {                                                             \
+          if (codegen_type_size(instruction->dst.type) > 1) {                  \
+            fprintf(stderr, "codegen: u16 " ERR " not yet implemented\n");     \
+            return 0;                                                          \
+          }                                                                    \
+          emit_load_byte(e, &map, &instruction->src1, 0);                      \
+          sta_zpg(e, HELPER_ARG1);                                             \
+          emit_load_byte(e, &map, &instruction->src2, 0);                      \
+          sta_zpg(e, HELPER_ARG2);                                             \
+          jsr(e, ROUTINE);                                                     \
+          lda_zpg(e, RESULT_SLOT);                                             \
+          emit_store_byte(e, &map, &instruction->dst, 0);                      \
+          e->NEEDS_FLAG = 1;                                                   \
+          break;                                                               \
+        }
+
+        EMIT_INT8_HELPER(TAC_MUL, "__mul8", HELPER_RES, needs_mul8, "multiply")
+        EMIT_INT8_HELPER(TAC_DIV, "__div8", HELPER_RES, needs_div8, "divide")
+        EMIT_INT8_HELPER(TAC_MOD, "__div8", HELPER_REM, needs_div8, "modulo")
+
+#undef EMIT_INT8_HELPER
+
+        case TAC_BAND: {
+          unsigned width = codegen_type_size(instruction->dst.type);
+          for (unsigned b = 0; b < width; b++) {
+            emit_load_byte(e, &map, &instruction->src1, b);
+            emit_and_byte(e, &map, &instruction->src2, b);
+            emit_store_byte(e, &map, &instruction->dst, b);
+          }
+          break;
+        }
+
+        case TAC_BOR: {
+          unsigned width = codegen_type_size(instruction->dst.type);
+          for (unsigned b = 0; b < width; b++) {
+            emit_load_byte(e, &map, &instruction->src1, b);
+            emit_ora_byte(e, &map, &instruction->src2, b);
+            emit_store_byte(e, &map, &instruction->dst, b);
+          }
+          break;
+        }
+
+        case TAC_BXOR: {
+          unsigned width = codegen_type_size(instruction->dst.type);
+          for (unsigned b = 0; b < width; b++) {
+            emit_load_byte(e, &map, &instruction->src1, b);
+            emit_eor_byte(e, &map, &instruction->src2, b);
+            emit_store_byte(e, &map, &instruction->dst, b);
+          }
+          break;
+        }
+
+        case TAC_BNOT: {
+          unsigned width = codegen_type_size(instruction->dst.type);
+          for (unsigned b = 0; b < width; b++) {
+            emit_load_byte(e, &map, &instruction->src1, b);
+            eor_imm(e, 0xFF);
+            emit_store_byte(e, &map, &instruction->dst, b);
+          }
+          break;
+        }
+
+        case TAC_SHL: {
+          unsigned width = codegen_type_size(instruction->dst.type);
+          uint8_t dst_zp = zp_map_lookup(&map, &instruction->dst);
+          for (unsigned b = 0; b < width; b++) {
+            emit_load_byte(e, &map, &instruction->src1, b);
+            sta_zpg(e, (uint8_t)(dst_zp + b));
+          }
+          if (instruction->src2.kind == OPERAND_CONST_INT) {
+            unsigned count = (unsigned)instruction->src2.int_val;
+            for (unsigned s = 0; s < count; s++) {
+              asl_zpg(e, dst_zp);
+              if (width > 1) rol_zpg(e, (uint8_t)(dst_zp + 1));
+            }
+          } else {
+            // variable count: loop with X as counter
+            // loop body: asl(2) [+rol(2)] + dex(1) + bne(2) = 2*width+3 bytes
+            unsigned loop_size = 2u * width + 3u;
+            emit_load_byte(e, &map, &instruction->src2, 0);
+            beq_rel(e, (uint8_t)(1u + loop_size));  // skip TAX + loop if count==0
+            tax(e);
+            asl_zpg(e, dst_zp);
+            if (width > 1) rol_zpg(e, (uint8_t)(dst_zp + 1));
+            dex(e);
+            bne_rel(e, (uint8_t)(256u - loop_size));  // back to asl
+          }
+          break;
+        }
+
+        case TAC_SHR: {
+          unsigned width = codegen_type_size(instruction->dst.type);
+          uint8_t dst_zp = zp_map_lookup(&map, &instruction->dst);
+          int is_signed = is_signed_type(instruction->src1.type);
+          for (unsigned b = 0; b < width; b++) {
+            emit_load_byte(e, &map, &instruction->src1, b);
+            sta_zpg(e, (uint8_t)(dst_zp + b));
+          }
+          if (instruction->src2.kind == OPERAND_CONST_INT) {
+            unsigned count = (unsigned)instruction->src2.int_val;
+            for (unsigned s = 0; s < count; s++) {
+              if (is_signed) {
+                // ASR: set carry = sign bit of hi byte, then rotate right
+                lda_zpg(e, (uint8_t)(dst_zp + width - 1));
+                cmp_imm(e, 0x80);
+                ror_zpg(e, (uint8_t)(dst_zp + width - 1));
+                if (width > 1) ror_zpg(e, dst_zp);
+              } else {
+                // LSR: zero-fill MSB
+                if (width > 1) lsr_zpg(e, (uint8_t)(dst_zp + 1));
+                if (width == 1) lsr_zpg(e, dst_zp);
+                else            ror_zpg(e, dst_zp);
+              }
+            }
+          } else {
+            if (is_signed) {
+              // loop body: lda(2)+cmp(2)+ror hi(2)[+ror lo(2)]+dex(1)+bne(2) = 2*width+7
+              unsigned loop_size = 2u * width + 7u;
+              emit_load_byte(e, &map, &instruction->src2, 0);
+              beq_rel(e, (uint8_t)(1u + loop_size));
+              tax(e);
+              lda_zpg(e, (uint8_t)(dst_zp + width - 1));
+              cmp_imm(e, 0x80);
+              ror_zpg(e, (uint8_t)(dst_zp + width - 1));
+              if (width > 1) ror_zpg(e, dst_zp);
+              dex(e);
+              bne_rel(e, (uint8_t)(256u - loop_size));
+            } else {
+              // loop body: lsr hi(2)[+ror lo(2)]+dex(1)+bne(2) = 2*width+3
+              unsigned loop_size = 2u * width + 3u;
+              emit_load_byte(e, &map, &instruction->src2, 0);
+              beq_rel(e, (uint8_t)(1u + loop_size));
+              tax(e);
+              if (width > 1) lsr_zpg(e, (uint8_t)(dst_zp + 1));
+              if (width == 1) lsr_zpg(e, dst_zp);
+              else            ror_zpg(e, dst_zp);
+              dex(e);
+              bne_rel(e, (uint8_t)(256u - loop_size));
+            }
+          }
+          break;
+        }
+
         case TAC_NEG: {
           unsigned width = codegen_type_size(instruction->dst.type);
           sec(e);
@@ -878,6 +1249,82 @@ static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
           break;
         }
 
+        case TAC_FIELD_LOAD: {
+          // dst = src1.field  (src1 may be a struct value or a Struct*)
+          const char *sname = instruction->src1.type.struct_name;
+          ir_field_def_t *field = lookup_struct_field(e, sname, instruction->field_name);
+          if (!field) {
+            fprintf(stderr, "codegen: unknown field '%s' on struct '%s'\n",
+                    instruction->field_name, sname);
+            return 0;
+          }
+          unsigned fsize = full_type_size(e, field->type);
+
+          if (instruction->src1.type.is_ptr) {
+            // pointer-to-struct: LDY #(offset+b); LDA ($ptr),Y
+            uint8_t ptr_zp = zp_map_lookup(&map, &instruction->src1);
+            if (instruction->src1.kind == OPERAND_VAR) {
+              global_entry_t *g = lookup_global(e, instruction->src1.name);
+              if (g) {
+                for (unsigned b = 0; b < 2; b++) {
+                  lda_abs(e, (uint16_t)(g->ram_addr + b));
+                  sta_zpg(e, (uint8_t)(ptr_zp + b));
+                }
+              }
+            }
+            for (unsigned b = 0; b < fsize; b++) {
+              ldy_imm(e, (uint8_t)(field->offset + b));
+              lda_ind_y(e, ptr_zp);
+              emit_store_byte(e, &map, &instruction->dst, b);
+            }
+          } else {
+            // struct value: use emit_load_byte at (field->offset + b) so globals get abs
+            for (unsigned b = 0; b < fsize; b++) {
+              emit_load_byte(e, &map, &instruction->src1, field->offset + b);
+              emit_store_byte(e, &map, &instruction->dst, b);
+            }
+          }
+          break;
+        }
+
+        case TAC_FIELD_STORE: {
+          // dst.field = src1  (dst may be a struct value or a Struct*)
+          const char *sname = instruction->dst.type.struct_name;
+          ir_field_def_t *field = lookup_struct_field(e, sname, instruction->field_name);
+          if (!field) {
+            fprintf(stderr, "codegen: unknown field '%s' on struct '%s'\n",
+                    instruction->field_name, sname);
+            return 0;
+          }
+          unsigned fsize = full_type_size(e, field->type);
+
+          if (instruction->dst.type.is_ptr) {
+            // pointer-to-struct: load value, then STA ($ptr),Y
+            uint8_t ptr_zp = zp_map_lookup(&map, &instruction->dst);
+            if (instruction->dst.kind == OPERAND_VAR) {
+              global_entry_t *g = lookup_global(e, instruction->dst.name);
+              if (g) {
+                for (unsigned b = 0; b < 2; b++) {
+                  lda_abs(e, (uint16_t)(g->ram_addr + b));
+                  sta_zpg(e, (uint8_t)(ptr_zp + b));
+                }
+              }
+            }
+            for (unsigned b = 0; b < fsize; b++) {
+              emit_load_byte(e, &map, &instruction->src1, b);
+              ldy_imm(e, (uint8_t)(field->offset + b));
+              sta_ind_y(e, ptr_zp);
+            }
+          } else {
+            // struct value: emit_load_byte + emit_store_byte at (field->offset + b)
+            for (unsigned b = 0; b < fsize; b++) {
+              emit_load_byte(e, &map, &instruction->src1, b);
+              emit_store_byte(e, &map, &instruction->dst, field->offset + b);
+            }
+          }
+          break;
+        }
+
         default:
           fprintf(stderr, "codegen: unhandled TAC op %d\n", instruction->op);
           return 0;
@@ -886,6 +1333,63 @@ static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
   }
 
   return resolve_local_fixups(e);
+}
+
+
+// ----------------------------------------------------------------
+// Arithmetic helper subroutines
+// ----------------------------------------------------------------
+
+// u8 multiply: HELPER_ARG1 * HELPER_ARG2 → HELPER_RES (shift-and-add).
+// ARG1 and ARG2 are consumed (modified) by the routine.
+//
+// Loop body layout (16 bytes per iteration):
+//   LSR ARG2 (2) | BCC +7 (2) | CLC (1) | LDA RES (2) | ADC ARG1 (2) | STA RES (2)
+//   [BCC target:] ASL ARG1 (2) | DEX (1) | BNE -16 (2)
+static void emit_mul8_helper(emitter_t *e) {
+  register_func_label(e, "__mul8", (uint16_t)(ROM_START + e->code_pos));
+  lda_imm(e, 0);
+  sta_zpg(e, HELPER_RES);
+  ldx_imm(e, 8);
+  // loop:
+  lsr_zpg(e, HELPER_ARG2);          // LSB of multiplier → carry
+  bcc_rel(e, 7);                     // skip add if bit was 0 (7 = CLC+LDA+ADC+STA)
+  clc(e);
+  lda_zpg(e, HELPER_RES);
+  adc_zpg(e, HELPER_ARG1);
+  sta_zpg(e, HELPER_RES);
+  // BCC target:
+  asl_zpg(e, HELPER_ARG1);          // shift multiplicand left
+  dex(e);
+  bne_rel(e, (uint8_t)(256u - 16u)); // back to LSR
+  rts(e);
+}
+
+// u8 divide: HELPER_ARG1 / HELPER_ARG2 → HELPER_RES (quotient), HELPER_REM (remainder).
+// Uses binary long division (shift-subtract). ARG1 is consumed.
+//
+// Loop body layout (18 bytes per iteration):
+//   ASL ARG1 (2) | ROL REM (2) | LDA REM (2) | SEC (1) | SBC ARG2 (2) | BCC +2 (2)
+//   | STA REM (2) | [BCC target:] ROL RES (2) | DEX (1) | BNE -18 (2)
+static void emit_div8_helper(emitter_t *e) {
+  register_func_label(e, "__div8", (uint16_t)(ROM_START + e->code_pos));
+  lda_imm(e, 0);
+  sta_zpg(e, HELPER_REM);
+  sta_zpg(e, HELPER_RES);
+  ldx_imm(e, 8);
+  // loop:
+  asl_zpg(e, HELPER_ARG1);          // shift dividend left, MSB → carry
+  rol_zpg(e, HELPER_REM);           // remainder = (rem << 1) | carry
+  lda_zpg(e, HELPER_REM);
+  sec(e);
+  sbc_zpg(e, HELPER_ARG2);          // try to subtract divisor
+  bcc_rel(e, 2);                     // if borrow (didn't fit), skip STA
+  sta_zpg(e, HELPER_REM);           // commit: remainder -= divisor
+  // BCC target:
+  rol_zpg(e, HELPER_RES);           // quotient bit = carry (1=fit, 0=didn't)
+  dex(e);
+  bne_rel(e, (uint8_t)(256u - 18u)); // back to ASL
+  rts(e);
 }
 
 
@@ -909,6 +1413,7 @@ uint8_t *generate_rom(ir_gen_t *gen, size_t *final_rom_size) {
   memset(e.rom, 0xEA, ROM_SIZE);
   *final_rom_size = ROM_SIZE;
 
+  e.gen = gen;
   e.ram_pos = RAM_START;
   e.zp_next = REG_START;
 
@@ -925,6 +1430,9 @@ uint8_t *generate_rom(ir_gen_t *gen, size_t *final_rom_size) {
       return NULL;
     }
   }
+
+  if (e.needs_mul8) emit_mul8_helper(&e);
+  if (e.needs_div8) emit_div8_helper(&e);
 
   if (!resolve_func_fixups(&e)) {
     free(e.rom);

@@ -1,0 +1,33 @@
+reg u8 PORTB @ 0x6000;
+reg u8 PORTA @ 0x6001;
+reg u8 DDRB @ 0x6002;
+reg u8 DDRA @ 0x6003;
+
+u8 *msg = "Hello C02!";
+
+fn main() -> void {
+  DDRB = 0xFF;
+  DDRA = 0xE0;
+  PORTB = 0;
+  PORTA = 0;
+
+  PORTB = 0x38;
+  PORTA = 0x80;
+  PORTA = 0x00;
+
+  PORTB = 0x0C;
+  PORTA = 0x80;
+  PORTA = 0x00;
+
+  PORTB = 0x06;
+  PORTA = 0x80;
+  PORTA = 0x00;
+
+  u8 length = 10;
+  for (u8 i = 0; i < length; ++i) {
+    PORTB = *(msg + i);
+    PORTA = 0x32;
+    PORTA = 0xA0;
+    PORTA = 0x32;
+  }
+}

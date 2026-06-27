@@ -1,0 +1,7 @@
+reg u8 PORTB @ 0x6000;
+
+fn main() -> void {
+  u8 x = 0xF0;
+  u8 y = 0x0F;
+  PORTB = x | y;
+}
