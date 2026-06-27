@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/) - while
 the project is in `0.x`, breaking changes may land in MINOR releases; PATCH
 releases are reserved for bug fixes only.
 
+## [Unreleased]
+
+- **Bug fix: signed 8-bit division and modulo (`__sdiv8`)** — `TAC_DIV` and
+  `TAC_MOD` on `i8` operands previously routed through the unsigned `__div8`
+  helper, so `i8 -6 / 2` computed `250 / 2 = 125` instead of `-3`. A new
+  `__sdiv8` helper wraps `__div8`: it saves operand signs into a scratch byte at
+  `$EC` (HELPER_SIGN), negates both operands to their absolute values, calls
+  `__div8`, then restores the correct sign on the quotient (bit 7 of SIGN) and
+  remainder (bit 6 of SIGN) per C's truncation-toward-zero convention. Codegen
+  routes `TAC_DIV`/`TAC_MOD` through `__sdiv8` when `is_signed_type(dst.type)`;
+  `__sdiv8` always calls `__div8`, so `needs_sdiv8 = 1` implies `needs_div8 = 1`.
+  New opcode emitters: `bpl_rel`. `$EC` added to the helper ZP zone.
+- Emulator tests: `div_i8` (−6 / 2 = −3, PORTB = $FD), `mod_i8` (−7 % 2 = −1,
+  PORTB = $FF).
+
+- **Bug fix: binary op operand widening and sign normalisation** — binary ops
+  derived both the result type and comparison signedness from the LEFT operand
+  only (`ir.c`), ignoring the right operand entirely. Consequences: `u8 + u16`
+  computed at 8 bits (the u16 high byte was silently dropped), while `u16 + u8`
+  was accidentally correct; `i8 < u8` used a signed compare while `u8 < i8` used
+  an unsigned compare — a trichotomy violation where both `a < b` and `b < a`
+  could be simultaneously true. Fixed in the IR generator with four new helpers:
+  - `ir_type_width` / `ir_is_signed` — predicates for 8-vs-16-bit and
+    signedness without an `ir_gen_t *` context.
+  - `binop_common_type(left, right)` — returns the wider type; for equal widths,
+    unsigned wins (C's usual arithmetic conversions), eliminating operand-order
+    dependence in mixed-sign comparisons.
+  - `emit_widen_if_needed(gen, cfg, op, target)` — emits `TAC_CAST` when the
+    operand type differs from the target; `OPERAND_CONST_INT` values are
+    re-typed in place (no instruction emitted).
+  - Binop lowering now normalises both operands to the common type before
+    arithmetic and comparison ops. Shifts are guarded separately (result type =
+    left, shift count is never widened). Pointer arithmetic skips widening.
+- Emulator tests: `binop_widen` (`u8(1) + u16(500) = 501`, high byte = $01),
+  `cmp_mixed_sign` (`i8(−1) < u8(100)` with unsigned-wins → $FF reinterpreted as
+  255, 255 < 100 = false, branch not taken, PORTB = $01).
+
 ## [v0.2.15] 2026-06-26
 
 - **Function call codegen (`TAC_CALL`)** — full caller/callee ABI using a fixed
