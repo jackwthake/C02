@@ -11,7 +11,27 @@
   [![CI](https://github.com/jackwthake/C02/actions/workflows/ci.yml/badge.svg?branch=cc02)](https://github.com/jackwthake/C02/actions/workflows/ci.yml)
 </div>
 
+## Table of Contents
 
+- [Getting Started: Key Features & Architecture](#getting-started-key-features--architecture)
+- [Current Status & Limitations](#current-status--limitations)
+  - [What works today](#what-works-today)
+  - [Not yet implemented](#not-yet-implemented)
+- [Toolchain Usage](#toolchain-usage)
+  - [Compiling the Toolchain](#compiling-the-toolchain)
+  - [Running the Compiler](#running-the-compiler)
+- [Language Specifications](#language-specifications)
+  - [Basic Types](#basic-types)
+  - [Comments](#comments)
+  - [Top-Level Declarations](#top-level-declarations)
+  - [Compiler Implicit Globals](#compiler-implicit-globals)
+  - [Statements](#statements)
+  - [Expressions](#expressions)
+  - [Compilation Example](#compilation-example)
+- [Binary Layout](#binary-layout)
+  - [RAM](#ram)
+  - [ROM](#rom)
+- [Third-Party Licenses](#third-party-licenses)
 
 ## Getting Started: Key Features & Architecture
 
@@ -21,7 +41,7 @@
 2. **Recursive Descent Parser:** Transforms the token stream into a structured AST, treating hardware registers and standard controls as first-class grammatical constructs.
 3. **Lexically Scoped Semantic Analyzer:** Two-pass validation engine over the AST. Pass 1 registers all top-level declarations (functions, structs, registers, globals) into the global symbol table. Pass 2 walks function bodies with a scoped symbol table, checking undeclared identifiers, type mismatches, argument counts/types, struct field access, lvalue validity, and return-type consistency. Invalid declarations are poisoned to prevent cascading diagnostics.
 4. **IR Generator:** Lowers the analysed AST into a self-contained three-address code (TAC) intermediate representation. The IR module contains struct layouts with computed field offsets, global/register definitions with hardware addresses baked in, and one flat instruction stream per function - codegen can emit target code from the IR alone, without consulting the AST or symbol table. Supports incremental compilation: `-c` serializes the IR to a `.o` file that can be loaded back to skip the frontend entirely.
-5. **Code Generator:** Emits valid 65C02 ROM binaries (32K) with a bootstrap runtime, interrupt vectors, and flat zero-page register allocation. Avoids slow stack-based execution by mapping local variables, temporaries, and parameters directly onto zero-page slots. Globals are allocated in RAM ($0200+) and initialized in the bootstrap before `JSR main`. String literals are placed in a ROM data section with backpatching fixups. Supports arithmetic (`+`, `-`, unary `-`) for all integer types (u8/i8/u16/i16), comparisons across all widths and signedness (unsigned via carry-flag, signed via N⊕V), pointer dereference, and function calls. Function calls use a fixed 2-byte-per-param ABI zone (`$EF–$FE`) for parameter passing; a callee-saves convention (PHA/PLA on all ZP slots) preserves the caller's locals across calls and enables bounded recursion. Programs compile and run on real hardware.
+5. **Code Generator:** Emits valid 65C02 ROM binaries (32K) with a bootstrap runtime, interrupt vectors, and flat zero-page register allocation. Avoids slow stack-based execution by mapping local variables, temporaries, and parameters directly onto zero-page slots. Globals are allocated in RAM ($0200+) and initialized in the bootstrap before `JSR main`. String literals are placed in a ROM data section with backpatching fixups. Supports arithmetic (`+`, `-`, unary `-`) for all integer types (u8/i8/u16/i16), comparisons across all widths and signedness (unsigned via carry-flag, signed via N⊕V), pointer dereference, and function calls. Function calls use a fixed 2-byte-per-param ABI zone (`$EF–$FE`) for parameter passing; a callee-saves convention (PHA/PLA on all ZP slots) preserves the caller's locals across calls and enables bounded recursion. All emit paths are bounds-checked against the 32 KB ROM limit — programs that overflow produce a clear diagnostic rather than silent corruption. Compiler implicit globals (`__heap_start`, `__memory_top`) are injected automatically and initialized during bootstrap. Programs compile and run on real hardware.
 
 #### c02-objdump Disassembler
 
@@ -45,6 +65,7 @@ C02 is under active, early development. The **complete frontend** (tokenizer, pa
 - **Type casts:** `(type)expr` — widening zero/sign-extends, narrowing copies low bytes.
 - **Struct field access:** `s.field` and `ptr.field` (auto-deref) for both local and global structs. Field reads and writes work for by-value structs and pointer-to-struct, including `++field` / `--field`.
 - **Global variables:** RAM-allocated globals with bootstrap initialization, correctly accessed via absolute addressing throughout all codegen paths. String literals placed in a ROM data section with backpatching fixups.
+- **Compiler implicit globals:** `__heap_start` and `__memory_top` are injected automatically as `decl u16` globals and initialized during the bootstrap. `__heap_start` holds the first free RAM byte after all user globals *and* the compiler implicit globals themselves are allocated (each takes 2 bytes of RAM) — useful as a base pointer for bump allocators. `__memory_top` holds the top of the general-purpose RAM region (`$3FFF`). Both are available in any `.c02` file without a manual `decl`.
 - **Function calls:** full `JSR`/`RTS` ABI with up to 8 parameters passed through the `$EF–$FE` fixed-slot ABI zone. A callee-saves convention (PHA all ZP slots on entry, PLA in reverse on return) preserves caller locals across calls. Bounded recursion is supported — stack depth is limited to ≈256 / (function ZP byte count).
 
 #### Not yet implemented
@@ -190,6 +211,15 @@ decl u8 counter;
 - A `decl` for a global is `decl type name;` with no initialiser.
 - Redeclaring a name that already exists in the same file is an error.
 
+##### Compiler Implicit Globals
+
+The compiler automatically injects a small set of `u16` globals that expose runtime memory layout information. No `decl` is needed — they are available in every translation unit.
+
+| Name | Value | Description |
+| :--- | :--- | :--- |
+| `__heap_start` | first free RAM address after all globals | Base pointer for simple bump allocators. |
+| `__memory_top` | `$3FFF` | Top of the general-purpose RAM region. |
+
 ### Statements
 
 ```c
@@ -282,18 +312,69 @@ c02-objdump led_counter.bin               # disassemble to inspect the output
 
 ---
 
-### Zero-Page Hardware-Register Layout
+### Binary Layout
+
+Every compiled binary is a flat **32 KB ROM image** (`$8000–$FFFF`) loaded at a fixed base address. The layout is always the same regardless of program size — unused space is filled with `$EA` (NOP). See [memmap.md](./docs/memmap.md) for more info on memory boundaries.
+
+#### RAM
+
+```
+$0000 ┬─────────────────────────────────────────────
+      │  Zero Page  (see ZP table below)
+$0100 ├─────────────────────────────────────────────
+      │  Hardware stack  (6502 fixed; $01FF = top)
+$0200 ├─────────────────────────────────────────────
+      │  User globals  (RAM_START; allocated upward by allocate_globals)
+      ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+      │  __heap_start  (u16, 2 bytes — compiler implicit)
+      │  __memory_top  (u16, 2 bytes — compiler implicit)
+      ├───────────────────────────────────────────── ← __heap_start value (first free byte)
+      │  (free for heap / dynamic use)
+$3FFF ┴───────────────────────────────────────────── ← __memory_top value
+```
+
+#### Zero-Page Hardware-Register Layout
 
 To maximize compilation density and execution speed, the code generator reserves and maps lower RAM (`$0000–$00FF`, **The Zero Page**) to form a virtual register file:
 
 | Address Range | Identifier | Purpose |
 | :--- | :--- | :--- |
-| **`$00`** | `FP` | **Frame Pointer:** Tracks multi-byte local variable frames in main RAM. |
-| **`$02`** | `RET` | **Return Register:** Where every function or conditional puts its return value. |
-| **`$04` – `$E7`** | `r0` – `r115` | **Scratch Registers:** Compiler-managed scratchpads for expression temporaries, local variables, and globals. Allocated per-function from `$04` upward. |
-| **`$E8` – `$EB`** | — | **Arithmetic Helper Zone:** Fixed argument/result slots for the `__mul8` and `__div8` software routines. `$E8`/`$E9` = inputs, `$EA` = quotient/product, `$EB` = remainder. |
-| **`$EC` – `$EE`** | — | Reserved for helper routines. |
-| **`$EF` – `$FF`** | `a0` – `a8` | **Function ABI Zone:** Rapid parameter passing without stack overhead. Supports up to 8 sixteen-bit parameters. |
+| **`$00`** | `FP` | **Frame Pointer:** Initialized to `$01FF` at startup. |
+| **`$02–$03`** | `RET` | **Return Register:** Holds function return values (u8 in `$02`, u16 in `$02:$03`). |
+| **`$04–$DF`** | `r0`–`r219` | **Scratch Registers:** Compiler-managed temporaries, locals, and globals. Allocated per-function from `$04` upward, striding by type size (1 byte for u8/i8, 2 for u16/i16/pointers). |
+| **`$E0–$E7`** | — | **16-bit Arithmetic Helper Zone:** Fixed slots for `__mul16`, `__div16`, `__sdiv16` helpers. `$E0:$E1` = arg1, `$E2:$E3` = arg2, `$E4:$E5` = result, `$E6:$E7` = remainder. |
+| **`$E8–$EC`** | — | **8-bit Arithmetic Helper Zone:** Fixed slots for `__mul8`, `__div8`, `__sdiv8` helpers. `$E8` = arg1, `$E9` = arg2, `$EA` = result, `$EB` = remainder, `$EC` = sign flags (bit 7 = negate quotient, bit 6 = negate remainder). |
+| **`$ED–$EE`** | — | Reserved for future helpers. |
+| **`$EF–$FF`** | `a0`–`a7` | **Function ABI Zone:** Fixed 2-byte slots for parameter passing. Caller populates before `JSR`; callee reads at entry. Supports up to 8 sixteen-bit parameters. |
+
+#### ROM
+
+```
+$8000 ┬───────────────────────────────────────────── ← Reset vector target
+      │  Bootstrap  (SEI · CLD · stack init · global init · JSR main · halt)
+      ├─────────────────────────────────────────────
+      │  .text  — function bodies  (main first, then callees, then helpers)
+      ├───────────────────────────────────────────── ← code/data boundary marker ($FFF8–$FFF9)
+      │  .data  — null-terminated string literals
+      ├─────────────────────────────────────────────
+      │  C02S symbol table  (if --strip-debug not set)
+      |    magic "C02S" · u16 count · [u16 addr · name\0] …
+      ├─────────────────────────────────────────────
+      │  NOP fill  ($EA bytes)
+$FFF6 ├─────────────────────────────────────────────
+      │  Symbol table pointer  (LE u16; $EAEA = absent)
+$FFF8 ├─────────────────────────────────────────────
+      │  Code/data boundary marker (LE u16; first NOP-fill byte)
+$FFFA ├─────────────────────────────────────────────
+      │  NMI vector   (LE u16)
+$FFFC ├─────────────────────────────────────────────
+      │  Reset vector (LE u16; always $8000)
+$FFFE ├─────────────────────────────────────────────
+      │  IRQ vector   (LE u16)
+$FFFF ┴─────────────────────────────────────────────
+```
+
+The `$FFF8–$FFF9` boundary word and the `$FFF6–$FFF7` symbol-table pointer are read by `c02-objdump` to locate the `.text`/`.data` split and resolve function names. Older binaries that predate these fields have `$EAEA` at `$FFF6` and are disassembled with auto-generated `L0`/`L1`/… labels as a fallback.
 
 ---
 

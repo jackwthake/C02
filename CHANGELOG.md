@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/) - while
 the project is in `0.x`, breaking changes may land in MINOR releases; PATCH
 releases are reserved for bug fixes only.
 
+## [v0.2.17] 2026-06-27
+
+- **ROM overflow detection** — the `EMIT()` macro now bounds-checks `code_pos`
+  against `ROM_SIZE` before writing, setting an `overflow` flag on `emitter_t`
+  instead of silently writing past the end of the 32 KB buffer. A new
+  `PATCH_BYTE(pos, val)` macro applies the same guard to all branch-offset and
+  address backpatches. `resolve_func_fixups` and `resolve_local_fixups`
+  early-return when overflow is already set. `generate_rom` checks `e.overflow`
+  independently after the code section, data section, and symbol-table phases,
+  printing a targeted diagnostic and returning `NULL` on failure. Previously,
+  programs that grew past 32 KB would corrupt the ROM buffer without any error.
+  `emit_symbol_table` now also writes through `EMIT()` instead of raw pointer
+  writes, inheriting the overflow guard.
+
+- **`__heap_start` implicit compiler global** — programs may declare
+  `decl u16 __heap_start;` to read the address of the first free RAM byte after
+  all user globals are allocated. The driver injects the declaration
+  automatically so no user `decl` is required in practice. The value is
+  initialized during the bootstrap sequence. Intended as a base pointer for
+  simple bump allocators.
+
+- **`__memory_top` implicit compiler global** — `decl u16 __memory_top;`
+  evaluates to `$3FFF`, the top of the general-purpose RAM region (see
+  `docs/memmap.md`). Injected alongside `__heap_start`. Both constants are
+  defined as `RAM_TOP` in the codegen memory map.
+
+- **Compiler extern two-pass allocation** — `emit_compiler_extern_inits` is
+  refactored into an explicit two-pass design: pass 1 allocates all RAM slots
+  (settling `e->ram_pos`), pass 2 emits initializers. This ensures
+  `__heap_start` captures the correct first-free-RAM address regardless of
+  declaration order. Unknown non-function externs now print a diagnostic and
+  cause codegen to fail instead of being silently skipped.
+  - `ALLOC_COMPILER_SLOT` / `EMIT_COMPILER_VALUE` — pair of local macros that
+    collapse the slot-allocation and value-emission boilerplate to one line each;
+    both are `#undef`'d immediately after the function.
+
 ## [v0.2.16] 2026-06-27
 
 - **16-bit multiply / divide / modulo (`__mul16`, `__div16`, `__sdiv16`)** —
