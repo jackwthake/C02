@@ -1834,34 +1834,26 @@ uint8_t *generate_rom(ir_gen_t *gen, size_t *final_rom_size, int emit_symbols) {
     return NULL;
   }
 
-  if (e.overflow) {
-    fprintf(stderr, "Code section generation failed: output exceeds 32 KB ROM.\n");
-    free(e.rom);
-    emitter_free(&e);
-    *final_rom_size = 0;
-    return NULL;
-  }
+  #define OVERFLOW_ERROR_CHECK(msg) \
+    if (e.overflow) {               \
+      fprintf(stderr, msg);         \
+      free(e.rom);                  \
+      emitter_free(&e);             \
+      *final_rom_size = 0;          \
+      return NULL;                  \
+    }
+
+  OVERFLOW_ERROR_CHECK("Code section generation failed: output exceeds 32 KB ROM.\n");
 
   emit_data_section(&e, gen);
 
-  if (e.overflow) {
-    fprintf(stderr, "Data section generation failed: output exceeds 32 KB ROM.\n");
-    free(e.rom);
-    emitter_free(&e);
-    *final_rom_size = 0;
-    return NULL;
-  }
+  OVERFLOW_ERROR_CHECK("Data section generation failed: output exceeds 32 KB ROM.\n");
 
   if (emit_symbols && e.func_label_count > 0) {
     emit_symbol_table(&e);
-    if (e.overflow) {
-      fprintf(stderr, "Symbol table generation failed: output exceeds 32 KB ROM.\n");
-      free(e.rom);
-      emitter_free(&e);
-      *final_rom_size = 0;
-      return NULL;
-    }
+    OVERFLOW_ERROR_CHECK("Symbol table generation failed: output exceeds 32 KB ROM.\n");
   }
+  #undef OVERFLOW_ERROR_CHECK
 
   uint16_t code_end_addr = (uint16_t)(ROM_START + e.data_pos);
   e.rom[SYMTABLE_BOUNDARY_PTR]     = (uint8_t)(code_end_addr & 0xFF);
