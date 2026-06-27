@@ -312,6 +312,43 @@ static unsigned new_label(cfg_t *cfg) {
 }
 
 
+// Returns 1 for 8-bit types and pointer-less values, 2 for 16-bit / pointer types.
+static int ir_type_width(type_t t) {
+  return (t.kind == TYPE_U16 || t.kind == TYPE_I16 || t.is_ptr) ? 2 : 1;
+}
+
+static int ir_is_signed(type_t t) {
+  return t.kind == TYPE_I8 || t.kind == TYPE_I16;
+}
+
+// Returns the common type both operands of a binary op should be widened to.
+// Uses the wider operand's type; for equal widths, unsigned wins (matching C's
+// usual arithmetic conversions for comparisons — prevents order-dependent
+// signed/unsigned mismatch when one operand is signed and the other is not).
+static type_t binop_common_type(type_t left, type_t right) {
+  int lw = ir_type_width(left), rw = ir_type_width(right);
+  type_t wider = (lw >= rw) ? left : right;
+  if (!ir_is_signed(left) || !ir_is_signed(right))
+    wider.kind = (ir_type_width(wider) == 2) ? TYPE_U16 : TYPE_U8;
+  return wider;
+}
+
+// Widens `op` to `target` type by emitting a TAC_CAST if the types differ.
+// Constants are re-typed in place (no instruction needed).
+static tac_operand_t emit_widen_if_needed(ir_gen_t *gen, cfg_t *cfg,
+                                           tac_operand_t op, type_t target) {
+  if (op.type.kind == target.kind && op.type.is_ptr == target.is_ptr)
+    return op;
+  if (op.kind == OPERAND_CONST_INT) {
+    op.type = target;
+    return op;
+  }
+  tac_operand_t dst = new_temp(cfg, target);
+  emit(gen, cfg, (tac_instr_t){ .op = TAC_CAST, .dst = dst, .src1 = op, .cast_type = target });
+  return dst;
+}
+
+
 // Lowers an expression node into TAC, returning the operand
 // that holds the result. Built up case by case.
 static tac_operand_t lower_expr(ir_gen_t *gen, cfg_t *cfg, node_t *node) {
@@ -399,13 +436,27 @@ static tac_operand_t lower_expr(ir_gen_t *gen, cfg_t *cfg, node_t *node) {
       tac_operand_t left  = lower_expr(gen, cfg, node->binop.left);
       tac_operand_t right = lower_expr(gen, cfg, node->binop.right);
 
-      int is_cmp = op == TAC_LT || op == TAC_LTE ||
-                   op == TAC_GT || op == TAC_GTE ||
-                   op == TAC_EQ || op == TAC_NEQ;
+      int is_cmp   = op == TAC_LT || op == TAC_LTE ||
+                     op == TAC_GT || op == TAC_GTE ||
+                     op == TAC_EQ || op == TAC_NEQ;
+      int is_shift = op == TAC_SHL || op == TAC_SHR;
 
-      type_t type = is_cmp ? (type_t){ .kind = TYPE_U8 } : left.type;
-      tac_operand_t dst = new_temp(cfg, type);
+      type_t result_type;
+      if (is_shift) {
+        // Shift result is left's type; don't widen the count.
+        result_type = left.type;
+      } else if (!left.type.is_ptr && !right.type.is_ptr) {
+        // Widen both operands to the common type before the op.
+        type_t common = binop_common_type(left.type, right.type);
+        left  = emit_widen_if_needed(gen, cfg, left,  common);
+        right = emit_widen_if_needed(gen, cfg, right, common);
+        result_type = is_cmp ? (type_t){ .kind = TYPE_U8 } : common;
+      } else {
+        // Pointer arithmetic: don't widen (pointer ± integer, etc.).
+        result_type = left.type;
+      }
 
+      tac_operand_t dst = new_temp(cfg, result_type);
       emit(gen, cfg, (tac_instr_t){ .op = op, .dst = dst, .src1 = left, .src2 = right });
       return dst;
     }
