@@ -190,17 +190,17 @@ static void print_cfg(cfg_t *cfg) {
   }
   printf(") -> ");
   print_type(cfg->return_type);
-  printf("\n");
+  printf(" {\n");
 
   for (unsigned i = 0; i < cfg->block_count; i++) {
     basic_block_t *bb = cfg->blocks[i];
-    printf("  block%u:\n", bb->id);
+    printf("block%u:\n", bb->id);
     for (unsigned j = 0; j < bb->instr_count; j++) {
-      printf("    ");
+      printf("  ");
       print_instr(&bb->instrs[j]);
     }
   }
-  printf("\n");
+  printf("}\n\n");
 }
 
 void ir_gen_print(ir_gen_t *gen) {
