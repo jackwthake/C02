@@ -971,53 +971,28 @@ static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
 
         // -- arithmetic --
 
-        case TAC_MUL: {
-          if (codegen_type_size(instruction->dst.type) > 1) {
-            fprintf(stderr, "codegen: u16 multiply not yet implemented\n");
-            return 0;
-          }
-          emit_load_byte(e, &map, &instruction->src1, 0);
-          sta_zpg(e, HELPER_ARG1);
-          emit_load_byte(e, &map, &instruction->src2, 0);
-          sta_zpg(e, HELPER_ARG2);
-          jsr(e, "__mul8");
-          lda_zpg(e, HELPER_RES);
-          emit_store_byte(e, &map, &instruction->dst, 0);
-          e->needs_mul8 = 1;
-          break;
+#define EMIT_INT8_HELPER(OP, ROUTINE, RESULT_SLOT, NEEDS_FLAG, ERR)            \
+        case OP: {                                                             \
+          if (codegen_type_size(instruction->dst.type) > 1) {                  \
+            fprintf(stderr, "codegen: u16 " ERR " not yet implemented\n");     \
+            return 0;                                                          \
+          }                                                                    \
+          emit_load_byte(e, &map, &instruction->src1, 0);                      \
+          sta_zpg(e, HELPER_ARG1);                                             \
+          emit_load_byte(e, &map, &instruction->src2, 0);                      \
+          sta_zpg(e, HELPER_ARG2);                                             \
+          jsr(e, ROUTINE);                                                     \
+          lda_zpg(e, RESULT_SLOT);                                             \
+          emit_store_byte(e, &map, &instruction->dst, 0);                      \
+          e->NEEDS_FLAG = 1;                                                   \
+          break;                                                               \
         }
 
-        case TAC_DIV: {
-          if (codegen_type_size(instruction->dst.type) > 1) {
-            fprintf(stderr, "codegen: u16 divide not yet implemented\n");
-            return 0;
-          }
-          emit_load_byte(e, &map, &instruction->src1, 0);
-          sta_zpg(e, HELPER_ARG1);
-          emit_load_byte(e, &map, &instruction->src2, 0);
-          sta_zpg(e, HELPER_ARG2);
-          jsr(e, "__div8");
-          lda_zpg(e, HELPER_RES);
-          emit_store_byte(e, &map, &instruction->dst, 0);
-          e->needs_div8 = 1;
-          break;
-        }
+        EMIT_INT8_HELPER(TAC_MUL, "__mul8", HELPER_RES, needs_mul8, "multiply")
+        EMIT_INT8_HELPER(TAC_DIV, "__div8", HELPER_RES, needs_div8, "divide")
+        EMIT_INT8_HELPER(TAC_MOD, "__div8", HELPER_REM, needs_div8, "modulo")
 
-        case TAC_MOD: {
-          if (codegen_type_size(instruction->dst.type) > 1) {
-            fprintf(stderr, "codegen: u16 modulo not yet implemented\n");
-            return 0;
-          }
-          emit_load_byte(e, &map, &instruction->src1, 0);
-          sta_zpg(e, HELPER_ARG1);
-          emit_load_byte(e, &map, &instruction->src2, 0);
-          sta_zpg(e, HELPER_ARG2);
-          jsr(e, "__div8");
-          lda_zpg(e, HELPER_REM);  // remainder, not quotient
-          emit_store_byte(e, &map, &instruction->dst, 0);
-          e->needs_div8 = 1;
-          break;
-        }
+#undef EMIT_INT8_HELPER
 
         case TAC_BAND: {
           unsigned width = codegen_type_size(instruction->dst.type);

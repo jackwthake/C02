@@ -38,17 +38,20 @@ C02 is under active, early development. The **complete frontend** (tokenizer, pa
 - **Arithmetic:** `+`, `-`, unary `-`, `*`, `/`, `%` for all integer types (u8, i8, u16, i16). Width-aware multi-byte emission for 16-bit operations with carry/borrow propagation. Multiply and divide via `__mul8`/`__div8` software subroutines.
 - **Bitwise & shift ops:** `&`, `|`, `^`, `~`, `<<`, `>>` for all widths. Signed right shift uses the carry-from-sign-bit pattern for correct arithmetic extension.
 - **Comparisons:** all six relational operators (`<`, `<=`, `==`, `!=`, `>=`, `>`) for all widths (u8, u16) and signedness (unsigned via carry-flag, signed via N⊕V). 16-bit comparisons use a high-byte-first pattern.
-- **Increment/decrement:** `++`/`--` for both u8 and 16-bit values (pointers, u16), including globals.
+- **Increment/decrement:** `++`/`--` for both u8 and 16-bit values (pointers, u16), including globals and struct fields.
 - **Pointer dereference & store:** `*p` reads via `LDA ($nn),Y`; `*p = val` writes via `STA ($nn),Y`. Both work for local and global pointer variables.
+- **Pointer arithmetic:** `ptr + int` and `ptr - int` produce a pointer of the same type, enabling `*(msg + i)`-style indexed access.
 - **Address-of:** `&x` resolves to the variable's ZP slot address for locals or its RAM address for globals, stored as a 16-bit pointer.
 - **Type casts:** `(type)expr` — widening zero/sign-extends, narrowing copies low bytes.
+- **Struct field access:** `s.field` and `ptr.field` (auto-deref) for both local and global structs. Field reads and writes work for by-value structs and pointer-to-struct, including `++field` / `--field`.
 - **Global variables:** RAM-allocated globals with bootstrap initialization, correctly accessed via absolute addressing throughout all codegen paths. String literals placed in a ROM data section with backpatching fixups.
 
 #### Not yet implemented
 
 - **Function calls** — the ABI zone (`$EF–$FF`) is reserved but `JSR`/parameter passing is not wired up yet.
-- **Struct field access** (`s.field` codegen).
-- **Arrays** — no array type or subscript syntax (`a[i]`).
+- **String local variables** — `u8 *msg = "..."` only works at file scope; local string pointer initialization is not yet supported.
+- **Arrays** — no array type or subscript syntax (`a[i]`). Use pointer arithmetic (`*(ptr + i)`) in the meantime.
+- **`break` / `continue`** — not yet supported inside loops.
 - **Missing-return detection is shallow.** A non-void function with no `return` at the end is flagged, but the analyzer does not perform full path-coverage analysis.
 
 If you're exploring the codebase: the parser ([parser.c](cc02/src/parser/parser.c)), the analyzer ([analyzer.c](cc02/src/analysis/analyzer.c)), the IR generator ([ir.c](cc02/src/ir-gen/ir.c)), and the code generator ([generator.c](cc02/src/code-gen/generator.c)) are the main files. Issues and PRs are welcome.

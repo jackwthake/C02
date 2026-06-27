@@ -68,8 +68,6 @@ should compile to correct code.
 - [x] `*(ptr + i)` gives analyzer error, complaining that there is a type mismatch
       because ptr is a ptr and i is a normal integer value
 - [ ] Language currently does not support `break` or `continue` keywords
-- [ ] field accesses in conditionals ie `for(u8 i; i < string.length; ++i) { ... }`
-      gives `string` is not assignable error.
 
 #### Should-have (language is painful without these)
 

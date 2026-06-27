@@ -37,9 +37,10 @@ fn main() -> void {
   PORTA = 0x80; // RS=0, E=1 to latch command
   PORTA = 0x00;
 
-  u8 length = 10;
-  for (u8 i = 0; i < length; ++i) {
-    PORTB = *(msg + i); // Put character on data lines
+  string str = string { .length = 10, .val = msg };
+
+  for (u8 i = 0; i < str.length; ++i) {
+    PORTB = *(str.val + i); // Put character on data lines
     PORTA = 0x32; // RS
     PORTA = 0xA0; // RS | E
     PORTA = 0x32; // RS
