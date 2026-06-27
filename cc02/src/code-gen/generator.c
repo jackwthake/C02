@@ -1495,7 +1495,7 @@ static void emitter_free(emitter_t *e) {
 }
 
 
-uint8_t *generate_rom(ir_gen_t *gen, size_t *final_rom_size) {
+uint8_t *generate_rom(ir_gen_t *gen, size_t *final_rom_size, int emit_symbols) {
   emitter_t e = { 0 };
 
   if (!arena_init(&e.arena, 4096)) return NULL;
@@ -1537,11 +1537,38 @@ uint8_t *generate_rom(ir_gen_t *gen, size_t *final_rom_size) {
 
   emit_data_section(&e, gen);
 
-  // code/data boundary at $FFF8 for the disassembler
-  unsigned boundary_pos = 0xFFF8 - ROM_START;
-  uint16_t code_end = (uint16_t)(ROM_START + e.data_pos);
-  e.rom[boundary_pos]     = (uint8_t)(code_end & 0xFF);
-  e.rom[boundary_pos + 1] = (uint8_t)(code_end >> 8);
+  // Symbol table lives in the NOP fill area between .data and $FFF6.
+  // $FFF6-$FFF7 = absolute address of the table (0xEAEA = absent).
+  // $FFF8-$FFF9 = code/data boundary (unchanged).
+  unsigned symtab_ptr_pos = 0xFFF6 - ROM_START;
+  unsigned boundary_pos   = 0xFFF8 - ROM_START;
+
+  if (emit_symbols && e.func_label_count > 0) {
+    size_t sym_size = 6; // "C02S" (4) + count u16 (2)
+    for (unsigned i = 0; i < e.func_label_count; i++)
+      sym_size += 2 + strlen(e.func_labels[i].name) + 1;
+    if (e.code_pos + sym_size <= symtab_ptr_pos) {
+      uint16_t symtab_addr = (uint16_t)(ROM_START + e.code_pos);
+      uint8_t *p = e.rom + e.code_pos;
+      *p++ = 'C'; *p++ = '0'; *p++ = '2'; *p++ = 'S';
+      *p++ = (uint8_t)(e.func_label_count & 0xFF);
+      *p++ = (uint8_t)(e.func_label_count >> 8);
+      for (unsigned i = 0; i < e.func_label_count; i++) {
+        uint16_t addr = e.func_labels[i].addr;
+        *p++ = (uint8_t)(addr & 0xFF);
+        *p++ = (uint8_t)(addr >> 8);
+        size_t len = strlen(e.func_labels[i].name);
+        memcpy(p, e.func_labels[i].name, len + 1);
+        p += len + 1;
+      }
+      e.rom[symtab_ptr_pos]     = (uint8_t)(symtab_addr & 0xFF);
+      e.rom[symtab_ptr_pos + 1] = (uint8_t)(symtab_addr >> 8);
+    }
+  }
+
+  uint16_t code_end_addr = (uint16_t)(ROM_START + e.data_pos);
+  e.rom[boundary_pos]     = (uint8_t)(code_end_addr & 0xFF);
+  e.rom[boundary_pos + 1] = (uint8_t)(code_end_addr >> 8);
 
   emit_vectors(&e);
   emitter_free(&e);

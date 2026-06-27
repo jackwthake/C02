@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::io::{Cursor, Read};
 
 const VECTOR_TABLE_SIZE: usize = 6;
+const ROM_SIZE: usize = 0x8000;
 
 #[allow(dead_code)]
 pub enum AddrMode {
@@ -118,28 +119,41 @@ struct RomInfo {
 }
 
 fn parse_rom(bytes: &[u8]) -> Option<RomInfo> {
-  if bytes.len() <= VECTOR_TABLE_SIZE {
+  if bytes.len() < ROM_SIZE {
     return None;
   }
 
-  let nmi   = u16::from_le_bytes([bytes[bytes.len() - 6], bytes[bytes.len() - 5]]);
-  let reset = u16::from_le_bytes([bytes[bytes.len() - 4], bytes[bytes.len() - 3]]);
-  let irq   = u16::from_le_bytes([bytes[bytes.len() - 2], bytes[bytes.len() - 1]]);
+  let nmi   = u16::from_le_bytes([bytes[ROM_SIZE - 6], bytes[ROM_SIZE - 5]]);
+  let reset = u16::from_le_bytes([bytes[ROM_SIZE - 4], bytes[ROM_SIZE - 3]]);
+  let irq   = u16::from_le_bytes([bytes[ROM_SIZE - 2], bytes[ROM_SIZE - 1]]);
   let base_addr = reset;
 
-  let code_bytes = &bytes[..bytes.len() - VECTOR_TABLE_SIZE];
-
-  let code_boundary = u16::from_le_bytes([
-    bytes[bytes.len() - 8],
-    bytes[bytes.len() - 7],
-  ]);
+  let code_boundary = u16::from_le_bytes([bytes[ROM_SIZE - 8], bytes[ROM_SIZE - 7]]);
+  let symtab_ptr    = u16::from_le_bytes([bytes[ROM_SIZE - 10], bytes[ROM_SIZE - 9]]);
 
   let has_boundary = code_boundary >= base_addr && code_boundary < 0xFFF0;
+
+  // Detect embedded symbol table: pointer at $FFF6, magic "C02S" at that address.
+  let symtab_offset: Option<usize> = {
+    let ptr = symtab_ptr as usize;
+    let base = base_addr as usize;
+    let offset = ptr.wrapping_sub(base);
+    if ptr >= base && ptr < 0xFFF6 && offset + 4 <= ROM_SIZE
+      && &bytes[offset..offset + 4] == b"C02S"
+    {
+      Some(offset)
+    } else {
+      None
+    }
+  };
+
+  // Data section scan stops at symbol table start (if any) or at boundary marker.
+  let scan_end = symtab_offset.unwrap_or(ROM_SIZE - 8);
 
   let code_end = if has_boundary {
     (code_boundary - base_addr) as usize
   } else {
-    code_bytes
+    bytes[..scan_end]
       .iter()
       .rposition(|&b| b != 0xEA)
       .map(|i| i + 1)
@@ -147,8 +161,7 @@ fn parse_rom(bytes: &[u8]) -> Option<RomInfo> {
   };
 
   let data_end = if has_boundary {
-    let marker_pos = bytes.len() - 8;
-    bytes[code_end..marker_pos]
+    bytes[code_end..scan_end]
       .iter()
       .rposition(|&b| b != 0xEA)
       .map(|i| code_end + i + 1)
@@ -160,13 +173,41 @@ fn parse_rom(bytes: &[u8]) -> Option<RomInfo> {
   Some(RomInfo { base_addr, code_end, data_end, has_boundary, nmi, reset, irq })
 }
 
+fn parse_symbols(bytes: &[u8], base_addr: u16) -> HashMap<u16, String> {
+  if bytes.len() < ROM_SIZE { return HashMap::new(); }
+  let symtab_ptr = u16::from_le_bytes([bytes[ROM_SIZE - 10], bytes[ROM_SIZE - 9]]);
+  let ptr = symtab_ptr as usize;
+  let base = base_addr as usize;
+  if ptr < base || ptr >= 0xFFF6 { return HashMap::new(); }
+  let offset = ptr - base;
+  if offset + 6 > ROM_SIZE || &bytes[offset..offset + 4] != b"C02S" {
+    return HashMap::new();
+  }
+  let count = u16::from_le_bytes([bytes[offset + 4], bytes[offset + 5]]) as usize;
+  let mut map = HashMap::new();
+  let mut pos = offset + 6;
+  for _ in 0..count {
+    if pos + 3 > ROM_SIZE { break; }
+    let addr = u16::from_le_bytes([bytes[pos], bytes[pos + 1]]);
+    pos += 2;
+    if let Some(end) = bytes[pos..ROM_SIZE].iter().position(|&b| b == 0) {
+      let name = String::from_utf8_lossy(&bytes[pos..pos + end]).into_owned();
+      pos += end + 1;
+      map.insert(addr, name);
+    } else {
+      break;
+    }
+  }
+  map
+}
+
 pub fn dump_sections(bytes: &[u8]) {
   let info = match parse_rom(bytes) {
     Some(i) => i,
     None => { eprintln!("ROM too small"); return; }
   };
 
-  let rom_size = bytes.len();
+  let rom_size = ROM_SIZE;
   let base = info.base_addr;
 
   println!("ROM size:  {} bytes ({:#06X})", rom_size, rom_size);
@@ -221,7 +262,8 @@ pub fn disassemble(bytes: &[u8], mode: Mode) {
   };
 
   let code = &bytes[..info.code_end];
-  let labels = collect_jump_targets(code);
+  let mut labels = collect_jump_targets(code);
+  labels.extend(parse_symbols(bytes, info.base_addr));
 
   let mut cursor = Cursor::new(code);
   let mut buffer = [0u8; 1];
@@ -503,7 +545,7 @@ pub fn dump_size(bytes: &[u8]) {
     None => { eprintln!("ROM too small"); return; }
   };
 
-  let rom_size = bytes.len();
+  let rom_size = ROM_SIZE;
   let code_bytes = info.code_end;
   let data_bytes = info.data_end - info.code_end;
   let used = info.data_end + VECTOR_TABLE_SIZE + 2;

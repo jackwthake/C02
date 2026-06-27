@@ -17,6 +17,7 @@ typedef struct {
   int syntax_only;
   int time_report;
   int incremental_build;
+  int strip_debug;
 
   int is_input_bin;
   char *output;

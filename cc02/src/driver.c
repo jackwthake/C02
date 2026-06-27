@@ -179,7 +179,7 @@ static int run_codegen(params_t *params, compiler_t *c, timing_t *t) {
   int status = 0;
 
   size_t rom_size;
-  uint8_t *rom = generate_rom(&c->ir_gen, &rom_size);
+  uint8_t *rom = generate_rom(&c->ir_gen, &rom_size, !params->strip_debug);
   if (!rom) {
     fprintf(stderr, RED "Code generation failed.\n" RESET);
     t->codegen = get_time_ms() - start;

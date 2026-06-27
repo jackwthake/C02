@@ -86,6 +86,6 @@ typedef struct {
   unsigned      data_fixup_capacity;
 } emitter_t;
 
-uint8_t *generate_rom(ir_gen_t *gen, size_t *final_rom_size);
+uint8_t *generate_rom(ir_gen_t *gen, size_t *final_rom_size, int emit_symbols);
 
 #endif

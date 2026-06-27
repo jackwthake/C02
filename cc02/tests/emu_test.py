@@ -43,6 +43,7 @@ def load_and_run(bin_path, max_cycles=50000):
     mpu = MPU65C02()
     with open(bin_path, "rb") as f:
         rom = f.read()
+    rom = rom[:ROM_SIZE]  # strip symbol table if present
     for i, byte in enumerate(rom):
         mpu.memory[ROM_START + i] = byte
     mpu.pc = mpu.memory[0xFFFC] | (mpu.memory[0xFFFD] << 8)
