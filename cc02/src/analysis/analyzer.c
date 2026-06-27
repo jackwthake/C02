@@ -431,6 +431,13 @@ static type_t resolve_expr_type(analyzer_t *a, node_t *expr) {
       type_t right = resolve_expr_type(a, expr->binop.right);
       if (is_type_error(left) || is_type_error(right)) return TYPE_ERROR;
 
+      // pointer arithmetic: ptr +/- integer → pointer of same type
+      op_t bop = expr->binop.op;
+      if ((bop == OP_PLUS || bop == OP_MINUS) && left.is_ptr && !right.is_ptr
+          && right.kind != TYPE_STRUCT && right.kind != TYPE_VOID) {
+        return left;
+      }
+
       if (!is_types_compatible(left, right) && !is_types_compatible(right, left)) {
         EMIT_TYPE_ERROR(expr->loc, left, right, "binary operation");
         return TYPE_ERROR;

@@ -495,6 +495,7 @@ static void emit_load_byte(emitter_t *e, zp_map_t *map,
       lda_imm(e, (uint8_t)((op->int_val >> (8 * byte)) & 0xFF));
       break;
     case OPERAND_VAR: {
+      if (byte >= full_type_size(e, op->type)) { lda_imm(e, 0); break; }
       global_entry_t *g = lookup_global(e, op->name);
       if (g)
         lda_abs(e, (uint16_t)(g->ram_addr + byte));
@@ -503,6 +504,7 @@ static void emit_load_byte(emitter_t *e, zp_map_t *map,
       break;
     }
     case OPERAND_TEMP:
+      if (byte >= full_type_size(e, op->type)) { lda_imm(e, 0); break; }
       lda_zpg(e, (uint8_t)(zp_map_lookup(map, op) + byte));
       break;
     default: break;
@@ -532,6 +534,7 @@ static void emit_store_byte(emitter_t *e, zp_map_t *map,
         IMM_FN(e, (uint8_t)((op->int_val >> (8 * byte)) & 0xFF));        \
         break;                                                           \
       case OPERAND_VAR: {                                                \
+        if (byte >= full_type_size(e, op->type)) { IMM_FN(e, 0); break; } \
         global_entry_t *g = lookup_global(e, op->name);                  \
         if (g)                                                           \
           ABS_FN(e, (uint16_t)(g->ram_addr + byte));                     \
@@ -540,6 +543,7 @@ static void emit_store_byte(emitter_t *e, zp_map_t *map,
         break;                                                           \
       }                                                                  \
       case OPERAND_TEMP:                                                 \
+        if (byte >= full_type_size(e, op->type)) { IMM_FN(e, 0); break; } \
         ZPG_FN(e, (uint8_t)(zp_map_lookup(map, op) + byte));             \
         break;                                                           \
       default: break;                                                    \

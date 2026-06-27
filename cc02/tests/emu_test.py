@@ -648,6 +648,49 @@ def test_shl_var():
     return True, None
 
 
+def test_lcd_simplified():
+    """*(msg + i) loop writes 'Hello C02!' to PORTB in order."""
+    source = os.path.join(SCRIPT_DIR, "emu_lcd_simplified.c02")
+    with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as tmp:
+        bin_path = tmp.name
+    try:
+        ok, stderr = compile_c02(source, bin_path)
+        if not ok:
+            return False, f"compilation failed: {stderr}"
+        mpu = load_and_run(bin_path, max_cycles=200000)
+
+        # Capture all writes to PORTB by re-running with tracking
+        mpu2 = MPU65C02()
+        with open(bin_path, "rb") as f:
+            rom = f.read()
+        for i, b in enumerate(rom):
+            mpu2.memory[ROM_START + i] = b
+        mpu2.pc = mpu2.memory[0xFFFC] | (mpu2.memory[0xFFFD] << 8)
+
+        writes = []
+        class TrackingMem(list):
+            def __setitem__(self, addr, val):
+                if addr == 0x6000:
+                    writes.append(val)
+                super().__setitem__(addr, val)
+        mpu2.memory = TrackingMem(list(mpu2.memory))
+        for _ in range(200000):
+            old_pc = mpu2.pc
+            mpu2.step()
+            if mpu2.pc == old_pc:
+                break
+
+        expected = [ord(c) for c in "Hello C02!"]
+        char_writes = writes[-10:]
+        if char_writes != expected:
+            got_str = "".join(chr(b) if 32 <= b < 127 else f"\\x{b:02x}" for b in char_writes)
+            return False, f"last 10 PORTB writes = {got_str!r}, expected 'Hello C02!'"
+        return True, None
+    finally:
+        if os.path.exists(bin_path):
+            os.unlink(bin_path)
+
+
 def test_field_local():
     """Local struct: p.y where p = Point{.x=10, .y=42}."""
     source = os.path.join(SCRIPT_DIR, "emu_field_local.c02")
@@ -743,6 +786,7 @@ TESTS = [
     ("mul_u8", test_mul_u8),
     ("div_u8", test_div_u8),
     ("mod_u8", test_mod_u8),
+    ("lcd_simplified", test_lcd_simplified),
     ("field_local", test_field_local),
     ("field_global", test_field_global),
     ("field_ptr", test_field_ptr),
