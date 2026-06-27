@@ -7,7 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/) - while
 the project is in `0.x`, breaking changes may land in MINOR releases; PATCH
 releases are reserved for bug fixes only.
 
-## [Unreleased]
+## [v0.2.15] 2026-06-26
+
+- **Function call codegen (`TAC_CALL`)** — full caller/callee ABI using a fixed
+  2-byte ZP slot per parameter in the `$EF–$FE` ABI zone. Caller copies each
+  argument into its slot (`$EF`/`$F0` for arg 0, `$F1`/`$F2` for arg 1, etc.)
+  via `emit_load_byte`, which zero-extends u8 args into the hi byte automatically.
+  Callee prologue (`emit_function_prologue`) copies the ABI zone into the
+  function's own ZP slots at function entry; no-arg functions (including `main`)
+  skip the prologue entirely. Return values are already handled by the existing
+  `TAC_RETURN`→`$02/$03` path; `TAC_CALL` copies `$02/$03` into the destination
+  temp after `JSR`. Void calls skip the copy (`TYPE_VOID` guard). Max 8
+  parameters enforced at codegen with a hard error. Note: signed narrower→wider
+  widening at call sites (e.g. i8 arg into i16 param) is zero-extended, not
+  sign-extended; a future IR pass should insert explicit `TAC_CAST` nodes for
+  implicit widening in call arguments.
+- **Callee-saves ZP preservation** — every function (except `main`) pushes all
+  of its ZP slots onto the hardware stack at entry (via `PHA`) and pops them
+  in reverse order before every `RTS` (via `PLA`). This ensures the caller's
+  locals and temporaries survive across calls regardless of ZP slot overlap.
+  As a direct consequence, bounded recursion is now supported — stack depth is
+  limited to ≈256 / (function's ZP byte count) levels.
+- Emulator tests: `func_call_u8` (add(10,32)=42), `func_call_void`
+  (write_port(99)→PORTB=99), `func_call_u16` (sum16(200,300)=500, lo byte=244),
+  `func_clobber` (x=5 survives callee overwriting its ZP slot; result=11),
+  `func_recursive` (factorial(5)=120, exercises 5-level LIFO stack discipline).
 
 - **Struct field access codegen (`TAC_FIELD_LOAD` / `TAC_FIELD_STORE`)** — field
   reads and writes for both by-value and pointer-to-struct operands. By-value

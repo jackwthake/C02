@@ -21,7 +21,7 @@
 2. **Recursive Descent Parser:** Transforms the token stream into a structured AST, treating hardware registers and standard controls as first-class grammatical constructs.
 3. **Lexically Scoped Semantic Analyzer:** Two-pass validation engine over the AST. Pass 1 registers all top-level declarations (functions, structs, registers, globals) into the global symbol table. Pass 2 walks function bodies with a scoped symbol table, checking undeclared identifiers, type mismatches, argument counts/types, struct field access, lvalue validity, and return-type consistency. Invalid declarations are poisoned to prevent cascading diagnostics.
 4. **IR Generator:** Lowers the analysed AST into a self-contained three-address code (TAC) intermediate representation. The IR module contains struct layouts with computed field offsets, global/register definitions with hardware addresses baked in, and one flat instruction stream per function - codegen can emit target code from the IR alone, without consulting the AST or symbol table. Supports incremental compilation: `-c` serializes the IR to a `.o` file that can be loaded back to skip the frontend entirely.
-5. **Code Generator:** Emits valid 65C02 ROM binaries (32K) with a bootstrap runtime, interrupt vectors, and flat zero-page register allocation. Avoids slow stack-based execution by mapping local variables, temporaries, and parameters directly onto zero-page slots. Globals are allocated in RAM ($0200+) and initialized in the bootstrap before `JSR main`. String literals are placed in a ROM data section with backpatching fixups. Supports arithmetic (`+`, `-`, unary `-`) for all integer types (u8/i8/u16/i16), comparisons across all widths and signedness (unsigned via carry-flag, signed via N⊕V), and pointer dereference. Programs compile and run on real hardware.
+5. **Code Generator:** Emits valid 65C02 ROM binaries (32K) with a bootstrap runtime, interrupt vectors, and flat zero-page register allocation. Avoids slow stack-based execution by mapping local variables, temporaries, and parameters directly onto zero-page slots. Globals are allocated in RAM ($0200+) and initialized in the bootstrap before `JSR main`. String literals are placed in a ROM data section with backpatching fixups. Supports arithmetic (`+`, `-`, unary `-`) for all integer types (u8/i8/u16/i16), comparisons across all widths and signedness (unsigned via carry-flag, signed via N⊕V), pointer dereference, and function calls. Function calls use a fixed 2-byte-per-param ABI zone (`$EF–$FE`) for parameter passing; a callee-saves convention (PHA/PLA on all ZP slots) preserves the caller's locals across calls and enables bounded recursion. Programs compile and run on real hardware.
 
 #### c02-objdump Disassembler
 
@@ -45,10 +45,10 @@ C02 is under active, early development. The **complete frontend** (tokenizer, pa
 - **Type casts:** `(type)expr` — widening zero/sign-extends, narrowing copies low bytes.
 - **Struct field access:** `s.field` and `ptr.field` (auto-deref) for both local and global structs. Field reads and writes work for by-value structs and pointer-to-struct, including `++field` / `--field`.
 - **Global variables:** RAM-allocated globals with bootstrap initialization, correctly accessed via absolute addressing throughout all codegen paths. String literals placed in a ROM data section with backpatching fixups.
+- **Function calls:** full `JSR`/`RTS` ABI with up to 8 parameters passed through the `$EF–$FE` fixed-slot ABI zone. A callee-saves convention (PHA all ZP slots on entry, PLA in reverse on return) preserves caller locals across calls. Bounded recursion is supported — stack depth is limited to ≈256 / (function ZP byte count).
 
 #### Not yet implemented
 
-- **Function calls** — the ABI zone (`$EF–$FF`) is reserved but `JSR`/parameter passing is not wired up yet.
 - **String local variables** — `u8 *msg = "..."` only works at file scope; local string pointer initialization is not yet supported.
 - **Arrays** — no array type or subscript syntax (`a[i]`). Use pointer arithmetic (`*(ptr + i)`) in the meantime.
 - **`break` / `continue`** — not yet supported inside loops.

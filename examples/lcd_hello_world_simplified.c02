@@ -7,13 +7,7 @@ reg u8 DDRA @ 0x6003;
  PORTB = LCD data lines
  PORTA = top 3 bits for control lines, PA7 = enable, PA6 = read/write, PA6 = register select
 */
-
 u8 *msg = "Hello C02!";
-
-struct string {
-  u8 *val;
-  u8 length;
-}
 
 fn main() -> void {
   // Set the data direction registers for PORTA and PORTB to output
@@ -37,10 +31,8 @@ fn main() -> void {
   PORTA = 0x80; // RS=0, E=1 to latch command
   PORTA = 0x00;
 
-  string str = string { .length = 10, .val = msg };
-
-  for (u8 i = 0; i < str.length; ++i) {
-    PORTB = *(str.val + i); // Put character on data lines
+  for (u8 i = 0; *(msg + i); ++i) {
+    PORTB = *(msg + i); // Put character on data lines
     PORTA = 0x32; // RS
     PORTA = 0xA0; // RS | E
     PORTA = 0x32; // RS

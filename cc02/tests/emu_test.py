@@ -727,6 +727,66 @@ def test_field_ptr():
     return True, None
 
 
+def test_func_call_u8():
+    """fn add(a, b: u8) -> u8; add(10, 32) → PORTB=42."""
+    source = os.path.join(SCRIPT_DIR, "emu_func_call_u8.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 42:
+        return False, f"memory[$6000] = {val}, expected 42"
+    return True, None
+
+
+def test_func_call_void():
+    """fn write_port(val: u8) -> void; write_port(99) → PORTB=99."""
+    source = os.path.join(SCRIPT_DIR, "emu_func_call_void.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 99:
+        return False, f"memory[$6000] = {val}, expected 99"
+    return True, None
+
+
+def test_func_call_u16():
+    """fn sum16(a, b: u16) -> u16; sum16(200, 300) → 500, PORTB=(u8)500=244."""
+    source = os.path.join(SCRIPT_DIR, "emu_func_call_u16.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 244:
+        return False, f"memory[$6000] = {val}, expected 244"
+    return True, None
+
+
+def test_func_clobber():
+    """Callee-saves: x=5 survives double_val(3) call; PORTB = x+r = 5+6 = 11."""
+    source = os.path.join(SCRIPT_DIR, "emu_func_clobber.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 11:
+        return False, f"memory[$6000] = {val}, expected 11"
+    return True, None
+
+
+def test_func_recursive():
+    """Recursion: factorial(5) = 120; callee-saves allows bounded recursion."""
+    source = os.path.join(SCRIPT_DIR, "emu_func_recursive.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 120:
+        return False, f"memory[$6000] = {val}, expected 120"
+    return True, None
+
+
 # ----------------------------------------------------------------
 # Runner
 # ----------------------------------------------------------------
@@ -790,6 +850,11 @@ TESTS = [
     ("field_local", test_field_local),
     ("field_global", test_field_global),
     ("field_ptr", test_field_ptr),
+    ("func_call_u8", test_func_call_u8),
+    ("func_call_void", test_func_call_void),
+    ("func_call_u16", test_func_call_u16),
+    ("func_clobber", test_func_clobber),
+    ("func_recursive", test_func_recursive),
 ]
 
 

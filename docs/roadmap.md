@@ -54,7 +54,7 @@ should compile to correct code.
 
 #### Must-have (language is broken without these)
 
-- [ ] **Function calls** — wire up the ABI zone (`$EF–$FF`), emit caller
+- [x] **Function calls** — wire up the ABI zone (`$EF–$FF`), emit caller
       copies args into ABI slots before `JSR`, callee prologue copies from
       ABI into local ZP slots. Return values through `$02` (RET).
 - [x] **Pointer store** (`*p = val`) — `TAC_STORE` with var/temp
@@ -93,7 +93,7 @@ should compile to correct code.
 - [x] **Compound assignment codegen** (`+=`, `-=`, etc.) — these lower
       through the existing binary op + assignment IR path, so they may
       already work once the underlying ops are implemented. Needs testing.
-      - [ ] `&=, |=, ^=, <<=, >>=` need implementing but arithmetic compound 
+      - [ ] `&=, |=, ^=, <<=, >>=` need implementing but arithmetic compound
             assignments work
 
 ### v1.0 Non-goals

@@ -17,6 +17,17 @@
 #define REG_START   0x04
 #define PARAM_START 0xEF
 
+// ABI zone: fixed 2-byte slots per parameter ($EF/$F0, $F1/$F2, ..., $FD/$FE).
+// Using fixed 2-byte slots simplifies caller/callee agreement at the cost of 1 byte
+// per u8 parameter. Callee-saves via PHA/PLA preserves the caller's ZP slots across
+// the call, which also enables bounded recursion (limited by the 256-byte hw stack).
+// NOTE: signed narrower→wider widening (e.g. i8 arg into i16 param) is zero-extended
+// at the call site, not sign-extended. The IR does not insert explicit cast nodes for
+// implicit widening in call arguments. For now this means negative i8 args passed to
+// i16 params produce wrong values; a future IR pass should insert TAC_CAST nodes here.
+#define ABI_SLOT_SIZE  2
+#define ABI_MAX_PARAMS 8
+
 // Fixed ZP slots for arithmetic helper subroutines ($E8–$EB, below PARAM_START).
 #define HELPER_ARG1 0xE8  // dividend / multiplicand (modified by helpers)
 #define HELPER_ARG2 0xE9  // divisor  / multiplier   (modified by helpers)
@@ -338,6 +349,8 @@ OP_EMITTER_NO_ARG(clc, 0x18)
 OP_EMITTER_NO_ARG(sec, 0x38)
 OP_EMITTER_NO_ARG(tax, 0xAA)
 OP_EMITTER_NO_ARG(dex, 0xCA)
+OP_EMITTER_NO_ARG(pha, 0x48)
+OP_EMITTER_NO_ARG(pla, 0x68)
 
 
 OP_EMITTER_ABS(jmp_abs, 0x4C)
@@ -576,12 +589,69 @@ static void emit_cond_jump(emitter_t *e, zp_map_t *map,
 }
 
 
+// Push every byte of every ZP slot this function uses onto the hardware stack.
+// Called at function entry (before the ABI-zone copy) so that whatever the caller
+// had at those ZP addresses is preserved across the call.
+static void emit_zp_save(emitter_t *e, zp_map_t *map) {
+  for (unsigned i = 0; i < map->count; i++) {
+    for (unsigned b = 0; b < map->entries[i].size; b++) {
+      lda_zpg(e, (uint8_t)(map->entries[i].zp_addr + b));
+      pha(e);
+    }
+  }
+}
+
+// Pop every byte back in reverse order (LIFO) and store into the ZP slots.
+// Called before every RTS so the caller's ZP values are restored on return.
+static void emit_zp_restore(emitter_t *e, zp_map_t *map) {
+  unsigned i = map->count;
+  while (i--) {
+    unsigned b = map->entries[i].size;
+    while (b--) {
+      pla(e);
+      sta_zpg(e, (uint8_t)(map->entries[i].zp_addr + b));
+    }
+  }
+}
+
+
+// Copy each argument from the fixed ABI zone into the function's own ZP slots.
+// Skipped when param_count == 0 (covers main and any no-arg function).
+static int emit_function_prologue(emitter_t *e, zp_map_t *map, cfg_t *cfg) {
+  if (cfg->params.count > ABI_MAX_PARAMS) {
+    fprintf(stderr, "codegen: function '%s' has %u parameters, max is %d\n",
+            cfg->name, cfg->params.count, ABI_MAX_PARAMS);
+    return 0;
+  }
+  for (unsigned i = 0; i < cfg->params.count; i++) {
+    param_t *param = &cfg->params.items[i];
+    unsigned size = codegen_type_size(param->type);
+    tac_operand_t op = { .kind = OPERAND_VAR, .name = param->name, .type = param->type };
+    uint8_t zp = zp_map_lookup(map, &op);
+    for (unsigned b = 0; b < size; b++) {
+      lda_zpg(e, (uint8_t)(PARAM_START + i * ABI_SLOT_SIZE + b));
+      sta_zpg(e, (uint8_t)(zp + b));
+    }
+  }
+  return 1;
+}
+
+
 // Lower a function's TAC instruction stream to 65C02 machine code.
 static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
   register_func_label(e, cfg->name, (uint16_t)(ROM_START + e->code_pos));
 
   zp_map_t map;
   zp_map_build(e, &map, cfg);
+
+  // main is only called by the bootstrap, which has no ZP state to preserve.
+  // Every other callee saves the caller's ZP slots on entry and restores on return.
+  int is_main = (strcmp(cfg->name, "main") == 0);
+  if (!is_main)
+    emit_zp_save(e, &map);
+
+  if (cfg->params.count > 0 && !emit_function_prologue(e, &map, cfg))
+    return 0;
 
   e->local_label_count = cfg->next_label;
   e->local_fixup_count = 0;
@@ -753,7 +823,38 @@ static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
               sta_zpg(e, (uint8_t)(RET + b));
             }
           }
+          // Restore the caller's ZP slots before returning (balances emit_zp_save).
+          // Return value is already in RET ($02/$03) above the restored region.
+          if (!is_main)
+            emit_zp_restore(e, &map);
           rts(e);
+          break;
+        }
+
+        case TAC_CALL: {
+          if (instruction->call_arg_count > ABI_MAX_PARAMS) {
+            fprintf(stderr, "codegen: call to '%s' passes %u arguments, max is %d\n",
+                    instruction->call_name, instruction->call_arg_count, ABI_MAX_PARAMS);
+            return 0;
+          }
+          // Copy each argument into its fixed 2-byte ABI zone slot. emit_load_byte
+          // zero-extends naturally for byte indices past the operand's type width.
+          for (unsigned ai = 0; ai < instruction->call_arg_count; ai++) {
+            tac_operand_t *arg = &instruction->call_args[ai];
+            for (unsigned ab = 0; ab < ABI_SLOT_SIZE; ab++) {
+              emit_load_byte(e, &map, arg, ab);
+              sta_zpg(e, (uint8_t)(PARAM_START + ai * ABI_SLOT_SIZE + ab));
+            }
+          }
+          jsr(e, instruction->call_name);
+          // Copy return value from ZP_RET into the destination temp (skip for void).
+          if (instruction->dst.type.kind != TYPE_VOID) {
+            unsigned ret_size = codegen_type_size(instruction->dst.type);
+            for (unsigned rb = 0; rb < ret_size; rb++) {
+              lda_zpg(e, (uint8_t)(RET + rb));
+              emit_store_byte(e, &map, &instruction->dst, rb);
+            }
+          }
           break;
         }
 
