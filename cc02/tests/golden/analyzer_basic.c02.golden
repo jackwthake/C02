@@ -4,4 +4,5 @@
   [36mglobal_instance[0m variable : test_struct
   [36mglobal_symbol[0m variable : u16
   [36mPORTB     [0m variable : u8 @ 0x6000
+  [36m__memory_top[0m variable : u16
   [36m__heap_start[0m variable : u16

@@ -3,6 +3,7 @@
   decl fn send_byte(u8 b) -> void
   decl u8 counter
   decl u16 __heap_start
+  decl u16 __memory_top
 
 --- Functions ---
 fn main() -> void {

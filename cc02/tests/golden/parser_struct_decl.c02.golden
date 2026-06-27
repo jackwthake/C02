@@ -319,4 +319,5 @@
    |- FunctionDecl someFunc(u8 v, u16 r) -> void
    |  `- CompoundStmt
    |     `- ReturnStmt
-   `- ForwardDecl __heap_start : u16
+   |- ForwardDecl __heap_start : u16
+   `- ForwardDecl __memory_top : u16

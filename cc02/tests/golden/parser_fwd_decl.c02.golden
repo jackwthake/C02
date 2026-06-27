@@ -3,4 +3,5 @@
    |- ForwardDecl counter : u8
    |- FunctionDecl main() -> void
    |  `- CompoundStmt
-   `- ForwardDecl __heap_start : u16
+   |- ForwardDecl __heap_start : u16
+   `- ForwardDecl __memory_top : u16

@@ -690,14 +690,14 @@ def test_div_u16():
 
 
 def test_global_ram_top():
-    """__heap_start == $0203: u8 x at $0200, __heap_start at $0201, heap starts at $0203."""
+    """__heap_start == $0205: u8 x@$0200, __heap_start@$0201, __memory_top@$0203, heap starts at $0205."""
     source = os.path.join(SCRIPT_DIR, "emu_global_ram_top.c02")
     mpu, err = compile_and_run(source)
     if mpu is None:
         return False, f"compilation failed: {err}"
     val = mpu.memory[0x6000] | (mpu.memory[0x6001] << 8)
-    if val != 0x0203:
-        return False, f"__heap_start = {val:#06x}, expected 0x0203"
+    if val != 0x0205:
+        return False, f"__heap_start = {val:#06x}, expected 0x0205"
     return True, None
 
 

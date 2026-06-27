@@ -200,4 +200,5 @@
    |     |                    |- IntegerLiteral (1)
    |     |                    `- Identifier i
    |     `- ReturnStmt
-   `- ForwardDecl __heap_start : u16
+   |- ForwardDecl __heap_start : u16
+   `- ForwardDecl __memory_top : u16

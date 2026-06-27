@@ -213,7 +213,7 @@ int run_compiler(params_t *params, timing_t *timing) {
 
   if (status == 0 && !params->is_input_bin) {
     // inject compiler globals;
-    const char *externs = "\ndecl u16 __heap_start;";
+    const char *externs = "\ndecl u16 __heap_start;\ndecl u16 __memory_top;\n";
     size_t extern_length = strlen(externs);
 
     c.source_size += (long)extern_length;

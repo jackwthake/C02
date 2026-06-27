@@ -1,4 +1,5 @@
   [36mPair      [0m struct { u8 a, u16 b }
   [36mtakes_u16 [0m function (u16 x) -> void
   [36mmain      [0m function () -> void
+  [36m__memory_top[0m variable : u16
   [36m__heap_start[0m variable : u16

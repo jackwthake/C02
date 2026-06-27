@@ -17,4 +17,5 @@
    |        |     `- Identifier w
    |        `- [value]
    |           `- IntegerLiteral (2)
-   `- ForwardDecl __heap_start : u16
+   |- ForwardDecl __heap_start : u16
+   `- ForwardDecl __memory_top : u16

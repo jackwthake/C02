@@ -1,6 +1,7 @@
 
 --- Externs ---
   decl u16 __heap_start
+  decl u16 __memory_top
 
 --- Functions ---
 fn main() -> void {

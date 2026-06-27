@@ -8,9 +8,10 @@
 // Memory map
 // ----------------------------------------------------------------
 
-#define ROM_SIZE    0x8000
 #define RAM_START   0x0200 // 6502 hardware stack occupies 0x0100 - 0x01FF
+#define RAM_TOP     0x3FFF // see docs/memmap.md
 #define ROM_START   0x8000
+#define ROM_SIZE    0x8000
 
 #define FP          0x00
 #define RET         0x02
@@ -1709,40 +1710,66 @@ static void emit_symbol_table(emitter_t *e) {
 } 
 
 
+// Pass 1: allocate 2 bytes of RAM for a compiler extern and register it in
+// global_entries so lookup_global() uses absolute addressing.
+#define ALLOC_COMPILER_SLOT(EXT) do {                                               \
+  uint16_t _addr = e->ram_pos;                                                      \
+  e->ram_pos += 2;                                                                  \
+  unsigned _n        = e->global_entry_count + 1;                                   \
+  global_entry_t *_g = arena_alloc(&e->arena, _n * sizeof(global_entry_t));         \
+  if (e->global_entry_count > 0)                                                    \
+    memcpy(_g, e->global_entries,                                                   \
+           e->global_entry_count * sizeof(global_entry_t));                         \
+  _g[e->global_entry_count] = (global_entry_t){                                     \
+    .name = (EXT)->name, .ram_addr = _addr, .size = 2, .type = (EXT)->type          \
+  };                                                                                \
+  e->global_entries     = _g;                                                       \
+  e->global_entry_count = _n;                                                       \
+} while (0)
+
+// Pass 2: emit the 16-bit initialiser for an already-allocated compiler extern.
+// Looks up the RAM address from global_entries by name; no-ops if not present.
+#define EMIT_COMPILER_VALUE(NAME, VALUE) do {                                       \
+  global_entry_t *_ge = lookup_global(e, (char *)(NAME));                           \
+  if (_ge) {                                                                        \
+    uint16_t _val = (uint16_t)(VALUE);                                              \
+    lda_imm(e, (uint8_t)(_val & 0xFF)); sta_abs(e, _ge->ram_addr);                  \
+    lda_imm(e, (uint8_t)(_val >> 8));   sta_abs(e, (uint16_t)(_ge->ram_addr + 1));  \
+  }                                                                                 \
+} while (0)
+
+
 // Allocate RAM and emit initialisers for compiler-defined externs (decl).
-// Called after emit_global_init so the init sequence is contiguous, and before
-// function emission so lookup_global() finds these symbols via absolute addressing.
-// Unknown externs and function externs are silently skipped — those are resolved
-// at IR-link time, not here.
-static void emit_compiler_extern_inits(emitter_t *e, ir_gen_t *gen) {
+// Two-pass: all slots are allocated first so e->ram_pos is fully settled
+// before any value is emitted.  This ensures __heap_start captures the
+// correct first-free-RAM address regardless of declaration order.
+// Returns 0 if an extern is not a known compiler constant.
+static int emit_compiler_extern_inits(emitter_t *e, ir_gen_t *gen) {
+  // Pass 1: allocate all slots.
   for (unsigned i = 0; i < gen->module.extern_count; i++) {
     ir_extern_t *ext = &gen->module.externs[i];
     if (ext->is_function) continue;
 
-    if (strcmp(ext->name, "__heap_start") == 0) {
-      uint16_t addr = e->ram_pos;
-      e->ram_pos += 2;
-
-      // Extend global_entries so lookup_global() uses absolute addressing.
-      unsigned new_count    = e->global_entry_count + 1;
-      global_entry_t *grown = arena_alloc(&e->arena, new_count * sizeof(global_entry_t));
-      if (e->global_entry_count > 0)
-        memcpy(grown, e->global_entries, e->global_entry_count * sizeof(global_entry_t));
-      grown[e->global_entry_count] = (global_entry_t){
-        .name = ext->name, .ram_addr = addr, .size = 2, .type = ext->type
-      };
-      e->global_entries     = grown;
-      e->global_entry_count = new_count;
-
-      // Store the heap-start address (first free RAM byte after all globals).
-      lda_imm(e, (uint8_t)(e->ram_pos & 0xFF));
-      sta_abs(e, addr);
-      lda_imm(e, (uint8_t)(e->ram_pos >> 8));
-      sta_abs(e, (uint16_t)(addr + 1));
+    if (strcmp(ext->name, "__heap_start") == 0)
+      ALLOC_COMPILER_SLOT(ext);
+    else if (strcmp(ext->name, "__memory_top") == 0)
+      ALLOC_COMPILER_SLOT(ext);
+    else {
+      fprintf(stderr, "codegen: unresolved extern '%s'\n", ext->name);
+      return 0;
     }
-    // Future compiler externs: add else-if branches here.
   }
+
+  // Pass 2: emit initialisers (e->ram_pos is now fully settled).
+  // Add new compiler constants here with EMIT_COMPILER_VALUE("__name", value).
+  EMIT_COMPILER_VALUE("__heap_start", e->ram_pos);
+  EMIT_COMPILER_VALUE("__memory_top", RAM_TOP);
+
+  return 1;
 }
+
+#undef ALLOC_COMPILER_SLOT
+#undef EMIT_COMPILER_VALUE
 
 
 // ----------------------------------------------------------------
@@ -1772,7 +1799,14 @@ uint8_t *generate_rom(ir_gen_t *gen, size_t *final_rom_size, int emit_symbols) {
   allocate_globals(&e, gen);
   emit_bootstrap(&e);
   emit_global_init(&e, gen);
-  emit_compiler_extern_inits(&e, gen);
+
+  if (!emit_compiler_extern_inits(&e, gen)) {
+    free(e.rom);
+    emitter_free(&e);
+    *final_rom_size = 0;
+    return NULL;
+  }
+  
   emit_call_main(&e);
 
   for (unsigned i = 0; i < gen->module.cfg_count; ++i) {
