@@ -7,7 +7,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/) - while
 the project is in `0.x`, breaking changes may land in MINOR releases; PATCH
 releases are reserved for bug fixes only.
 
-## [Unreleased]
+## [v0.2.16] 2026-06-27
+
+- **16-bit multiply / divide / modulo (`__mul16`, `__div16`, `__sdiv16`)** —
+  `TAC_MUL`, `TAC_DIV`, and `TAC_MOD` on `u16`/`i16` operands now compile to
+  subroutine calls rather than erroring. Three new helpers:
+  - `__mul16` — 16-iteration shift-and-add. Correct for both `u16` and `i16`
+    because the low 16 bits of a two's-complement product are sign-agnostic.
+    Overflow silently wraps to the low 16 bits (same as C).
+  - `__div16` — 16-iteration shift-subtract with CMP-based comparison. Uses a
+    `BCS dosub` guard before the 16-bit subtract so divisors with bit 15 set
+    (≥ `$8000`) are handled correctly; the naive SEC-before-compare approach
+    clobbers the overflow carry and produces wrong quotients for those values.
+  - `__sdiv16` — sign wrapper around `__div16`, mirroring `__sdiv8`: encodes
+    signs in `HELPER_SIGN` (`$EC`, bit 7 = negate quotient, bit 6 = negate
+    remainder), negates both operands, calls `__div16`, then restores signs.
+    Follows C truncation-toward-zero convention. `needs_sdiv16 = 1` implies
+    `needs_div16 = 1`.
+  - New 16-bit helper ZP zone: `$E0–$E7` (`HELPER16_ARG1`/`ARG2`/`RES`/`REM`,
+    2 bytes each), below the existing 8-bit zone at `$E8–$EC`.
+  - ZP operand map upper bound tightened from `$EE` to `$DF` to reflect the
+    new reserved zone; `zp_map_add` now enforces this with an address guard
+    (previously only a count guard existed).
+  - `EMIT_ARITH8(ROUTINE, RES_SLOT, NEEDS_FLAG)` /
+    `EMIT_ARITH16(ROUTINE, RES_SLOT, NEEDS_FLAG)` — pair of local macros
+    replacing the three verbose switch arms; bit width, arg-loading, and
+    result-storing all collapse to one line per dispatch branch.
+  - Emulator tests: `mul_u16` (300 × 13 = 3900), `mul_u16_wrap` (256 × 256 = 0,
+    overflow), `div_u16` (50000 / `$C001` = 1, remainder = 847 — exercises the
+    high-bit-divisor path).
+
+- **Symbol table embedded in ROM** — compiled binaries now carry a `"C02S"`
+  symbol table in the NOP fill area between the data section and `$FFF6`,
+  letting `c02-objdump` show real function names instead of auto-generated
+  labels. The table is always emitted by default; `--strip-debug` omits it.
+  Binary size stays exactly 32 KB so EEPROM flashing is unaffected.
+  - Footer layout: `$FFF6–$FFF7` = little-endian pointer to the table (or
+    `$EAEA` NOP fill if absent); `$FFF8–$FFF9` = code/data boundary
+    (unchanged); `$FFFA–$FFFF` = NMI/Reset/IRQ vectors.
+  - Format: magic `C02S` (4 bytes) + u16 entry count (LE) + entries of
+    u16 address (LE) + null-terminated name. All user-defined functions and
+    emitted helpers (`__mul8`, `__div16`, etc.) are included.
+  - Old binaries degrade gracefully: `$EAEA` at `$FFF6` passes the range
+    check but fails the magic-byte check, so the disassembler falls back to
+    `L0`/`L1`/… auto-labels without error.
+  - `c02-objdump`: `parse_symbols` reads the table and merges it into the
+    jump-target label map; `scan_end` for the data-section boundary scan
+    stops at the symbol table start rather than `$FFF8` to avoid
+    misidentifying table bytes as data.
+  - `driver.h`: `params_t` gains `int strip_debug`; `main.c` adds
+    `--strip-debug` to `long_options`.
+
+- **ZP map overflow error propagation** — previously, `zp_map_add` printed a
+  diagnostic to stderr and silently continued, potentially generating corrupt
+  code. `zp_map_add`, `zp_map_add_operand`, and `zp_map_build` now all return
+  `int` (0 = failure); `emit_function_from_cfg` checks `zp_map_build` and
+  returns 0, propagating to `generate_rom` which returns `NULL` — the same
+  path as all other codegen failures, ultimately exiting with
+  `CODE_GEN_ERROR_RET_CODE` (7).
 
 - **Bug fix: signed 8-bit division and modulo (`__sdiv8`)** — `TAC_DIV` and
   `TAC_MOD` on `i8` operands previously routed through the unsigned `__div8`
