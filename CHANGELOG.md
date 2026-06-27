@@ -9,6 +9,45 @@ releases are reserved for bug fixes only.
 
 ## [Unreleased]
 
+- **Struct field access codegen (`TAC_FIELD_LOAD` / `TAC_FIELD_STORE`)** — field
+  reads and writes for both by-value and pointer-to-struct operands. By-value
+  structs use `emit_load_byte`/`emit_store_byte` with `field->offset + b` so
+  global structs automatically get absolute addressing. Pointer-to-struct uses
+  `LDY #(offset+b); LDA/STA ($ptr),Y` with RAM→ZP sync when the pointer is a
+  global.
+  - `full_type_size(e, type)` — struct-aware sizing that consults
+    `ir_module_t.structs` for `TYPE_STRUCT`, replacing the silent `default:
+    return 1` fallback. Used in ZP map allocation (`zp_map_add`),
+    `allocate_globals`, `TAC_COPY`, and the new field ops. `zp_map_build` now
+    takes `emitter_t *e` so struct sizes are available during map construction.
+  - `lookup_struct_field(e, struct_name, field_name)` — field offset/type
+    lookup from the IR module, used by both `TAC_FIELD_LOAD` and
+    `TAC_FIELD_STORE`.
+  - `ir_gen_t *gen` added to `emitter_t` so the module's struct table is
+    reachable from all codegen paths.
+- **Bug fix: `++field` / `--field` not writing back** — `NODE_INC`/`NODE_DEC`
+  on a field-access target (`++str.val`) was loading the field into a temp,
+  incrementing the temp, then silently discarding it. The field was never
+  updated so the loop advanced zero steps each iteration. Fixed in the IR
+  generator: field-access targets now emit `TAC_FIELD_LOAD → TAC_INC/DEC →
+  TAC_FIELD_STORE` rather than loading a throwaway temp.
+- **Pointer arithmetic (`ptr + int`, `ptr - int`)** — the analyzer's
+  `NODE_BINOP` type-check now recognises pointer+integer as valid, returning
+  the pointer type unchanged. The IR already lowered this to `TAC_ADD`; codegen
+  and `TAC_LOAD` already handled the resulting pointer correctly, so no codegen
+  changes were needed.
+- **Zero-extension fix in `emit_load_byte` and `GLOBAL_AWARE_ALU_HELPER`** —
+  both helpers were reading `ZP + byte` even when `byte >= operand_size`,
+  pulling in whatever occupies the adjacent ZP slot as a phantom high byte.
+  Classic symptom: `u8 i` used as an index into a `u8*` pointer computes
+  `ptr + i + (adjacent_slot × 256)` — always a wrong address, always the same
+  garbage byte. Both paths now emit `LDA #0` / `IMM_FN(e, 0)` for
+  out-of-range byte indices. `OPERAND_CONST_INT` was already correct via
+  shift+mask. Fixes `lcd_hello_world_simplified.c02` printing one garbage
+  character in a loop instead of "Hello C02!".
+- Emulator tests: `field_local`, `field_global`, `field_ptr`, `lcd_simplified`
+  (verifies all 10 PORTB writes match "Hello C02!" in order).
+
 ## [v0.2.14] 2026-06-26
 
 - **`TAC_ADDR_OF` (`&x`)** — address-of operator codegen. Globals resolve to
