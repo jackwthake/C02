@@ -105,23 +105,23 @@ static uint8_t zp_map_lookup(zp_map_t *map, tac_operand_t *op) {
 
 
 // Assign the next available ZP slot to an operand (deduped, type-stride-aware).
-static void zp_map_add(emitter_t *e, zp_map_t *map, tac_operand_kind_t kind,
-                        char *name, unsigned temp_id, type_t type) {
+static int zp_map_add(emitter_t *e, zp_map_t *map, tac_operand_kind_t kind,
+                       char *name, unsigned temp_id, type_t type) {
   tac_operand_t probe = { .kind = kind };
   if (kind == OPERAND_VAR) probe.name = name;
   else                     probe.temp_id = temp_id;
   if (zp_map_lookup(map, &probe) != ZP_NOT_FOUND)
-    return;
+    return 1;
   if (map->count >= ZP_MAP_MAX) {
     fprintf(stderr, "codegen: ZP map overflow (>%d operands)\n", ZP_MAP_MAX);
-    return;
+    return 0;
   }
 
   unsigned size = full_type_size(e, type);
   if ((unsigned)map->next_addr + size > HELPER16_ARG1) {
     fprintf(stderr, "codegen: ZP space exhausted (next=$%02X, need %u bytes, limit=$%02X)\n",
             map->next_addr, size, HELPER16_ARG1);
-    return;
+    return 0;
   }
 
   zp_entry_t *entry = &map->entries[map->count++];
@@ -131,37 +131,41 @@ static void zp_map_add(emitter_t *e, zp_map_t *map, tac_operand_kind_t kind,
   entry->zp_addr = map->next_addr;
   entry->size = (uint8_t)size;
   map->next_addr += (uint8_t)size;
+  return 1;
 }
 
 
 // Register a TAC operand in the ZP map (dispatches var vs temp).
-static void zp_map_add_operand(emitter_t *e, zp_map_t *map, tac_operand_t *op) {
+static int zp_map_add_operand(emitter_t *e, zp_map_t *map, tac_operand_t *op) {
   if (op->kind == OPERAND_VAR)
-    zp_map_add(e, map, OPERAND_VAR, op->name, 0, op->type);
-  else if (op->kind == OPERAND_TEMP)
-    zp_map_add(e, map, OPERAND_TEMP, NULL, op->temp_id, op->type);
+    return zp_map_add(e, map, OPERAND_VAR, op->name, 0, op->type);
+  if (op->kind == OPERAND_TEMP)
+    return zp_map_add(e, map, OPERAND_TEMP, NULL, op->temp_id, op->type);
+  return 1;
 }
 
 
 // Build the per-function ZP map: params first, then all referenced operands.
-static void zp_map_build(emitter_t *e, zp_map_t *map, cfg_t *cfg) {
+static int zp_map_build(emitter_t *e, zp_map_t *map, cfg_t *cfg) {
   map->count = 0;
   map->next_addr = REG_START;
 
   for (unsigned i = 0; i < cfg->params.count; i++) {
-    zp_map_add(e, map, OPERAND_VAR, cfg->params.items[i].name, 0,
-               cfg->params.items[i].type);
+    if (!zp_map_add(e, map, OPERAND_VAR, cfg->params.items[i].name, 0,
+                    cfg->params.items[i].type))
+      return 0;
   }
 
   for (unsigned i = 0; i < cfg->block_count; i++) {
     basic_block_t *block = cfg->blocks[i];
     for (unsigned j = 0; j < block->instr_count; j++) {
       tac_instr_t *inst = &block->instrs[j];
-      zp_map_add_operand(e, map, &inst->dst);
-      zp_map_add_operand(e, map, &inst->src1);
-      zp_map_add_operand(e, map, &inst->src2);
+      if (!zp_map_add_operand(e, map, &inst->dst))  return 0;
+      if (!zp_map_add_operand(e, map, &inst->src1)) return 0;
+      if (!zp_map_add_operand(e, map, &inst->src2)) return 0;
     }
   }
+  return 1;
 }
 
 
@@ -656,7 +660,7 @@ static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
   register_func_label(e, cfg->name, (uint16_t)(ROM_START + e->code_pos));
 
   zp_map_t map;
-  zp_map_build(e, &map, cfg);
+  if (!zp_map_build(e, &map, cfg)) return 0;
 
   // main is only called by the bootstrap, which has no ZP state to preserve.
   // Every other callee saves the caller's ZP slots on entry and restores on return.
