@@ -283,6 +283,18 @@ def test_string_deref():
     return True, None
 
 
+def test_local_str():
+    """Local string pointer (u8 *msg = \"Hi!\"), loop writes chars to PORTB."""
+    source = os.path.join(SCRIPT_DIR, "emu_local_str.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != ord('!'):
+        return False, f"memory[$6000] = ${val:02X}, expected ${ord('!'):02X} ('!')"
+    return True, None
+
+
 test_cmp_u16_lt = _test_cmp("emu_cmp_u16_lt.c02", "u16 255 < 256 (high-byte-first proves LT)")
 test_cmp_u16_eq = _test_cmp("emu_cmp_u16_eq.c02", "u16 500 == 500 (both bytes must match)")
 test_cmp_u16_gt = _test_cmp("emu_cmp_u16_gt.c02", "u16 1000 > 255 (high-byte difference)")
@@ -914,6 +926,7 @@ TESTS = [
     ("cmp_neq", test_cmp_neq),
     ("cmp_lte", test_cmp_lte),
     ("string_deref", test_string_deref),
+    ("local_str", test_local_str),
     ("inc_global", test_inc_global),
     ("cmp_global", test_cmp_global),
     ("cmp_u16_lt", test_cmp_u16_lt),

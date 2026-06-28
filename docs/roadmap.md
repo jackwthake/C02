@@ -64,7 +64,7 @@ should compile to correct code.
       load the ZP address as a constant. For globals: load the RAM address.
 - [x] **Type casts / implicit widening** — `u8` → `u16` must zero-extend
       the high byte. Currently reads garbage.
-- [ ] Variables holding string have to be initialized as globals, this needs fixing
+- [x] Variables holding string have to be initialized as globals, this needs fixing
 - [x] `*(ptr + i)` gives analyzer error, complaining that there is a type mismatch
       because ptr is a ptr and i is a normal integer value
 - [ ] Language currently does not support `break` or `continue` keywords

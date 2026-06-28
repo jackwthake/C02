@@ -7,9 +7,9 @@ reg u8 DDRA @ 0x6003;
  PORTB = LCD data lines
  PORTA = top 3 bits for control lines, PA7 = enable, PA6 = read/write, PA6 = register select
 */
-u8 *msg = "Hello C02!";
 
 fn main() -> void {
+  u8 *msg = "Hello C02!";
   // Set the data direction registers for PORTA and PORTB to output
   DDRB = 0xFF; // Set all pins of PORTB as output
   DDRA = 0xE0; // Set top 3 bits of PORTA as output (for RS, RW, E)

@@ -43,9 +43,9 @@ typedef struct {
 } global_entry_t;
 
 typedef struct {
-  size_t   patch_pos;
-  unsigned global_idx;
-  uint8_t  byte;
+  size_t      patch_pos;
+  const char *str_val;
+  uint8_t     byte;
 } data_fixup_t;
 
 typedef struct {

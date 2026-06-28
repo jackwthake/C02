@@ -415,7 +415,7 @@ static void jsr(emitter_t *e, char *func_name) {
 // ----------------------------------------------------------------
 
 // Queue a fixup for a string ROM address (resolved after data section is emitted).
-static void add_data_fixup(emitter_t *e, unsigned global_idx, uint8_t byte) {
+static void add_data_fixup(emitter_t *e, const char *str_val, uint8_t byte) {
   if (e->data_fixup_count >= e->data_fixup_capacity) {
     unsigned cap = e->data_fixup_capacity ? e->data_fixup_capacity * 2 : 8;
     data_fixup_t *grown = arena_alloc(&e->arena, cap * sizeof(data_fixup_t));
@@ -426,7 +426,7 @@ static void add_data_fixup(emitter_t *e, unsigned global_idx, uint8_t byte) {
   }
   data_fixup_t *f = &e->data_fixups[e->data_fixup_count++];
   f->patch_pos = e->code_pos;
-  f->global_idx = global_idx;
+  f->str_val = str_val;
   f->byte = byte;
 }
 
@@ -448,7 +448,7 @@ static void emit_global_init(emitter_t *e, ir_gen_t *gen) {
       case IR_INIT_STR:
         for (unsigned b = 0; b < width; b++) {
           EMIT(0xA9);
-          add_data_fixup(e, i, (uint8_t)b);
+          add_data_fixup(e, g->str_val, (uint8_t)b);
           EMIT(0x00);
           sta_abs(e, (uint16_t)(entry->ram_addr + b));
         }
@@ -461,36 +461,48 @@ static void emit_global_init(emitter_t *e, ir_gen_t *gen) {
 
 
 // Write string literals into ROM after code and resolve data fixups.
+// Each unique string value is written once; fixups for both global and local
+// string pointers are patched with the correct ROM address.
 static void emit_data_section(emitter_t *e, ir_gen_t *gen) {
+  (void)gen;
   e->data_pos = e->code_pos;
 
-  uint16_t *str_addrs = malloc(gen->module.global_count * sizeof(uint16_t));
+  if (e->data_fixup_count == 0) return;
 
-  for (unsigned i = 0; i < gen->module.global_count; i++) {
-    ir_global_t *g = &gen->module.globals[i];
-    if (g->init_kind != IR_INIT_STR) {
-      str_addrs[i] = 0;
-      continue;
+  const char **unique_strs = malloc(e->data_fixup_count * sizeof(char *));
+  uint16_t    *unique_addrs = malloc(e->data_fixup_count * sizeof(uint16_t));
+  unsigned     unique_count = 0;
+
+  for (unsigned i = 0; i < e->data_fixup_count; i++) {
+    const char *s = e->data_fixups[i].str_val;
+    unsigned found = unique_count;
+    for (unsigned j = 0; j < unique_count; j++) {
+      if (strcmp(unique_strs[j], s) == 0) { found = j; break; }
     }
-    str_addrs[i] = (uint16_t)(ROM_START + e->code_pos);
-    size_t len = strlen(g->str_val);
-    for (size_t j = 0; j <= len; j++) {
-      EMIT((uint8_t)g->str_val[j]);
+    if (found == unique_count) {
+      unique_strs[unique_count] = s;
+      unique_addrs[unique_count] = (uint16_t)(ROM_START + e->code_pos);
+      size_t len = strlen(s);
+      for (size_t k = 0; k <= len; k++)
+        EMIT((uint8_t)s[k]);
+      unique_count++;
     }
   }
 
-  if (e->overflow) {
-    free(str_addrs);
-    return;
-  }
+  if (e->overflow) { free(unique_strs); free(unique_addrs); return; }
 
   for (unsigned i = 0; i < e->data_fixup_count; i++) {
     data_fixup_t *f = &e->data_fixups[i];
-    uint16_t addr = str_addrs[f->global_idx];
-    e->rom[f->patch_pos] = (uint8_t)((addr >> (8 * f->byte)) & 0xFF);
+    for (unsigned j = 0; j < unique_count; j++) {
+      if (strcmp(unique_strs[j], f->str_val) == 0) {
+        e->rom[f->patch_pos] = (uint8_t)((unique_addrs[j] >> (8 * f->byte)) & 0xFF);
+        break;
+      }
+    }
   }
 
-  free(str_addrs);
+  free(unique_strs);
+  free(unique_addrs);
 }
 
 
@@ -542,6 +554,13 @@ static void emit_load_byte(emitter_t *e, zp_map_t *map,
   switch (op->kind) {
     case OPERAND_CONST_INT:
       lda_imm(e, (uint8_t)((op->int_val >> (8 * byte)) & 0xFF));
+      break;
+    case OPERAND_CONST_STR:
+      // Emit LDA #placeholder; the immediate byte is patched by emit_data_section
+      // once the string's ROM address is known.
+      EMIT(0xA9);
+      add_data_fixup(e, op->str_val, (uint8_t)byte);
+      EMIT(0x00);
       break;
     case OPERAND_VAR: {
       if (byte >= full_type_size(e, op->type)) { lda_imm(e, 0); break; }

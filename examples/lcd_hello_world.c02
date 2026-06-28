@@ -4,11 +4,10 @@ reg u8 DDRB @ 0x6002;
 reg u8 DDRA @ 0x6003;
 
 /*
- PORTB = LCD data lines
- PORTA = top 3 bits for control lines, PA7 = enable, PA6 = read/write, PA6 = register select
+PORTB = LCD data lines
+PORTA = top 3 bits for control lines, PA7 = enable, PA6 = read/write, PA6 = register select
 */
 
-u8 *msg = "Hello C02!";
 
 fn lcd_send_command(u8 cmd) -> void {
   PORTB = cmd; // Put command on data lines
@@ -24,7 +23,7 @@ fn lcd_init() -> void {
   // Clear the ports to start with a known state
   PORTB = 0; // Clear PORTB
   PORTA = 0; // Clear PORTA
-
+  
   // Initialize the LCD (following a typical initialization sequence)
   lcd_send_command(0x38); // Function set: 8-bit, 2 lines, 5x8 dots
   lcd_send_command(0x0C); // Display on, cursor off
@@ -39,8 +38,9 @@ fn lcd_putc(u8 ch) -> void {
 }
 
 fn main() -> void {
+  u8 *msg = "Hello C02!";
   lcd_init();
-
+  
   for (u8 *p = msg; *p != null; ++p) {
     lcd_putc(*p);
   }

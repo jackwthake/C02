@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/) - while
 the project is in `0.x`, breaking changes may land in MINOR releases; PATCH
 releases are reserved for bug fixes only.
 
+## [Unreleased]
+
+- **Local string literal initializers** — `u8 *p = "some string";` now works
+  inside function bodies, not just at global scope. The string data is placed in
+  the ROM data section via the existing `data_fixup_t` backpatch mechanism (same
+  as global strings); the pointer value (ROM address of the string) is written
+  into the local's ZP slot during function entry via `TAC_COPY` with an
+  `OPERAND_CONST_STR` source. Callee-saves push and pop the pointer ZP slot
+  across nested calls to preserve it across function boundaries. The pointer
+  occupies 2 bytes of ZP for the lifetime of the function;
+
+### Known Hardware Issue
+
+`lcd_hello_world.c02` (the function-call variant) prints "Heliiiiiii" on real
+65C02 hardware instead of "Hello C02!". The simplified no-function-call variant
+and a version using a global string pointer (with the string sitting at `$81EA`)
+both work correctly.
+
+The emulator produces the correct output. The EEPROM contents have been verified
+byte-for-byte against the on-disk binary via `cmp`. Standard hardware mitigations
+(decoupling caps on all major ICs, direct 5V supply on the rails, removal of
+external clock generator) have no effect.
+
+The structural difference: with function calls present, the compiler places the
+string literal at ROM offset `$80FD`, which means the loop pointer `p` crosses
+the `$8100` page boundary mid-string (`$80FF` → `$8100`, where A0–A7 all flip
+`1→0` simultaneously as A8 flips `0→1`). Without function calls (less code
+before the data section), the string lands at `$80C7` and never crosses that
+boundary. The global-string version also crosses into `$81xx` (at `$81EA`) and
+works fine, so the address range itself is not the issue.
+
+Root cause is unresolved — the correlation is to the specific `$80FF → $8100`
+boundary transition rather than to function calls per se. Clock speeds are
+extremely slow (tens of milliseconds between transitions) which makes signal
+integrity unlikely. Investigation ongoing;
+
 ## [v0.2.17] 2026-06-27
 
 - **ROM overflow detection** — the `EMIT()` macro now bounds-checks `code_pos`
