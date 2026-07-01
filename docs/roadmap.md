@@ -67,7 +67,7 @@ should compile to correct code.
 - [x] Variables holding string have to be initialized as globals, this needs fixing
 - [x] `*(ptr + i)` gives analyzer error, complaining that there is a type mismatch
       because ptr is a ptr and i is a normal integer value
-- [ ] Language currently does not support `break` or `continue` keywords
+- [x] Language currently does not support `break` or `continue` keywords
 
 #### Should-have (language is painful without these)
 

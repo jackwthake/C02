@@ -1,0 +1,6 @@
+[1;37manalyzer_bad_shadow.c02[0m:[1;37m9[0m:[1;37m5: [1;31merror: [0mdeclaration of 'x' shadows an outer-scope declaration (shadowing is not supported - rename one of them)
+[1;34m9 |[0m     u8 x = 2;
+[1;34m  |[1;31m     ^~[0m
+[31m
+Semantic analysis failed with [1;31m1[0m[31m errors.
+[0m

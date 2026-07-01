@@ -156,6 +156,14 @@ static void print_instr(tac_instr_t *ins) {
         print_operand(ins->src1);
       }
       break;
+    
+    case TAC_BREAK:
+      printf("break");
+      break;
+
+    case TAC_CONTINUE:
+      printf("continue");
+      break;
 
     case TAC_FIELD_LOAD:
       print_operand(ins->dst);

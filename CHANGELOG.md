@@ -7,7 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/) - while
 the project is in `0.x`, breaking changes may land in MINOR releases; PATCH
 releases are reserved for bug fixes only.
 
-## [Unreleased]
+## [v1.0.0] 2026-07-01
+
+- **v1.0 milestone: Complete Single-File Language** — every must-have and
+  should-have feature from `docs/roadmap.md`'s v1.0 checklist is now
+  implemented: function calls, pointer store, address-of, implicit widening,
+  string literal locals, pointer arithmetic (`*(ptr + i)`), break/continue,
+  struct field access, multiply/divide/modulo, and bitwise/shift operators.
+  The only items left unchecked are explicitly-optional "nice-to-have"s
+  (short-circuit `&&`/`||` codegen outside boolean-context use, and the
+  `&=`/`|=`/`^=`/`<<=`/`>>=` compound assignment forms) — the roadmap's own
+  goal, "someone can sit down and write a non-trivial 65C02 program without
+  hitting an unimplemented wall," is met;
+
+- **`break` and `continue`** — both now supported inside `while` and `for`
+  loops. The analyzer tracks a `loop_depth` counter (incremented for the
+  duration of a loop body) and rejects either statement outside a loop
+  (`ERR_BREAK_OUTSIDE_LOOP` / `ERR_CONTINUE_OUTSIDE_LOOP`). The IR generator
+  maintains a `loop_ctx_t { continue_label, break_label }` stack; both
+  statements desugar to a plain `TAC_JUMP` to the appropriate label, so
+  codegen needed no changes. For `for` loops, `continue` jumps to a new
+  label sitting between the body and the incrementer, so the incrementer
+  still runs before the next condition check. See
+  `docs/break-continue-implementation.md` for the full design writeup,
+  including a bonus fix along the way: the `for`-loop incrementer was being
+  lowered with `lower_expr` instead of `lower_stmt`, so `i = i + 1`-style
+  incrementers (as opposed to `++i`) were silently generating no code;
 
 - **Local string literal initializers** — `u8 *p = "some string";` now works
   inside function bodies, not just at global scope. The string data is placed in
@@ -18,30 +43,18 @@ releases are reserved for bug fixes only.
   across nested calls to preserve it across function boundaries. The pointer
   occupies 2 bytes of ZP for the lifetime of the function;
 
-### Known Hardware Issue
-
-`lcd_hello_world.c02` (the function-call variant) prints "Heliiiiiii" on real
-65C02 hardware instead of "Hello C02!". The simplified no-function-call variant
-and a version using a global string pointer (with the string sitting at `$81EA`)
-both work correctly.
-
-The emulator produces the correct output. The EEPROM contents have been verified
-byte-for-byte against the on-disk binary via `cmp`. Standard hardware mitigations
-(decoupling caps on all major ICs, direct 5V supply on the rails, removal of
-external clock generator) have no effect.
-
-The structural difference: with function calls present, the compiler places the
-string literal at ROM offset `$80FD`, which means the loop pointer `p` crosses
-the `$8100` page boundary mid-string (`$80FF` → `$8100`, where A0–A7 all flip
-`1→0` simultaneously as A8 flips `0→1`). Without function calls (less code
-before the data section), the string lands at `$80C7` and never crosses that
-boundary. The global-string version also crosses into `$81xx` (at `$81EA`) and
-works fine, so the address range itself is not the issue.
-
-Root cause is unresolved — the correlation is to the specific `$80FF → $8100`
-boundary transition rather than to function calls per se. Clock speeds are
-extremely slow (tens of milliseconds between transitions) which makes signal
-integrity unlikely. Investigation ongoing;
+- **Variable shadowing is now a semantic error** — a variable declaration
+  (or function parameter) that reuses a name still visible from an enclosing,
+  still-live scope now raises `ERR_SHADOWED_DECLARATION` instead of silently
+  compiling. Root cause: the IR/codegen identify a variable purely by its bare
+  name (`OPERAND_VAR.name`, matched via `strcmp` in `zp_map_build`), with no
+  per-scope qualifier, so a shadowed inner declaration (e.g. a `for (u8 i = 0;
+  ...)` nested inside a function that already has an outer `u8 i`) aliased the
+  *same* zero-page storage as its outer namesake — the inner loop's own
+  init/exit value silently clobbered the outer variable. This surfaced as
+  `break` firing on the wrong iteration in `arithmetic_demo.c02`. Reusing a
+  name across scopes that never overlap on the scope stack (e.g. two sibling
+  `for` loops each declaring their own `i`) is unaffected and remains legal;
 
 ## [v0.2.17] 2026-06-27
 

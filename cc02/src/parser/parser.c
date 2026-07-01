@@ -824,6 +824,32 @@ static node_t *parse_stmt(parser_t *p) {
       return n;
     }
 
+    case Kw_break: {
+      node_t *n = alloc_node(p);
+
+      n->kind = NODE_BREAK;
+      ++p->pos;
+
+      EXPECT_SYMBOL(s_semicolon, ";", "after break statement.");
+      GUARD(p);
+      ++p->pos;
+
+      return n;
+    }
+
+    case Kw_continue: {
+      node_t *n = alloc_node(p);
+
+      n->kind = NODE_CONTINUE;
+      ++p->pos;
+
+      EXPECT_SYMBOL(s_semicolon, ";", "after continue statement.");
+      GUARD(p);
+      ++p->pos;
+
+      return n;
+    }
+
     case t_u8: case t_i8: case t_u16: case t_i16: case Kw_void: {
       node_t *n = ALLOC_NODE(p);
 

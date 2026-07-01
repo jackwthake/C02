@@ -729,8 +729,10 @@ static void lower_stmt(ir_gen_t *gen, cfg_t *cfg, node_t *node) {
       emit(gen, cfg, (tac_instr_t){ .op = TAC_COND_JUMP, .src1 = neg, .label = end_label });
 
       // otherwise fall through to actual while block
+      gen->loop_stack[gen->loop_depth++] = (loop_ctx_t){ cond_label, end_label };
       if (node->while_stmt.body)
         lower_block(gen, cfg, node->while_stmt.body);
+      --gen->loop_depth;
 
       // jump back to re-evaluate conditional
       emit(gen, cfg, (tac_instr_t){ .op = TAC_JUMP, .label = cond_label });
@@ -743,6 +745,7 @@ static void lower_stmt(ir_gen_t *gen, cfg_t *cfg, node_t *node) {
     case NODE_FOR: {
       unsigned cond_label = new_label(cfg); // for (<initter>; <condition>; <incrementer>) <body>
       unsigned end_label = new_label(cfg);
+      unsigned incr_label = new_label(cfg); // continue jumps here to run incrementer before recheck
 
       // initter
       if (node->for_stmt.initialiser)
@@ -762,24 +765,40 @@ static void lower_stmt(ir_gen_t *gen, cfg_t *cfg, node_t *node) {
       }
 
       // otherwise fall through to actual for block
+      gen->loop_stack[gen->loop_depth++] = (loop_ctx_t){ incr_label, end_label };
       if (node->for_stmt.body)
         lower_block(gen, cfg, node->for_stmt.body);
+      --gen->loop_depth;
+
+      // continue lands here: run incrementer then re-check condition
+      emit(gen, cfg, (tac_instr_t){ .op = TAC_LABEL, .label = incr_label });
 
       // after body runs, do incrementer
       if (node->for_stmt.incrementer)
-        lower_expr(gen, cfg, node->for_stmt.incrementer);
+        lower_stmt(gen, cfg, node->for_stmt.incrementer);
 
       // jump back to re-evaluate conditional
       emit(gen, cfg, (tac_instr_t){ .op = TAC_JUMP, .label = cond_label });
 
-      // where we jump to when cond is false, don't need it if no conditional
-      if (node->for_stmt.cond)
-        emit(gen, cfg, (tac_instr_t){ .op = TAC_LABEL, .label = end_label });
+      // where we jump to when cond is false (always emitted so break always has a target)
+      emit(gen, cfg, (tac_instr_t){ .op = TAC_LABEL, .label = end_label });
       break;
     }
 
     case NODE_BLOCK:
       lower_block(gen, cfg, node);
+      break;
+
+    case NODE_CONTINUE:
+      if (gen->loop_depth > 0)
+        emit(gen, cfg, (tac_instr_t){ .op = TAC_JUMP,
+          .label = gen->loop_stack[gen->loop_depth - 1].continue_label });
+      break;
+
+    case NODE_BREAK:
+      if (gen->loop_depth > 0)
+        emit(gen, cfg, (tac_instr_t){ .op = TAC_JUMP,
+          .label = gen->loop_stack[gen->loop_depth - 1].break_label });
       break;
 
     default:

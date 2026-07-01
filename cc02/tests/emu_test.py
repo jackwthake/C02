@@ -295,6 +295,42 @@ def test_local_str():
     return True, None
 
 
+def test_break_loop():
+    """`break` inside a `while (true)` exits after the 5th iteration, i == 5."""
+    source = os.path.join(SCRIPT_DIR, "emu_break_loop.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 5:
+        return False, f"memory[$6000] = {val}, expected 5"
+    return True, None
+
+
+def test_continue_while():
+    """`continue` inside `while` skips odd i; sum of evens 2+4+...+10 = 30."""
+    source = os.path.join(SCRIPT_DIR, "emu_continue_while.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 30:
+        return False, f"memory[$6000] = {val}, expected 30"
+    return True, None
+
+
+def test_continue_for():
+    """`continue` inside `for` still runs the incrementer; sum of evens 0+2+...+8 = 20."""
+    source = os.path.join(SCRIPT_DIR, "emu_continue_for.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 20:
+        return False, f"memory[$6000] = {val}, expected 20"
+    return True, None
+
+
 test_cmp_u16_lt = _test_cmp("emu_cmp_u16_lt.c02", "u16 255 < 256 (high-byte-first proves LT)")
 test_cmp_u16_eq = _test_cmp("emu_cmp_u16_eq.c02", "u16 500 == 500 (both bytes must match)")
 test_cmp_u16_gt = _test_cmp("emu_cmp_u16_gt.c02", "u16 1000 > 255 (high-byte difference)")
@@ -980,6 +1016,9 @@ TESTS = [
     ("func_call_u16", test_func_call_u16),
     ("func_clobber", test_func_clobber),
     ("func_recursive", test_func_recursive),
+    ("break_loop", test_break_loop),
+    ("continue_while", test_continue_while),
+    ("continue_for", test_continue_for),
 ]
 
 

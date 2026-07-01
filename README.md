@@ -49,12 +49,12 @@
 
 ## Current Status & Limitations
 
-C02 is under active, early development. The **complete frontend** (tokenizer, parser, semantic analyzer), **IR generation**, and **code generator** are functional and tested — simple programs compile to valid 65C02 ROMs and run on real hardware.
+C02 has reached its **v1.0 milestone** — the complete single-file language, per `docs/roadmap.md`'s checklist. The **complete frontend** (tokenizer, parser, semantic analyzer), **IR generation**, and **code generator** are functional and tested — non-trivial programs compile to valid 65C02 ROMs and run on real hardware without hitting an "unimplemented" wall. Development continues toward v1.1+ (interrupt handlers, inline assembly, multi-file linking, optimization passes — see `docs/roadmap.md`).
 
 #### What works today
 
 - **Data movement:** variable copies, constant stores, hardware register writes. Implicit widening (u8→u16) zero-extends correctly; narrowing copies the low bytes.
-- **Control flow:** `if`/`else`, `while`, `for` loops via label/jump/conditional-jump.
+- **Control flow:** `if`/`else`, `while`, `for` loops via label/jump/conditional-jump, plus `break`/`continue` inside either loop form.
 - **Arithmetic:** `+`, `-`, unary `-`, `*`, `/`, `%` for all integer types (u8, i8, u16, i16). Width-aware multi-byte emission for 16-bit operations with carry/borrow propagation. Multiply and divide via `__mul8`/`__div8` software subroutines.
 - **Bitwise & shift ops:** `&`, `|`, `^`, `~`, `<<`, `>>` for all widths. Signed right shift uses the carry-from-sign-bit pattern for correct arithmetic extension.
 - **Comparisons:** all six relational operators (`<`, `<=`, `==`, `!=`, `>=`, `>`) for all widths (u8, u16) and signedness (unsigned via carry-flag, signed via N⊕V). 16-bit comparisons use a high-byte-first pattern.
@@ -64,16 +64,18 @@ C02 is under active, early development. The **complete frontend** (tokenizer, pa
 - **Address-of:** `&x` resolves to the variable's ZP slot address for locals or its RAM address for globals, stored as a 16-bit pointer.
 - **Type casts:** `(type)expr` — widening zero/sign-extends, narrowing copies low bytes.
 - **Struct field access:** `s.field` and `ptr.field` (auto-deref) for both local and global structs. Field reads and writes work for by-value structs and pointer-to-struct, including `++field` / `--field`.
-- **Global variables:** RAM-allocated globals with bootstrap initialization, correctly accessed via absolute addressing throughout all codegen paths. String literals placed in a ROM data section with backpatching fixups.
+- **Global variables:** RAM-allocated globals with bootstrap initialization, correctly accessed via absolute addressing throughout all codegen paths.
+- **String literals:** `u8 *msg = "...";` works both at global scope and as a local variable initializer inside a function body. String data is placed once in the ROM data section with backpatching fixups.
 - **Compiler implicit globals:** `__heap_start` and `__memory_top` are injected automatically as `decl u16` globals and initialized during the bootstrap. `__heap_start` holds the first free RAM byte after all user globals *and* the compiler implicit globals themselves are allocated (each takes 2 bytes of RAM) — useful as a base pointer for bump allocators. `__memory_top` holds the top of the general-purpose RAM region (`$3FFF`). Both are available in any `.c02` file without a manual `decl`.
 - **Function calls:** full `JSR`/`RTS` ABI with up to 8 parameters passed through the `$EF–$FE` fixed-slot ABI zone. A callee-saves convention (PHA all ZP slots on entry, PLA in reverse on return) preserves caller locals across calls. Bounded recursion is supported — stack depth is limited to ≈256 / (function ZP byte count).
 
 #### Not yet implemented
 
-- **String local variables** — `u8 *msg = "..."` only works at file scope; local string pointer initialization is not yet supported.
 - **Arrays** — no array type or subscript syntax (`a[i]`). Use pointer arithmetic (`*(ptr + i)`) in the meantime.
-- **`break` / `continue`** — not yet supported inside loops.
+- **Compound bitwise/shift assignment** — `&=`, `|=`, `^=`, `<<=`, `>>=` are not yet supported; the arithmetic compound forms (`+=`, `-=`, `*=`, `/=`, `%=`) work.
+- **Short-circuit `&&`/`||` outside boolean context** — short-circuit evaluation works correctly when used directly as a loop/if condition; using the result as a plain value in other expression contexts is not yet supported.
 - **Missing-return detection is shallow.** A non-void function with no `return` at the end is flagged, but the analyzer does not perform full path-coverage analysis.
+- **Variable shadowing is disallowed**, not silently supported — a declaration that reuses a name still visible from an enclosing scope is a compile error (codegen identifies variables by name only, so a shadowed name would alias its outer namesake's storage). Reusing a name across scopes that don't overlap (e.g. two sibling `for` loops each declaring their own `i`) is unaffected.
 
 If you're exploring the codebase: the parser ([parser.c](cc02/src/parser/parser.c)), the analyzer ([analyzer.c](cc02/src/analysis/analyzer.c)), the IR generator ([ir.c](cc02/src/ir-gen/ir.c)), and the code generator ([generator.c](cc02/src/code-gen/generator.c)) are the main files. Issues and PRs are welcome.
 
@@ -375,6 +377,13 @@ $FFFF ┴───────────────────────�
 ```
 
 The `$FFF8–$FFF9` boundary word and the `$FFF6–$FFF7` symbol-table pointer are read by `c02-objdump` to locate the `.text`/`.data` split and resolve function names. Older binaries that predate these fields have `$EAEA` at `$FFF6` and are disassembled with auto-generated `L0`/`L1`/… labels as a fallback.
+
+---
+
+### References
+
+1. [Crafting Interpreters](https://craftinginterpreters.com/contents.html) — the primary reference used throughout development.
+2. [rui314/chibicc](https://github.com/rui314/chibicc) — structurally similar (recursive descent, etc.), found after starting this project; not directly followed, but worth a look.
 
 ---
 

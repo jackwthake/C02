@@ -30,6 +30,18 @@
  * analyzer_lookup() walks the stack top-down (innermost scope first, down
  * to global at index 0) - this replaces the old Rust SymbolTable's
  * recursive `parent` chain with a plain loop over a flat array.
+ *
+ * SHADOWING IS DISALLOWED
+ * ------------------------
+ * A variable declaration that reuses a name still visible from an enclosing
+ * scope (a live ancestor on the scope stack - not a sibling scope that's
+ * already been popped) is a semantic error (ERR_SHADOWED_DECLARATION), not
+ * an implicit shadow the way C allows. This is enforced by
+ * declare_local_variable() in analyzer.c, used for both NODE_VAR_DECL and
+ * function parameters. See that function's doc comment for the reason:
+ * downstream IR/codegen identify a variable purely by its bare name string,
+ * with no scope-qualifying suffix, so a shadowed inner declaration would
+ * silently alias the same storage as its outer namesake.
  */
 
 #include "arena.h"
@@ -44,6 +56,7 @@ typedef struct {
   arena_t arena;        // backing arena for both scope growth and symtab entries
   unsigned errors;
   type_t current_return_type;   // set by pass2 when entering a function body
+  unsigned loop_depth;          // incremented when entering while/for bodies; break/continue require > 0
 } analyzer_t;
 
 #define ANALYZER_SCOPE_ALLOC_SIZE sizeof(symtab_entry_t) * 64
@@ -66,9 +79,14 @@ void analyzer_scope_push(analyzer_t *a);
 void analyzer_scope_pop(analyzer_t *a);
 
 // Inserts `value` under `key` into the innermost (current) scope only.
-// Returns 1 on success, 0 if `key` is already declared in *this* scope
-// (shadowing an outer scope is allowed - only redeclaration within the
-// same scope is rejected).
+// Returns 1 on success, 0 if `key` is already declared in *this* scope.
+// This is the raw symtab-level primitive and only checks the current scope
+// by itself - it does NOT reject shadowing an outer scope. Callers that
+// declare a variable (NODE_VAR_DECL, function params) must go through
+// declare_local_variable() in analyzer.c instead, which additionally walks
+// outer scopes and rejects shadowing outright (see that function's comment
+// for why: codegen keys variables by bare name, so a shadowed name would
+// alias the same storage as its outer namesake).
 int analyzer_insert_symbol(analyzer_t *a, char *key, symbol_t value);
 
 // Looks up `key` starting at the innermost scope and walking outward to

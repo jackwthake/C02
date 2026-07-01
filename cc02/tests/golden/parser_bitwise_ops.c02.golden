@@ -174,19 +174,19 @@
    |     |                 `- IntegerLiteral (1)
    |     |- ForStmt
    |     |  |- [init]
-   |     |  |  `- VarDecl i : u8
+   |     |  |  `- VarDecl idx : u8
    |     |  |     `- IntegerLiteral (0)
    |     |  |- [cond]
    |     |  |  `- BinaryOperator <
-   |     |  |     |- Identifier i
+   |     |  |     |- Identifier idx
    |     |  |     `- IntegerLiteral (8)
    |     |  |- [step]
    |     |  |  `- AssignStmt
    |     |  |     |- [target]
-   |     |  |     |  `- Identifier i
+   |     |  |     |  `- Identifier idx
    |     |  |     `- [value]
    |     |  |        `- BinaryOperator +
-   |     |  |           |- Identifier i
+   |     |  |           |- Identifier idx
    |     |  |           `- IntegerLiteral (1)
    |     |  `- [body]
    |     |     `- CompoundStmt
@@ -198,7 +198,7 @@
    |     |                 |- Identifier x
    |     |                 `- BinaryOperator <<
    |     |                    |- IntegerLiteral (1)
-   |     |                    `- Identifier i
+   |     |                    `- Identifier idx
    |     `- ReturnStmt
    |- ForwardDecl __heap_start : u16
    `- ForwardDecl __memory_top : u16
