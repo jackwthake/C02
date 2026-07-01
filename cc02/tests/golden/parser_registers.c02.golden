@@ -3,5 +3,7 @@
    |- RegDecl PORTA : u8 @ 6001
    |- RegDecl DDRB : u8 @ 6002
    |- RegDecl DDRA : u8 @ 6003
-   `- FunctionDecl main() -> void
-      `- CompoundStmt
+   |- FunctionDecl main() -> void
+   |  `- CompoundStmt
+   |- ForwardDecl __heap_start : u16
+   `- ForwardDecl __memory_top : u16

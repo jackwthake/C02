@@ -8,9 +8,10 @@
 // Memory map
 // ----------------------------------------------------------------
 
-#define ROM_SIZE    0x8000
 #define RAM_START   0x0200 // 6502 hardware stack occupies 0x0100 - 0x01FF
+#define RAM_TOP     0x3FFF // see docs/memmap.md
 #define ROM_START   0x8000
+#define ROM_SIZE    0x8000
 
 #define FP          0x00
 #define RET         0x02
@@ -33,6 +34,13 @@
 #define HELPER_ARG2 0xE9  // divisor  / multiplier   (modified by helpers)
 #define HELPER_RES  0xEA  // quotient / product
 #define HELPER_REM  0xEB  // remainder (division only)
+#define HELPER_SIGN 0xEC  // sign flags for __sdiv8/__sdiv16 (bit7=negate quotient, bit6=negate remainder)
+
+// 16-bit helper ZP slots ($E0–$E7, below the 8-bit helper zone at $E8)
+#define HELPER16_ARG1 0xE0  // 2 bytes: dividend/multiplicand (lo=$E0, hi=$E1)
+#define HELPER16_ARG2 0xE2  // 2 bytes: divisor/multiplier   (lo=$E2, hi=$E3)
+#define HELPER16_RES  0xE4  // 2 bytes: quotient/product     (lo=$E4, hi=$E5)
+#define HELPER16_REM  0xE6  // 2 bytes: remainder            (lo=$E6, hi=$E7)
 
 
 // ----------------------------------------------------------------
@@ -98,19 +106,25 @@ static uint8_t zp_map_lookup(zp_map_t *map, tac_operand_t *op) {
 
 
 // Assign the next available ZP slot to an operand (deduped, type-stride-aware).
-static void zp_map_add(emitter_t *e, zp_map_t *map, tac_operand_kind_t kind,
-                        char *name, unsigned temp_id, type_t type) {
+static int zp_map_add(emitter_t *e, zp_map_t *map, tac_operand_kind_t kind,
+                       char *name, unsigned temp_id, type_t type) {
   tac_operand_t probe = { .kind = kind };
   if (kind == OPERAND_VAR) probe.name = name;
   else                     probe.temp_id = temp_id;
   if (zp_map_lookup(map, &probe) != ZP_NOT_FOUND)
-    return;
+    return 1;
   if (map->count >= ZP_MAP_MAX) {
     fprintf(stderr, "codegen: ZP map overflow (>%d operands)\n", ZP_MAP_MAX);
-    return;
+    return 0;
   }
 
   unsigned size = full_type_size(e, type);
+  if ((unsigned)map->next_addr + size > HELPER16_ARG1) {
+    fprintf(stderr, "codegen: ZP space exhausted (next=$%02X, need %u bytes, limit=$%02X)\n",
+            map->next_addr, size, HELPER16_ARG1);
+    return 0;
+  }
+
   zp_entry_t *entry = &map->entries[map->count++];
   entry->kind = kind;
   if (kind == OPERAND_VAR) entry->name = name;
@@ -118,37 +132,41 @@ static void zp_map_add(emitter_t *e, zp_map_t *map, tac_operand_kind_t kind,
   entry->zp_addr = map->next_addr;
   entry->size = (uint8_t)size;
   map->next_addr += (uint8_t)size;
+  return 1;
 }
 
 
 // Register a TAC operand in the ZP map (dispatches var vs temp).
-static void zp_map_add_operand(emitter_t *e, zp_map_t *map, tac_operand_t *op) {
+static int zp_map_add_operand(emitter_t *e, zp_map_t *map, tac_operand_t *op) {
   if (op->kind == OPERAND_VAR)
-    zp_map_add(e, map, OPERAND_VAR, op->name, 0, op->type);
-  else if (op->kind == OPERAND_TEMP)
-    zp_map_add(e, map, OPERAND_TEMP, NULL, op->temp_id, op->type);
+    return zp_map_add(e, map, OPERAND_VAR, op->name, 0, op->type);
+  if (op->kind == OPERAND_TEMP)
+    return zp_map_add(e, map, OPERAND_TEMP, NULL, op->temp_id, op->type);
+  return 1;
 }
 
 
 // Build the per-function ZP map: params first, then all referenced operands.
-static void zp_map_build(emitter_t *e, zp_map_t *map, cfg_t *cfg) {
+static int zp_map_build(emitter_t *e, zp_map_t *map, cfg_t *cfg) {
   map->count = 0;
   map->next_addr = REG_START;
 
   for (unsigned i = 0; i < cfg->params.count; i++) {
-    zp_map_add(e, map, OPERAND_VAR, cfg->params.items[i].name, 0,
-               cfg->params.items[i].type);
+    if (!zp_map_add(e, map, OPERAND_VAR, cfg->params.items[i].name, 0,
+                    cfg->params.items[i].type))
+      return 0;
   }
 
   for (unsigned i = 0; i < cfg->block_count; i++) {
     basic_block_t *block = cfg->blocks[i];
     for (unsigned j = 0; j < block->instr_count; j++) {
       tac_instr_t *inst = &block->instrs[j];
-      zp_map_add_operand(e, map, &inst->dst);
-      zp_map_add_operand(e, map, &inst->src1);
-      zp_map_add_operand(e, map, &inst->src2);
+      if (!zp_map_add_operand(e, map, &inst->dst))  return 0;
+      if (!zp_map_add_operand(e, map, &inst->src1)) return 0;
+      if (!zp_map_add_operand(e, map, &inst->src2)) return 0;
     }
   }
+  return 1;
 }
 
 
@@ -174,6 +192,7 @@ static void register_func_label(emitter_t *e, char *name, uint16_t addr) {
 
 // Backpatch all JSR placeholders with resolved function addresses.
 static int resolve_func_fixups(emitter_t *e) {
+  if (e->overflow) return 1; // ROM already corrupt; generate_rom will catch it
   for (unsigned i = 0; i < e->fixup_count; i++) {
     fixup_t *f = &e->fixups[i];
     uint16_t addr = 0;
@@ -215,6 +234,7 @@ static void add_fixup(emitter_t *e, char *func_name) {
 
 // Backpatch all local label placeholders (JMP/COND_JUMP) within a function.
 static int resolve_local_fixups(emitter_t *e) {
+  if (e->overflow) return 1; // ROM already corrupt; generate_rom will catch it
   for (unsigned i = 0; i < e->local_fixup_count; i++) {
     fixup_t *f = &e->local_fixups[i];
     uint16_t addr = e->local_labels[f->label_id];
@@ -286,24 +306,34 @@ static void allocate_globals(emitter_t *e, ir_gen_t *gen) {
 // Op code emitters
 // ----------------------------------------------------------------
 
-#define EMIT(OP_CODE) e->rom[e->code_pos++] = OP_CODE
+#define EMIT(OP_CODE) do {                              \
+  if (e->code_pos >= ROM_SIZE) { e->overflow = 1; }     \
+  else { e->rom[e->code_pos++] = (uint8_t)(OP_CODE); }  \
+} while (0)
 
-#define OP_EMITTER_SINGLE_ARG(NAME, OP_CODE)       \
-  static void NAME(emitter_t *e, uint8_t byte) {   \
-    EMIT(OP_CODE);                                 \
-    EMIT(byte);                                    \
+// Write one byte to an already-emitted position (branch offset backpatch).
+// Guards against positions recorded after an overflow (which would be >= ROM_SIZE).
+#define PATCH_BYTE(POS, VAL) do {                       \
+  if ((POS) < ROM_SIZE) e->rom[(POS)] = (uint8_t)(VAL); \
+  else e->overflow = 1;                                 \
+} while (0)
+
+#define OP_EMITTER_SINGLE_ARG(NAME, OP_CODE)            \
+  static void NAME(emitter_t *e, uint8_t byte) {        \
+    EMIT(OP_CODE);                                      \
+    EMIT(byte);                                         \
   }
 
-#define OP_EMITTER_NO_ARG(NAME, OP_CODE)           \
-  static void NAME(emitter_t *e) {                 \
-    EMIT(OP_CODE);                                 \
+#define OP_EMITTER_NO_ARG(NAME, OP_CODE)                \
+  static void NAME(emitter_t *e) {                      \
+    EMIT(OP_CODE);                                      \
   }
 
-#define OP_EMITTER_ABS(NAME, OP_CODE)              \
-  static void NAME(emitter_t *e, uint16_t addr) {  \
-    EMIT(OP_CODE);                                 \
-    EMIT((uint8_t)(addr & 0xFF));                  \
-    EMIT((uint8_t)(addr >> 8));                    \
+#define OP_EMITTER_ABS(NAME, OP_CODE)                   \
+  static void NAME(emitter_t *e, uint16_t addr) {       \
+    EMIT(OP_CODE);                                      \
+    EMIT((uint8_t)(addr & 0xFF));                       \
+    EMIT((uint8_t)(addr >> 8));                         \
   }
 
 OP_EMITTER_SINGLE_ARG(lda_imm,   0xA9)
@@ -332,6 +362,7 @@ OP_EMITTER_SINGLE_ARG(beq_rel, 0xF0)
 OP_EMITTER_SINGLE_ARG(bne_rel, 0xD0)
 OP_EMITTER_SINGLE_ARG(bcs_rel, 0xB0)
 OP_EMITTER_SINGLE_ARG(bcc_rel, 0x90)
+OP_EMITTER_SINGLE_ARG(bpl_rel, 0x10)
 
 OP_EMITTER_SINGLE_ARG(inc_zpg, 0xE6)
 OP_EMITTER_SINGLE_ARG(dec_zpg, 0xC6)
@@ -384,7 +415,7 @@ static void jsr(emitter_t *e, char *func_name) {
 // ----------------------------------------------------------------
 
 // Queue a fixup for a string ROM address (resolved after data section is emitted).
-static void add_data_fixup(emitter_t *e, unsigned global_idx, uint8_t byte) {
+static void add_data_fixup(emitter_t *e, const char *str_val, uint8_t byte) {
   if (e->data_fixup_count >= e->data_fixup_capacity) {
     unsigned cap = e->data_fixup_capacity ? e->data_fixup_capacity * 2 : 8;
     data_fixup_t *grown = arena_alloc(&e->arena, cap * sizeof(data_fixup_t));
@@ -395,7 +426,7 @@ static void add_data_fixup(emitter_t *e, unsigned global_idx, uint8_t byte) {
   }
   data_fixup_t *f = &e->data_fixups[e->data_fixup_count++];
   f->patch_pos = e->code_pos;
-  f->global_idx = global_idx;
+  f->str_val = str_val;
   f->byte = byte;
 }
 
@@ -417,7 +448,7 @@ static void emit_global_init(emitter_t *e, ir_gen_t *gen) {
       case IR_INIT_STR:
         for (unsigned b = 0; b < width; b++) {
           EMIT(0xA9);
-          add_data_fixup(e, i, (uint8_t)b);
+          add_data_fixup(e, g->str_val, (uint8_t)b);
           EMIT(0x00);
           sta_abs(e, (uint16_t)(entry->ram_addr + b));
         }
@@ -430,31 +461,48 @@ static void emit_global_init(emitter_t *e, ir_gen_t *gen) {
 
 
 // Write string literals into ROM after code and resolve data fixups.
+// Each unique string value is written once; fixups for both global and local
+// string pointers are patched with the correct ROM address.
 static void emit_data_section(emitter_t *e, ir_gen_t *gen) {
+  (void)gen;
   e->data_pos = e->code_pos;
 
-  uint16_t *str_addrs = malloc(gen->module.global_count * sizeof(uint16_t));
+  if (e->data_fixup_count == 0) return;
 
-  for (unsigned i = 0; i < gen->module.global_count; i++) {
-    ir_global_t *g = &gen->module.globals[i];
-    if (g->init_kind != IR_INIT_STR) {
-      str_addrs[i] = 0;
-      continue;
+  const char **unique_strs = malloc(e->data_fixup_count * sizeof(char *));
+  uint16_t    *unique_addrs = malloc(e->data_fixup_count * sizeof(uint16_t));
+  unsigned     unique_count = 0;
+
+  for (unsigned i = 0; i < e->data_fixup_count; i++) {
+    const char *s = e->data_fixups[i].str_val;
+    unsigned found = unique_count;
+    for (unsigned j = 0; j < unique_count; j++) {
+      if (strcmp(unique_strs[j], s) == 0) { found = j; break; }
     }
-    str_addrs[i] = (uint16_t)(ROM_START + e->code_pos);
-    size_t len = strlen(g->str_val);
-    for (size_t j = 0; j <= len; j++) {
-      EMIT((uint8_t)g->str_val[j]);
+    if (found == unique_count) {
+      unique_strs[unique_count] = s;
+      unique_addrs[unique_count] = (uint16_t)(ROM_START + e->code_pos);
+      size_t len = strlen(s);
+      for (size_t k = 0; k <= len; k++)
+        EMIT((uint8_t)s[k]);
+      unique_count++;
     }
   }
+
+  if (e->overflow) { free(unique_strs); free(unique_addrs); return; }
 
   for (unsigned i = 0; i < e->data_fixup_count; i++) {
     data_fixup_t *f = &e->data_fixups[i];
-    uint16_t addr = str_addrs[f->global_idx];
-    e->rom[f->patch_pos] = (uint8_t)((addr >> (8 * f->byte)) & 0xFF);
+    for (unsigned j = 0; j < unique_count; j++) {
+      if (strcmp(unique_strs[j], f->str_val) == 0) {
+        e->rom[f->patch_pos] = (uint8_t)((unique_addrs[j] >> (8 * f->byte)) & 0xFF);
+        break;
+      }
+    }
   }
 
-  free(str_addrs);
+  free(unique_strs);
+  free(unique_addrs);
 }
 
 
@@ -506,6 +554,13 @@ static void emit_load_byte(emitter_t *e, zp_map_t *map,
   switch (op->kind) {
     case OPERAND_CONST_INT:
       lda_imm(e, (uint8_t)((op->int_val >> (8 * byte)) & 0xFF));
+      break;
+    case OPERAND_CONST_STR:
+      // Emit LDA #placeholder; the immediate byte is patched by emit_data_section
+      // once the string's ROM address is known.
+      EMIT(0xA9);
+      add_data_fixup(e, op->str_val, (uint8_t)byte);
+      EMIT(0x00);
       break;
     case OPERAND_VAR: {
       if (byte >= full_type_size(e, op->type)) { lda_imm(e, 0); break; }
@@ -642,7 +697,7 @@ static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
   register_func_label(e, cfg->name, (uint16_t)(ROM_START + e->code_pos));
 
   zp_map_t map;
-  zp_map_build(e, &map, cfg);
+  if (!zp_map_build(e, &map, cfg)) return 0;
 
   // main is only called by the bootstrap, which has no ZP state to preserve.
   // Every other callee saves the caller's ZP slots on entry and restores on return.
@@ -918,10 +973,10 @@ static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
             lda_imm(e, 0);
             EMIT(0xF0); p_done = e->code_pos; EMIT(0); // BEQ done
             // true:
-            e->rom[p_true] = (uint8_t)(e->code_pos - p_true - 1);
+            PATCH_BYTE(p_true, e->code_pos - p_true - 1);
             lda_imm(e, 1);
             // done:
-            e->rom[p_done] = (uint8_t)(e->code_pos - p_done - 1);
+            PATCH_BYTE(p_done, e->code_pos - p_done - 1);
             if (branch_op == 0xB0) {
               eor_imm(e, 0x01);
             }
@@ -936,14 +991,14 @@ static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
               emit_cmp_byte(e, &map, right, 0);
               EMIT(0xF0); p2 = e->code_pos; EMIT(0); // BEQ true
               // false:
-              e->rom[p1] = (uint8_t)(e->code_pos - p1 - 1);
+              PATCH_BYTE(p1, e->code_pos - p1 - 1);
               lda_imm(e, 0);
               EMIT(0xF0); p3 = e->code_pos; EMIT(0); // BEQ done
               // true:
-              e->rom[p2] = (uint8_t)(e->code_pos - p2 - 1);
+              PATCH_BYTE(p2, e->code_pos - p2 - 1);
               lda_imm(e, 1);
               // done:
-              e->rom[p3] = (uint8_t)(e->code_pos - p3 - 1);
+              PATCH_BYTE(p3, e->code_pos - p3 - 1);
             } else {
               emit_load_byte(e, &map, left, 1);
               emit_cmp_byte(e, &map, right, 1);
@@ -955,11 +1010,11 @@ static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
               lda_imm(e, 0);
               EMIT(0xF0); p3 = e->code_pos; EMIT(0); // BEQ done
               // true:
-              e->rom[p1] = (uint8_t)(e->code_pos - p1 - 1);
-              e->rom[p2] = (uint8_t)(e->code_pos - p2 - 1);
+              PATCH_BYTE(p1, e->code_pos - p1 - 1);
+              PATCH_BYTE(p2, e->code_pos - p2 - 1);
               lda_imm(e, 1);
               // done:
-              e->rom[p3] = (uint8_t)(e->code_pos - p3 - 1);
+              PATCH_BYTE(p3, e->code_pos - p3 - 1);
             }
           } else if (!is_signed) {
             // u16 unsigned ordering
@@ -972,15 +1027,15 @@ static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
             emit_cmp_byte(e, &map, right, 0);
             EMIT(0x90); p_true2 = e->code_pos; EMIT(0);  // BCC true
             // false:
-            e->rom[p_false] = (uint8_t)(e->code_pos - p_false - 1);
+            PATCH_BYTE(p_false, e->code_pos - p_false - 1);
             lda_imm(e, 0);
             EMIT(0xF0); p_done = e->code_pos; EMIT(0);   // BEQ done
             // true:
-            e->rom[p_true1] = (uint8_t)(e->code_pos - p_true1 - 1);
-            e->rom[p_true2] = (uint8_t)(e->code_pos - p_true2 - 1);
+            PATCH_BYTE(p_true1, e->code_pos - p_true1 - 1);
+            PATCH_BYTE(p_true2, e->code_pos - p_true2 - 1);
             lda_imm(e, 1);
             // done:
-            e->rom[p_done] = (uint8_t)(e->code_pos - p_done - 1);
+            PATCH_BYTE(p_done, e->code_pos - p_done - 1);
             if (branch_op == 0xB0) {
               eor_imm(e, 0x01);
             }
@@ -997,24 +1052,24 @@ static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
             // high bytes differ, not less → skip to false
             EMIT(0x4C); p_skip = e->code_pos; EMIT(0); EMIT(0); // JMP false
             // low_compare:
-            e->rom[p_low] = (uint8_t)(e->code_pos - p_low - 1);
+            PATCH_BYTE(p_low, e->code_pos - p_low - 1);
             emit_load_byte(e, &map, left, 0);
             emit_cmp_byte(e, &map, right, 0);
             EMIT(0x90); p_true2 = e->code_pos; EMIT(0);  // BCC true
             // false:
             {
               uint16_t false_addr = (uint16_t)(ROM_START + e->code_pos);
-              e->rom[p_skip]     = (uint8_t)(false_addr & 0xFF);
-              e->rom[p_skip + 1] = (uint8_t)(false_addr >> 8);
+              PATCH_BYTE(p_skip,     false_addr & 0xFF);
+              PATCH_BYTE(p_skip + 1, false_addr >> 8);
             }
             lda_imm(e, 0);
             EMIT(0xF0); p_done = e->code_pos; EMIT(0);   // BEQ done
             // true:
-            e->rom[p_true1] = (uint8_t)(e->code_pos - p_true1 - 1);
-            e->rom[p_true2] = (uint8_t)(e->code_pos - p_true2 - 1);
+            PATCH_BYTE(p_true1, e->code_pos - p_true1 - 1);
+            PATCH_BYTE(p_true2, e->code_pos - p_true2 - 1);
             lda_imm(e, 1);
             // done:
-            e->rom[p_done] = (uint8_t)(e->code_pos - p_done - 1);
+            PATCH_BYTE(p_done, e->code_pos - p_done - 1);
             if (branch_op == 0xB0) {
               eor_imm(e, 0x01);
             }
@@ -1072,28 +1127,59 @@ static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
 
         // -- arithmetic --
 
-#define EMIT_INT8_HELPER(OP, ROUTINE, RESULT_SLOT, NEEDS_FLAG, ERR)            \
-        case OP: {                                                             \
-          if (codegen_type_size(instruction->dst.type) > 1) {                  \
-            fprintf(stderr, "codegen: u16 " ERR " not yet implemented\n");     \
-            return 0;                                                          \
-          }                                                                    \
-          emit_load_byte(e, &map, &instruction->src1, 0);                      \
-          sta_zpg(e, HELPER_ARG1);                                             \
-          emit_load_byte(e, &map, &instruction->src2, 0);                      \
-          sta_zpg(e, HELPER_ARG2);                                             \
-          jsr(e, ROUTINE);                                                     \
-          lda_zpg(e, RESULT_SLOT);                                             \
-          emit_store_byte(e, &map, &instruction->dst, 0);                      \
-          e->NEEDS_FLAG = 1;                                                   \
-          break;                                                               \
+// Load src1/src2 into 8-bit helper slots, JSR, read one result byte.
+#define EMIT_ARITH8(ROUTINE, RES_SLOT, NEEDS_FLAG) do {                                   \
+  emit_load_byte(e, &map, &instruction->src1, 0); sta_zpg(e, HELPER_ARG1);                \
+  emit_load_byte(e, &map, &instruction->src2, 0); sta_zpg(e, HELPER_ARG2);                \
+  jsr(e, ROUTINE); e->NEEDS_FLAG = 1;                                                     \
+  lda_zpg(e, RES_SLOT); emit_store_byte(e, &map, &instruction->dst, 0);                   \
+} while (0)
+
+// Load src1/src2 into 16-bit helper slots, JSR, read two result bytes.
+#define EMIT_ARITH16(ROUTINE, RES_SLOT, NEEDS_FLAG) do {                                  \
+  emit_load_byte(e, &map, &instruction->src1, 0); sta_zpg(e, HELPER16_ARG1);              \
+  emit_load_byte(e, &map, &instruction->src1, 1); sta_zpg(e, (uint8_t)(HELPER16_ARG1+1)); \
+  emit_load_byte(e, &map, &instruction->src2, 0); sta_zpg(e, HELPER16_ARG2);              \
+  emit_load_byte(e, &map, &instruction->src2, 1); sta_zpg(e, (uint8_t)(HELPER16_ARG2+1)); \
+  jsr(e, ROUTINE); e->NEEDS_FLAG = 1;                                                     \
+  lda_zpg(e, RES_SLOT); emit_store_byte(e, &map, &instruction->dst, 0);                   \
+  lda_zpg(e, (uint8_t)((RES_SLOT)+1)); emit_store_byte(e, &map, &instruction->dst, 1);    \
+} while (0)
+
+        case TAC_MUL: {
+          if (codegen_type_size(instruction->dst.type) > 1)
+            EMIT_ARITH16("__mul16", HELPER16_RES, needs_mul16);
+          else
+            EMIT_ARITH8("__mul8", HELPER_RES, needs_mul8);
+          break;
         }
 
-        EMIT_INT8_HELPER(TAC_MUL, "__mul8", HELPER_RES, needs_mul8, "multiply")
-        EMIT_INT8_HELPER(TAC_DIV, "__div8", HELPER_RES, needs_div8, "divide")
-        EMIT_INT8_HELPER(TAC_MOD, "__div8", HELPER_REM, needs_div8, "modulo")
+        case TAC_DIV: {
+          int is_s = is_signed_type(instruction->dst.type);
+          if (codegen_type_size(instruction->dst.type) > 1) {
+            if (is_s) EMIT_ARITH16("__sdiv16", HELPER16_RES, needs_sdiv16);
+            else      EMIT_ARITH16("__div16",  HELPER16_RES, needs_div16);
+          } else {
+            if (is_s) EMIT_ARITH8("__sdiv8", HELPER_RES, needs_sdiv8);
+            else      EMIT_ARITH8("__div8",  HELPER_RES, needs_div8);
+          }
+          break;
+        }
 
-#undef EMIT_INT8_HELPER
+        case TAC_MOD: {
+          int is_s = is_signed_type(instruction->dst.type);
+          if (codegen_type_size(instruction->dst.type) > 1) {
+            if (is_s) EMIT_ARITH16("__sdiv16", HELPER16_REM, needs_sdiv16);
+            else      EMIT_ARITH16("__div16",  HELPER16_REM, needs_div16);
+          } else {
+            if (is_s) EMIT_ARITH8("__sdiv8", HELPER_REM, needs_sdiv8);
+            else      EMIT_ARITH8("__div8",  HELPER_REM, needs_div8);
+          }
+          break;
+        }
+
+#undef EMIT_ARITH8
+#undef EMIT_ARITH16
 
         case TAC_BAND: {
           unsigned width = codegen_type_size(instruction->dst.type);
@@ -1365,6 +1451,59 @@ static void emit_mul8_helper(emitter_t *e) {
   rts(e);
 }
 
+
+// i8 signed divide: HELPER_ARG1 / HELPER_ARG2 → HELPER_RES (quotient), HELPER_REM (remainder).
+// Encodes signs in HELPER_SIGN (bit7=negate quotient, bit6=negate remainder), takes absolute
+// values, calls __div8, then restores signs. Follows C truncation-toward-zero convention.
+static void emit_sdiv8_helper(emitter_t *e) {
+  register_func_label(e, "__sdiv8", (uint16_t)(ROM_START + e->code_pos));
+  lda_imm(e, 0);
+  sta_zpg(e, HELPER_SIGN);
+
+  // If dividend (ARG1) negative: negate it, set bits 7+6 in SIGN (quotient and remainder both flip).
+  lda_zpg(e, HELPER_ARG1);
+  bpl_rel(e, 11);        // skip 11 bytes if positive:
+  sec(e);                //   SEC
+  lda_imm(e, 0);         //   LDA #0
+  sbc_zpg(e, HELPER_ARG1); // SBC ARG1
+  sta_zpg(e, HELPER_ARG1); // STA ARG1  (= -ARG1)
+  lda_imm(e, 0xC0);     //   LDA #$C0
+  sta_zpg(e, HELPER_SIGN); // STA SIGN  (bits 7+6)
+
+  // If divisor (ARG2) negative: negate it, toggle bit 7 in SIGN (quotient sign flips again).
+  lda_zpg(e, HELPER_ARG2);
+  bpl_rel(e, 13);        // skip 13 bytes if positive:
+  sec(e);                //   SEC
+  lda_imm(e, 0);         //   LDA #0
+  sbc_zpg(e, HELPER_ARG2); // SBC ARG2
+  sta_zpg(e, HELPER_ARG2); // STA ARG2  (= -ARG2)
+  lda_zpg(e, HELPER_SIGN); // LDA SIGN
+  eor_imm(e, 0x80);     //   EOR #$80   (toggle bit 7)
+  sta_zpg(e, HELPER_SIGN); // STA SIGN
+
+  jsr(e, "__div8");
+
+  // Negate quotient if bit 7 of SIGN is set.
+  lda_zpg(e, HELPER_SIGN);
+  bpl_rel(e, 7);         // skip 7 bytes if bit 7 = 0:
+  sec(e);                //   SEC
+  lda_imm(e, 0);         //   LDA #0
+  sbc_zpg(e, HELPER_RES); //  SBC RES
+  sta_zpg(e, HELPER_RES); //  STA RES
+
+  // Negate remainder if bit 6 of SIGN is set.
+  lda_zpg(e, HELPER_SIGN);
+  and_imm(e, 0x40);
+  beq_rel(e, 7);         // skip 7 bytes if bit 6 = 0:
+  sec(e);                //   SEC
+  lda_imm(e, 0);         //   LDA #0
+  sbc_zpg(e, HELPER_REM); //  SBC REM
+  sta_zpg(e, HELPER_REM); //  STA REM
+
+  rts(e);
+}
+
+
 // u8 divide: HELPER_ARG1 / HELPER_ARG2 → HELPER_RES (quotient), HELPER_REM (remainder).
 // Uses binary long division (shift-subtract). ARG1 is consumed.
 //
@@ -1393,6 +1532,265 @@ static void emit_div8_helper(emitter_t *e) {
 }
 
 
+// u16 multiply: HELPER16_ARG1 * HELPER16_ARG2 → HELPER16_RES (shift-and-add).
+// Both ARG operands are consumed. Correct for signed i16 (low 16 bits are sign-agnostic).
+//
+// Loop body layout (26 bytes per iteration):
+//   LSR ARG2_HI (2) | ROR ARG2_LO (2) | BCC +13 (2) | CLC (1) | LDA RES_LO (2)
+//   | ADC ARG1_LO (2) | STA RES_LO (2) | LDA RES_HI (2) | ADC ARG1_HI (2)
+//   | STA RES_HI (2) [BCC target:] | ASL ARG1_LO (2) | ROL ARG1_HI (2)
+//   | DEX (1) | BNE -26 (2)
+static void emit_mul16_helper(emitter_t *e) {
+  register_func_label(e, "__mul16", (uint16_t)(ROM_START + e->code_pos));
+  lda_imm(e, 0);
+  sta_zpg(e, HELPER16_RES);
+  sta_zpg(e, (uint8_t)(HELPER16_RES + 1));
+  ldx_imm(e, 16);
+  // loop:
+  lsr_zpg(e, (uint8_t)(HELPER16_ARG2 + 1)); // shift multiplier right, LSB of full 16-bit → carry
+  ror_zpg(e, HELPER16_ARG2);
+  bcc_rel(e, 13);                             // skip add if LSB was 0
+  clc(e);
+  lda_zpg(e, HELPER16_RES);
+  adc_zpg(e, HELPER16_ARG1);
+  sta_zpg(e, HELPER16_RES);
+  lda_zpg(e, (uint8_t)(HELPER16_RES + 1));
+  adc_zpg(e, (uint8_t)(HELPER16_ARG1 + 1));
+  sta_zpg(e, (uint8_t)(HELPER16_RES + 1));
+  // no_add (BCC target, byte 19 from loop start):
+  asl_zpg(e, HELPER16_ARG1);
+  rol_zpg(e, (uint8_t)(HELPER16_ARG1 + 1));
+  dex(e);
+  bne_rel(e, (uint8_t)(256u - 26u));          // back to LSR
+  rts(e);
+}
+
+
+// u16 divide: HELPER16_ARG1 / HELPER16_ARG2 → HELPER16_RES (quotient), HELPER16_REM (remainder).
+// Uses CMP-based comparison to correctly handle divisors with bit 15 set (≥ $8000).
+// ARG1 is consumed. Sets carry correctly for ROL quotient: 1=subtracted, 0=skipped.
+//
+// Loop body layout (45 bytes per iteration):
+//   ASL ARG1 (2) | ROL ARG1_HI (2) | ROL REM (2) | ROL REM_HI (2) | BCS dosub+14 (2)
+//   | LDA REM_HI (2) | CMP ARG2_HI (2) | BCC nosub+22 (2) | BNE dosub+6 (2)
+//   | LDA REM (2) | CMP ARG2 (2) | BCC nosub+14 (2)
+//   [dosub:] SEC (1) | LDA REM (2) | SBC ARG2 (2) | STA REM (2) | LDA REM_HI (2)
+//   | SBC ARG2_HI (2) | STA REM_HI (2) | SEC (1)
+//   [nosub:] ROL RES (2) | ROL RES_HI (2) | DEX (1) | BNE -45 (2)
+static void emit_div16_helper(emitter_t *e) {
+  register_func_label(e, "__div16", (uint16_t)(ROM_START + e->code_pos));
+  lda_imm(e, 0);
+  sta_zpg(e, HELPER16_REM);
+  sta_zpg(e, (uint8_t)(HELPER16_REM + 1));
+  sta_zpg(e, HELPER16_RES);
+  sta_zpg(e, (uint8_t)(HELPER16_RES + 1));
+  ldx_imm(e, 16);
+  // loop:
+  asl_zpg(e, HELPER16_ARG1);
+  rol_zpg(e, (uint8_t)(HELPER16_ARG1 + 1));
+  rol_zpg(e, HELPER16_REM);
+  rol_zpg(e, (uint8_t)(HELPER16_REM + 1));   // carry = 17th-bit overflow (REM ≥ $10000)
+  bcs_rel(e, 14);                              // overflow → must subtract regardless of compare
+  lda_zpg(e, (uint8_t)(HELPER16_REM + 1));
+  cmp_zpg(e, (uint8_t)(HELPER16_ARG2 + 1));
+  bcc_rel(e, 22);                              // REM_HI < ARG2_HI → no subtract
+  bne_rel(e, 6);                               // REM_HI > ARG2_HI → subtract
+  lda_zpg(e, HELPER16_REM);
+  cmp_zpg(e, HELPER16_ARG2);
+  bcc_rel(e, 14);                              // REM_LO < ARG2_LO (hi equal) → no subtract
+  // dosub (byte 24 from loop start):
+  sec(e);
+  lda_zpg(e, HELPER16_REM);
+  sbc_zpg(e, HELPER16_ARG2);
+  sta_zpg(e, HELPER16_REM);
+  lda_zpg(e, (uint8_t)(HELPER16_REM + 1));
+  sbc_zpg(e, (uint8_t)(HELPER16_ARG2 + 1));
+  sta_zpg(e, (uint8_t)(HELPER16_REM + 1));
+  sec(e);                                      // carry = 1: quotient bit = 1
+  // nosub (byte 38 from loop start):
+  rol_zpg(e, HELPER16_RES);
+  rol_zpg(e, (uint8_t)(HELPER16_RES + 1));
+  dex(e);
+  bne_rel(e, (uint8_t)(256u - 45u));           // back to ASL
+  rts(e);
+}
+
+
+// i16 signed divide: HELPER16_ARG1 / HELPER16_ARG2 → HELPER16_RES, HELPER16_REM.
+// Records sign in HELPER_SIGN (bit7=negate quotient, bit6=negate remainder),
+// takes absolute values, calls __div16, then restores signs. Truncates toward zero.
+static void emit_sdiv16_helper(emitter_t *e) {
+  register_func_label(e, "__sdiv16", (uint16_t)(ROM_START + e->code_pos));
+  lda_imm(e, 0);
+  sta_zpg(e, HELPER_SIGN);
+
+  // If ARG1 negative: negate it, set bits 7+6 in SIGN (both quotient and remainder flip).
+  lda_zpg(e, (uint8_t)(HELPER16_ARG1 + 1));
+  bpl_rel(e, 17);                              // skip 17 bytes if positive
+  sec(e);
+  lda_imm(e, 0);
+  sbc_zpg(e, HELPER16_ARG1);
+  sta_zpg(e, HELPER16_ARG1);
+  lda_imm(e, 0);
+  sbc_zpg(e, (uint8_t)(HELPER16_ARG1 + 1));
+  sta_zpg(e, (uint8_t)(HELPER16_ARG1 + 1));
+  lda_imm(e, 0xC0);
+  sta_zpg(e, HELPER_SIGN);
+  // pos_arg1 (byte 25 from function start):
+
+  // If ARG2 negative: negate it, toggle bit 7 in SIGN (quotient sign flips again).
+  lda_zpg(e, (uint8_t)(HELPER16_ARG2 + 1));
+  bpl_rel(e, 19);                              // skip 19 bytes if positive
+  sec(e);
+  lda_imm(e, 0);
+  sbc_zpg(e, HELPER16_ARG2);
+  sta_zpg(e, HELPER16_ARG2);
+  lda_imm(e, 0);
+  sbc_zpg(e, (uint8_t)(HELPER16_ARG2 + 1));
+  sta_zpg(e, (uint8_t)(HELPER16_ARG2 + 1));
+  lda_zpg(e, HELPER_SIGN);
+  eor_imm(e, 0x80);
+  sta_zpg(e, HELPER_SIGN);
+  // pos_arg2 (byte 48 from function start):
+
+  jsr(e, "__div16");
+
+  // Negate quotient if bit 7 of SIGN set.
+  lda_zpg(e, HELPER_SIGN);
+  bpl_rel(e, 13);                              // skip 13 bytes if bit 7 = 0
+  sec(e);
+  lda_imm(e, 0);
+  sbc_zpg(e, HELPER16_RES);
+  sta_zpg(e, HELPER16_RES);
+  lda_imm(e, 0);
+  sbc_zpg(e, (uint8_t)(HELPER16_RES + 1));
+  sta_zpg(e, (uint8_t)(HELPER16_RES + 1));
+  // pos_res (byte 68 from function start):
+
+  // Negate remainder if bit 6 of SIGN set.
+  lda_zpg(e, HELPER_SIGN);
+  and_imm(e, 0x40);
+  beq_rel(e, 13);                              // skip 13 bytes if bit 6 = 0
+  sec(e);
+  lda_imm(e, 0);
+  sbc_zpg(e, HELPER16_REM);
+  sta_zpg(e, HELPER16_REM);
+  lda_imm(e, 0);
+  sbc_zpg(e, (uint8_t)(HELPER16_REM + 1));
+  sta_zpg(e, (uint8_t)(HELPER16_REM + 1));
+  // pos_rem (byte 87 from function start):
+
+  rts(e);
+}
+
+
+// ROM footer layout (offsets from ROM_START):
+//   $FFF6-$FFF7  SYMTABLE_START_PTR:   little-endian absolute address of the "C02S" symbol
+//                table header, or $EAEA (NOP fill) if no table was written. The disassembler
+//                reads this first; old binaries that lack a table have $EAEA here, which is
+//                in range but fails the magic-byte check, so they degrade gracefully.
+//   $FFF8-$FFF9  SYMTABLE_BOUNDARY_PTR: little-endian absolute address of the first byte
+//                past the code+data region (= start of NOP fill). Used by the disassembler
+//                to know where executable/data bytes end and padding begins.
+//   $FFFA-$FFFF  NMI / Reset / IRQ vectors (written by emit_vectors).
+#define SYMTABLE_START_PTR    (0xFFF6 - ROM_START)
+#define SYMTABLE_BOUNDARY_PTR (0xFFF8 - ROM_START)
+
+// Write the "C02S" symbol table into the NOP fill area immediately after the data section,
+// then store its absolute address at SYMTABLE_START_PTR so the disassembler can find it.
+// Each entry is: u16 address (LE) + null-terminated name. The table is silently omitted if
+// the code+data section is too large to fit it before the footer (extremely unlikely in
+// practice — a fully packed 32KB image still leaves the footer region intact).
+static void emit_symbol_table(emitter_t *e) {
+  size_t sym_size = 6; // "C02S" (4) + count u16 (2)
+  for (unsigned i = 0; i < e->func_label_count; i++)
+    sym_size += 2 + strlen(e->func_labels[i].name) + 1;
+
+  if (e->code_pos + sym_size > SYMTABLE_START_PTR)
+    return;
+
+  uint16_t symtab_addr = (uint16_t)(ROM_START + e->code_pos);
+
+  // Magic number followed by number of symbols
+  EMIT('C'); EMIT('0'); EMIT('2'); EMIT('S');
+  EMIT((uint8_t)(e->func_label_count & 0xFF));
+  EMIT((uint8_t)(e->func_label_count >> 8));
+
+  for (unsigned i = 0; i < e->func_label_count; i++) {
+    uint16_t addr = e->func_labels[i].addr;
+    EMIT((uint8_t)(addr & 0xFF));
+    EMIT((uint8_t)(addr >> 8));
+    for (const char *n = e->func_labels[i].name; *n; n++) EMIT((uint8_t)*n);
+    EMIT(0);
+  }
+
+  PATCH_BYTE(SYMTABLE_START_PTR,     symtab_addr & 0xFF);
+  PATCH_BYTE(SYMTABLE_START_PTR + 1, symtab_addr >> 8);
+} 
+
+
+// Pass 1: allocate 2 bytes of RAM for a compiler extern and register it in
+// global_entries so lookup_global() uses absolute addressing.
+#define ALLOC_COMPILER_SLOT(EXT) do {                                               \
+  uint16_t _addr = e->ram_pos;                                                      \
+  e->ram_pos += 2;                                                                  \
+  unsigned _n        = e->global_entry_count + 1;                                   \
+  global_entry_t *_g = arena_alloc(&e->arena, _n * sizeof(global_entry_t));         \
+  if (e->global_entry_count > 0)                                                    \
+    memcpy(_g, e->global_entries,                                                   \
+           e->global_entry_count * sizeof(global_entry_t));                         \
+  _g[e->global_entry_count] = (global_entry_t){                                     \
+    .name = (EXT)->name, .ram_addr = _addr, .size = 2, .type = (EXT)->type          \
+  };                                                                                \
+  e->global_entries     = _g;                                                       \
+  e->global_entry_count = _n;                                                       \
+} while (0)
+
+// Pass 2: emit the 16-bit initialiser for an already-allocated compiler extern.
+// Looks up the RAM address from global_entries by name; no-ops if not present.
+#define EMIT_COMPILER_VALUE(NAME, VALUE) do {                                       \
+  global_entry_t *_ge = lookup_global(e, (char *)(NAME));                           \
+  if (_ge) {                                                                        \
+    uint16_t _val = (uint16_t)(VALUE);                                              \
+    lda_imm(e, (uint8_t)(_val & 0xFF)); sta_abs(e, _ge->ram_addr);                  \
+    lda_imm(e, (uint8_t)(_val >> 8));   sta_abs(e, (uint16_t)(_ge->ram_addr + 1));  \
+  }                                                                                 \
+} while (0)
+
+
+// Allocate RAM and emit initialisers for compiler-defined externs (decl).
+// Two-pass: all slots are allocated first so e->ram_pos is fully settled
+// before any value is emitted.  This ensures __heap_start captures the
+// correct first-free-RAM address regardless of declaration order.
+// Returns 0 if an extern is not a known compiler constant.
+static int emit_compiler_extern_inits(emitter_t *e, ir_gen_t *gen) {
+  // Pass 1: allocate all slots.
+  for (unsigned i = 0; i < gen->module.extern_count; i++) {
+    ir_extern_t *ext = &gen->module.externs[i];
+    if (ext->is_function) continue;
+
+    if (strcmp(ext->name, "__heap_start") == 0)
+      ALLOC_COMPILER_SLOT(ext);
+    else if (strcmp(ext->name, "__memory_top") == 0)
+      ALLOC_COMPILER_SLOT(ext);
+    else {
+      fprintf(stderr, "codegen: unresolved extern '%s'\n", ext->name);
+      return 0;
+    }
+  }
+
+  // Pass 2: emit initialisers (e->ram_pos is now fully settled).
+  // Add new compiler constants here with EMIT_COMPILER_VALUE("__name", value).
+  EMIT_COMPILER_VALUE("__heap_start", e->ram_pos);
+  EMIT_COMPILER_VALUE("__memory_top", RAM_TOP);
+
+  return 1;
+}
+
+#undef ALLOC_COMPILER_SLOT
+#undef EMIT_COMPILER_VALUE
+
+
 // ----------------------------------------------------------------
 // Main code gen
 // ----------------------------------------------------------------
@@ -1402,7 +1800,7 @@ static void emitter_free(emitter_t *e) {
 }
 
 
-uint8_t *generate_rom(ir_gen_t *gen, size_t *final_rom_size) {
+uint8_t *generate_rom(ir_gen_t *gen, size_t *final_rom_size, int emit_symbols) {
   emitter_t e = { 0 };
 
   if (!arena_init(&e.arena, 4096)) return NULL;
@@ -1420,6 +1818,14 @@ uint8_t *generate_rom(ir_gen_t *gen, size_t *final_rom_size) {
   allocate_globals(&e, gen);
   emit_bootstrap(&e);
   emit_global_init(&e, gen);
+
+  if (!emit_compiler_extern_inits(&e, gen)) {
+    free(e.rom);
+    emitter_free(&e);
+    *final_rom_size = 0;
+    return NULL;
+  }
+  
   emit_call_main(&e);
 
   for (unsigned i = 0; i < gen->module.cfg_count; ++i) {
@@ -1431,8 +1837,14 @@ uint8_t *generate_rom(ir_gen_t *gen, size_t *final_rom_size) {
     }
   }
 
+  // add helpers
   if (e.needs_mul8) emit_mul8_helper(&e);
+  if (e.needs_sdiv8) { emit_sdiv8_helper(&e); e.needs_div8 = 1; }
   if (e.needs_div8) emit_div8_helper(&e);
+
+  if (e.needs_mul16) emit_mul16_helper(&e);
+  if (e.needs_sdiv16) { emit_sdiv16_helper(&e); e.needs_div16 = 1; }
+  if (e.needs_div16) emit_div16_helper(&e);
 
   if (!resolve_func_fixups(&e)) {
     free(e.rom);
@@ -1441,13 +1853,30 @@ uint8_t *generate_rom(ir_gen_t *gen, size_t *final_rom_size) {
     return NULL;
   }
 
+  #define OVERFLOW_ERROR_CHECK(msg) \
+    if (e.overflow) {               \
+      fprintf(stderr, msg);         \
+      free(e.rom);                  \
+      emitter_free(&e);             \
+      *final_rom_size = 0;          \
+      return NULL;                  \
+    }
+
+  OVERFLOW_ERROR_CHECK("Code section generation failed: output exceeds 32 KB ROM.\n");
+
   emit_data_section(&e, gen);
 
-  // code/data boundary at $FFF8 for the disassembler
-  unsigned boundary_pos = 0xFFF8 - ROM_START;
-  uint16_t code_end = (uint16_t)(ROM_START + e.data_pos);
-  e.rom[boundary_pos]     = (uint8_t)(code_end & 0xFF);
-  e.rom[boundary_pos + 1] = (uint8_t)(code_end >> 8);
+  OVERFLOW_ERROR_CHECK("Data section generation failed: output exceeds 32 KB ROM.\n");
+
+  if (emit_symbols && e.func_label_count > 0) {
+    emit_symbol_table(&e);
+    OVERFLOW_ERROR_CHECK("Symbol table generation failed: output exceeds 32 KB ROM.\n");
+  }
+  #undef OVERFLOW_ERROR_CHECK
+
+  uint16_t code_end_addr = (uint16_t)(ROM_START + e.data_pos);
+  e.rom[SYMTABLE_BOUNDARY_PTR]     = (uint8_t)(code_end_addr & 0xFF);
+  e.rom[SYMTABLE_BOUNDARY_PTR + 1] = (uint8_t)(code_end_addr >> 8);
 
   emit_vectors(&e);
   emitter_free(&e);

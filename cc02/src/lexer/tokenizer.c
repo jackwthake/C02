@@ -394,20 +394,22 @@ void print_error_line(token_location_t loc) {
 
 
 static int tokenize_keyword_or_identifier(token_t *tokens, unsigned *token_count, char **ptr, unsigned line, unsigned *column, char *file_path) {
-  MATCH_KEYWORD("fn",     Kw_fn)
-  MATCH_KEYWORD("decl",   Kw_fwd_decl)
-  MATCH_KEYWORD("reg",    Kw_reg)
-  MATCH_KEYWORD("return", Kw_return)
-  MATCH_KEYWORD("struct", Kw_struct)
-  MATCH_KEYWORD("void",   Kw_void)
-  MATCH_KEYWORD("if",     Kw_if)
-  MATCH_KEYWORD("else",   Kw_else)
-  MATCH_KEYWORD("while",  Kw_while)
-  MATCH_KEYWORD("for",    Kw_for)
-  MATCH_KEYWORD("u8",     t_u8)
-  MATCH_KEYWORD("i8",     t_i8)
-  MATCH_KEYWORD("u16",    t_u16)
-  MATCH_KEYWORD("i16",    t_i16)
+  MATCH_KEYWORD("fn",       Kw_fn)
+  MATCH_KEYWORD("decl",     Kw_fwd_decl)
+  MATCH_KEYWORD("reg",      Kw_reg)
+  MATCH_KEYWORD("return",   Kw_return)
+  MATCH_KEYWORD("struct",   Kw_struct)
+  MATCH_KEYWORD("break",    Kw_break)
+  MATCH_KEYWORD("continue", Kw_continue)
+  MATCH_KEYWORD("void",     Kw_void)
+  MATCH_KEYWORD("if",       Kw_if)
+  MATCH_KEYWORD("else",     Kw_else)
+  MATCH_KEYWORD("while",    Kw_while)
+  MATCH_KEYWORD("for",      Kw_for)
+  MATCH_KEYWORD("u8",       t_u8)
+  MATCH_KEYWORD("i8",       t_i8)
+  MATCH_KEYWORD("u16",      t_u16)
+  MATCH_KEYWORD("i16",      t_i16)
 
   MATCH_KEYWORD_NUM_VAL("null", l_num, 0) // treat 'null' as a special numeric literal with value 0
   MATCH_KEYWORD_NUM_VAL("false", l_num, 0) // treat 'false' as a special numeric literal with value 0

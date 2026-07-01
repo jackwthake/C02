@@ -43,6 +43,7 @@ typedef enum {
   ERR_NOT_A_FUNCTION,
   ERR_UNKNOWN_STRUCT,
   ERR_REDECLARATION,
+  ERR_SHADOWED_DECLARATION, // variable declaration reuses a name already visible in an enclosing scope
   ERR_TYPE_MISMATCH,
   ERR_WRONG_ARG_TYPE,
   ERR_WRONG_ARG_COUNT,
@@ -55,6 +56,8 @@ typedef enum {
   ERR_NOT_A_STRUCT,         // field access ('.') on a non-struct type
   ERR_MISSING_RETURN,       // a non-void function may fall off the end without returning
   ERR_INCOMPLETE_STRUCT_FIELD, // by-value struct field references an incomplete/forward-declared or self-referential struct
+  ERR_BREAK_OUTSIDE_LOOP,   // break statement not inside a while/for loop
+  ERR_CONTINUE_OUTSIDE_LOOP, // continue statement not inside a while/for loop
 } error_type_t;
 
 typedef struct {
@@ -70,7 +73,7 @@ typedef struct {
 
     struct {
       char *name;
-    } name_error;                     // ERR_UNDECLARED_IDENTIFIER, ERR_NOT_A_FUNCTION, ERR_UNKNOWN_STRUCT, ERR_REDECLARATION, ERR_NOT_ASSIGNABLE
+    } name_error;                     // ERR_UNDECLARED_IDENTIFIER, ERR_NOT_A_FUNCTION, ERR_UNKNOWN_STRUCT, ERR_REDECLARATION, ERR_SHADOWED_DECLARATION, ERR_NOT_ASSIGNABLE
 
     struct {
       type_t expected;

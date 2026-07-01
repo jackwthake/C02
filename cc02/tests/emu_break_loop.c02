@@ -1,0 +1,12 @@
+reg u8 PORTB @ 0x6000;
+
+fn main() -> void {
+  u8 i = 0;
+  while (true) {
+    ++i;
+    if (i == 5) {
+      break;
+    }
+  }
+  PORTB = i;
+}

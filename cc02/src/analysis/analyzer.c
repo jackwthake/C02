@@ -189,6 +189,37 @@ symbol_t *analyzer_lookup(analyzer_t *a, const char *key) {
   } while(0)
 
 
+/*
+ * Declares a local variable (a NODE_VAR_DECL or a function parameter),
+ * rejecting both same-scope redeclaration and shadowing of an outer scope.
+ *
+ * Shadowing is disallowed on purpose: the IR/codegen represent every
+ * variable by its bare name (OPERAND_VAR.name / zp_map keys on strcmp), with
+ * no per-scope qualifier. Two distinct "i"s in nested scopes would collapse
+ * onto the same zero-page storage and silently corrupt each other. Until
+ * variables carry a scope-unique identity end to end, the analyzer refuses
+ * to let an inner declaration reuse a name that's still visible from an
+ * enclosing scope. Sibling scopes (e.g. two back-to-back for-loops each
+ * declaring their own `i`) are unaffected - by the time the second loop's
+ * scope is pushed, the first one has already been popped and isn't part of
+ * the visible stack, so re-using the name there is genuinely fine.
+ */
+static void declare_local_variable(analyzer_t *a, node_t *node, symbol_t sym) {
+  symtab_t *current_scope = &a->scopes[a->depth - 1];
+  if (symtab_lookup(current_scope, sym.name)) {
+    EMIT_NAME_ERROR(ERR_REDECLARATION, node->loc, sym.name);
+    return;
+  }
+
+  if (analyzer_lookup(a, sym.name)) {
+    EMIT_NAME_ERROR(ERR_SHADOWED_DECLARATION, node->loc, sym.name);
+    return;
+  }
+
+  analyzer_insert_symbol(a, sym.name, sym);
+}
+
+
 static const type_t TYPE_ERROR = { .kind = TYPE_INVALID, .is_ptr = 0, .ptr_depth = 0 };
 static const type_t TYPE_NULL  = { .kind = TYPE_VOID, .is_ptr = 1, .ptr_depth = 1 };
 
@@ -566,7 +597,7 @@ static void analyze_stmt(analyzer_t *a, node_t *node) {
         }
       };
 
-      INSERT_SYMBOL(node, sym);
+      declare_local_variable(a, node, sym);
       break;
     }
 
@@ -610,8 +641,10 @@ static void analyze_stmt(analyzer_t *a, node_t *node) {
 
     case NODE_WHILE:
       resolve_expr_type(a, node->while_stmt.cond);
+      ++a->loop_depth;
       if (node->while_stmt.body)
         analyze_stmt(a, node->while_stmt.body);
+      --a->loop_depth;
       break;
 
     case NODE_FOR:
@@ -622,9 +655,21 @@ static void analyze_stmt(analyzer_t *a, node_t *node) {
         resolve_expr_type(a, node->for_stmt.cond);
       if (node->for_stmt.incrementer)
         analyze_stmt(a, node->for_stmt.incrementer);
+      ++a->loop_depth;
       if (node->for_stmt.body)
         analyze_stmt(a, node->for_stmt.body);
+      --a->loop_depth;
       analyzer_scope_pop(a);
+      break;
+
+    case NODE_BREAK:
+      if (!a->loop_depth)
+        EMIT_PLAIN_ERROR(ERR_BREAK_OUTSIDE_LOOP, node->loc);
+      break;
+
+    case NODE_CONTINUE:
+      if (!a->loop_depth)
+        EMIT_PLAIN_ERROR(ERR_CONTINUE_OUTSIDE_LOOP, node->loc);
       break;
 
     default:
@@ -832,9 +877,7 @@ static void pass2_entry(analyzer_t *a, ast_t program) {
           }
         };
 
-        if (!analyzer_insert_symbol(a, sym.name, sym)) {
-          EMIT_NAME_ERROR(ERR_REDECLARATION, node->loc, sym.name);
-        }
+        declare_local_variable(a, node, sym);
       }
 
       // analyze block

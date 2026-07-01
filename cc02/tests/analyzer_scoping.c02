@@ -1,15 +1,9 @@
-// Exercises scope behavior: shadowing, for-loop scoping, block scoping
+// Exercises scope behavior: for-loop scoping, block scoping, and legal
+// same-name reuse across scopes that never overlap on the scope stack.
+// Shadowing a still-live outer scope is rejected - see analyzer_bad_shadow.c02.
 
 fn main() -> void {
   u8 x = 1;
-
-  // shadowing in an if block is allowed
-  if (x > 0) {
-    u8 x = 2;
-    u8 y = x;
-  }
-
-  // x is still the outer u8 after the block
   u8 a = x;
 
   // for-loop variable stays scoped to the loop

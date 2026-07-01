@@ -79,6 +79,8 @@ static const char *node_kind_name(node_kind_t kind) {
     case NODE_STRUCT_INIT:  return "StructInitExpr";
     case NODE_FIELD_ACCESS: return "FieldAccess";
     case NODE_PROGRAM:      return "TranslationUnitDecl";
+    case NODE_CONTINUE:     return "ContinueStmt";
+    case NODE_BREAK:        return "BreakStmt";
     default:                return "Unknown";
   }
 }
@@ -139,21 +141,13 @@ static void print_ast_label(node_t *node) {
       print_type_suffix(node->var_decl.type);
       break;
     case NODE_ASSIGN:
-      printf("%s", node_kind_name(node->kind));
-      break;
     case NODE_RETURN:
-      printf("%s", node_kind_name(node->kind));
-      break;
     case NODE_IF:
-      printf("%s", node_kind_name(node->kind));
-      break;
     case NODE_WHILE:
-      printf("%s", node_kind_name(node->kind));
-      break;
     case NODE_FOR:
-      printf("%s", node_kind_name(node->kind));
-      break;
     case NODE_BLOCK:
+    case NODE_CONTINUE:
+    case NODE_BREAK:
       printf("%s", node_kind_name(node->kind));
       break;
     case NODE_FUNCTION:
@@ -389,6 +383,10 @@ static void print_ast_(node_t *node, int is_last, const char *prefix) {
       break;
 
     case NODE_FWD_DECL:
+      break;
+
+    case NODE_BREAK:
+    case NODE_CONTINUE:
       break;
 
     case NODE_PROGRAM:

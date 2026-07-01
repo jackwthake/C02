@@ -31,5 +31,7 @@
    |- GlobalVarDecl dereffed : u16
    |  `- PtrDeref *
    |     `- Identifier global_ptr
-   `- FunctionDecl main() -> void
-      `- CompoundStmt
+   |- FunctionDecl main() -> void
+   |  `- CompoundStmt
+   |- ForwardDecl __heap_start : u16
+   `- ForwardDecl __memory_top : u16

@@ -1,522 +1,524 @@
 `- TranslationUnitDecl
-   `- FunctionDecl main() -> void
-      `- CompoundStmt
-         |- VarDecl x : u8
-         |  `- IntegerLiteral (10)
-         |- IfStmt
-         |  |- [cond]
-         |  |  `- BinaryOperator >
-         |  |     |- Identifier x
-         |  |     `- IntegerLiteral (0)
-         |  `- [then body]
-         |     |- CompoundStmt
-         |     |  `- AssignStmt
-         |     |     |- [target]
-         |     |     |  `- Identifier x
-         |     |     `- [value]
-         |     |        `- BinaryOperator -
-         |     |           |- Identifier x
-         |     |           `- IntegerLiteral (1)
-         |- IfStmt
-         |  |- [cond]
-         |  |  `- BinaryOperator >
-         |  |     |- Identifier x
-         |  |     `- IntegerLiteral (0)
-         |  |- [then body]
-         |  |  `- CompoundStmt
-         |  |     `- AssignStmt
-         |  |        |- [target]
-         |  |        |  `- Identifier x
-         |  |        `- [value]
-         |  |           `- BinaryOperator -
-         |  |              |- Identifier x
-         |  |              `- IntegerLiteral (1)
-         |     `- CompoundStmt
-         |        `- AssignStmt
-         |           |- [target]
-         |           |  `- Identifier x
-         |           `- [value]
-         |              `- IntegerLiteral (0)
-         |- IfStmt
-         |  |- [cond]
-         |  |  `- BinaryOperator ==
-         |  |     |- Identifier x
-         |  |     `- IntegerLiteral (0)
-         |  |- [then body]
-         |  |  `- CompoundStmt
-         |  |     `- AssignStmt
-         |  |        |- [target]
-         |  |        |  `- Identifier x
-         |  |        `- [value]
-         |  |           `- IntegerLiteral (1)
-         |     `- IfStmt
-         |        |- [cond]
-         |        |  `- BinaryOperator ==
-         |        |     |- Identifier x
-         |        |     `- IntegerLiteral (1)
-         |        |- [then body]
-         |        |  `- CompoundStmt
-         |        |     `- AssignStmt
-         |        |        |- [target]
-         |        |        |  `- Identifier x
-         |        |        `- [value]
-         |        |           `- IntegerLiteral (2)
-         |           `- CompoundStmt
-         |              `- AssignStmt
-         |                 |- [target]
-         |                 |  `- Identifier x
-         |                 `- [value]
-         |                    `- IntegerLiteral (3)
-         |- IfStmt
-         |  |- [cond]
-         |  |  `- BinaryOperator ==
-         |  |     |- Identifier x
-         |  |     `- IntegerLiteral (0)
-         |  |- [then body]
-         |  |  `- CompoundStmt
-         |  |     `- AssignStmt
-         |  |        |- [target]
-         |  |        |  `- Identifier x
-         |  |        `- [value]
-         |  |           `- IntegerLiteral (10)
-         |     `- IfStmt
-         |        |- [cond]
-         |        |  `- BinaryOperator ==
-         |        |     |- Identifier x
-         |        |     `- IntegerLiteral (1)
-         |        |- [then body]
-         |        |  `- CompoundStmt
-         |        |     `- AssignStmt
-         |        |        |- [target]
-         |        |        |  `- Identifier x
-         |        |        `- [value]
-         |        |           `- IntegerLiteral (11)
-         |           `- IfStmt
-         |              |- [cond]
-         |              |  `- BinaryOperator ==
-         |              |     |- Identifier x
-         |              |     `- IntegerLiteral (2)
-         |              |- [then body]
-         |              |  `- CompoundStmt
-         |              |     `- AssignStmt
-         |              |        |- [target]
-         |              |        |  `- Identifier x
-         |              |        `- [value]
-         |              |           `- IntegerLiteral (12)
-         |                 `- IfStmt
-         |                    |- [cond]
-         |                    |  `- BinaryOperator ==
-         |                    |     |- Identifier x
-         |                    |     `- IntegerLiteral (3)
-         |                    |- [then body]
-         |                    |  `- CompoundStmt
-         |                    |     `- AssignStmt
-         |                    |        |- [target]
-         |                    |        |  `- Identifier x
-         |                    |        `- [value]
-         |                    |           `- IntegerLiteral (13)
-         |                       `- CompoundStmt
-         |                          `- AssignStmt
-         |                             |- [target]
-         |                             |  `- Identifier x
-         |                             `- [value]
-         |                                `- IntegerLiteral (99)
-         |- IfStmt
-         |  |- [cond]
-         |  |  `- BinaryOperator ==
-         |  |     |- Identifier x
-         |  |     `- IntegerLiteral (0)
-         |  |- [then body]
-         |  |  `- CompoundStmt
-         |  |     `- AssignStmt
-         |  |        |- [target]
-         |  |        |  `- Identifier x
-         |  |        `- [value]
-         |  |           `- IntegerLiteral (10)
-         |     `- IfStmt
-         |        |- [cond]
-         |        |  `- BinaryOperator ==
-         |        |     |- Identifier x
-         |        |     `- IntegerLiteral (1)
-         |        |- [then body]
-         |        |  `- CompoundStmt
-         |        |     `- AssignStmt
-         |        |        |- [target]
-         |        |        |  `- Identifier x
-         |        |        `- [value]
-         |        |           `- IntegerLiteral (11)
-         |           `- IfStmt
-         |              |- [cond]
-         |              |  `- BinaryOperator ==
-         |              |     |- Identifier x
-         |              |     `- IntegerLiteral (2)
-         |              `- [then body]
-         |                 |- CompoundStmt
-         |                 |  `- AssignStmt
-         |                 |     |- [target]
-         |                 |     |  `- Identifier x
-         |                 |     `- [value]
-         |                 |        `- IntegerLiteral (12)
-         |- IfStmt
-         |  |- [cond]
-         |  |  `- BinaryOperator >
-         |  |     |- Identifier x
-         |  |     `- IntegerLiteral (0)
-         |  `- [then body]
-         |     |- CompoundStmt
-         |     |  `- IfStmt
-         |     |     |- [cond]
-         |     |     |  `- BinaryOperator >
-         |     |     |     |- Identifier x
-         |     |     |     `- IntegerLiteral (5)
-         |     |     |- [then body]
-         |     |     |  `- CompoundStmt
-         |     |     |     `- AssignStmt
-         |     |     |        |- [target]
-         |     |     |        |  `- Identifier x
-         |     |     |        `- [value]
-         |     |     |           `- IntegerLiteral (100)
-         |     |        `- CompoundStmt
-         |     |           `- AssignStmt
-         |     |              |- [target]
-         |     |              |  `- Identifier x
-         |     |              `- [value]
-         |     |                 `- IntegerLiteral (50)
-         |- IfStmt
-         |  |- [cond]
-         |  |  `- BinaryOperator >
-         |  |     |- Identifier x
-         |  |     `- IntegerLiteral (0)
-         |  |- [then body]
-         |  |  `- CompoundStmt
-         |  |     `- WhileStmt
-         |  |        |- [cond]
-         |  |        |  `- BinaryOperator >
-         |  |        |     |- Identifier x
-         |  |        |     `- IntegerLiteral (5)
-         |  |        `- [body]
-         |  |           `- CompoundStmt
-         |  |              `- AssignStmt
-         |  |                 |- [target]
-         |  |                 |  `- Identifier x
-         |  |                 `- [value]
-         |  |                    `- BinaryOperator -
-         |  |                       |- Identifier x
-         |  |                       `- IntegerLiteral (1)
-         |     `- IfStmt
-         |        |- [cond]
-         |        |  `- BinaryOperator ==
-         |        |     |- Identifier x
-         |        |     `- IntegerLiteral (0)
-         |        |- [then body]
-         |        |  `- CompoundStmt
-         |        |     `- AssignStmt
-         |        |        |- [target]
-         |        |        |  `- Identifier x
-         |        |        `- [value]
-         |        |           `- IntegerLiteral (1)
-         |           `- CompoundStmt
-         |              `- IfStmt
-         |                 |- [cond]
-         |                 |  `- BinaryOperator <
-         |                 |     |- Identifier x
-         |                 |     `- IntegerLiteral (0)
-         |                 |- [then body]
-         |                 |  `- CompoundStmt
-         |                 |     `- AssignStmt
-         |                 |        |- [target]
-         |                 |        |  `- Identifier x
-         |                 |        `- [value]
-         |                 |           `- IntegerLiteral (0)
-         |                    `- IfStmt
-         |                       |- [cond]
-         |                       |  `- BinaryOperator ==
-         |                       |     |- Identifier x
-         |                       |     `- IntegerLiteral (1)
-         |                       |- [then body]
-         |                       |  `- CompoundStmt
-         |                       |     `- AssignStmt
-         |                       |        |- [target]
-         |                       |        |  `- Identifier x
-         |                       |        `- [value]
-         |                       |           `- IntegerLiteral (2)
-         |                          `- CompoundStmt
-         |                             `- AssignStmt
-         |                                |- [target]
-         |                                |  `- Identifier x
-         |                                `- [value]
-         |                                   `- IntegerLiteral (3)
-         |- WhileStmt
-         |  |- [cond]
-         |  |  `- BinaryOperator >
-         |  |     |- Identifier x
-         |  |     `- IntegerLiteral (0)
-         |  `- [body]
-         |     `- CompoundStmt
-         |        `- AssignStmt
-         |           |- [target]
-         |           |  `- Identifier x
-         |           `- [value]
-         |              `- BinaryOperator -
-         |                 |- Identifier x
-         |                 `- IntegerLiteral (1)
-         |- WhileStmt
-         |  |- [cond]
-         |  |  `- BinaryOperator !=
-         |  |     |- Identifier x
-         |  |     `- IntegerLiteral (0)
-         |- WhileStmt
-         |  |- [cond]
-         |  |  `- BinaryOperator ==
-         |  |     |- BinaryOperator &
-         |  |     |  |- Identifier x
-         |  |     |  `- IntegerLiteral (1)
-         |  |     `- IntegerLiteral (0)
-         |  `- [body]
-         |     `- CompoundStmt
-         |        `- AssignStmt
-         |           |- [target]
-         |           |  `- Identifier x
-         |           `- [value]
-         |              `- BinaryOperator +
-         |                 |- Identifier x
-         |                 `- IntegerLiteral (1)
-         |- ForStmt
-         |  |- [init]
-         |  |  `- VarDecl i : u8
-         |  |     `- IntegerLiteral (0)
-         |  |- [cond]
-         |  |  `- BinaryOperator <
-         |  |     |- Identifier i
-         |  |     `- IntegerLiteral (10)
-         |  |- [step]
-         |  |  `- AssignStmt
-         |  |     |- [target]
-         |  |     |  `- Identifier i
-         |  |     `- [value]
-         |  |        `- BinaryOperator +
-         |  |           |- Identifier i
-         |  |           `- IntegerLiteral (1)
-         |  `- [body]
-         |     `- CompoundStmt
-         |        `- AssignStmt
-         |           |- [target]
-         |           |  `- Identifier x
-         |           `- [value]
-         |              `- BinaryOperator +
-         |                 |- Identifier x
-         |                 `- Identifier i
-         |- VarDecl j : u8
-         |  `- IntegerLiteral (0)
-         |- ForStmt
-         |  |- [cond]
-         |  |  `- BinaryOperator <
-         |  |     |- Identifier j
-         |  |     `- IntegerLiteral (10)
-         |  |- [step]
-         |  |  `- AssignStmt
-         |  |     |- [target]
-         |  |     |  `- Identifier j
-         |  |     `- [value]
-         |  |        `- BinaryOperator +
-         |  |           |- Identifier j
-         |  |           `- IntegerLiteral (1)
-         |  `- [body]
-         |     `- CompoundStmt
-         |        `- AssignStmt
-         |           |- [target]
-         |           |  `- Identifier x
-         |           `- [value]
-         |              `- BinaryOperator +
-         |                 |- Identifier x
-         |                 `- Identifier j
-         |- ForStmt
-         |  |- [init]
-         |  |  `- VarDecl k : u8
-         |  |     `- IntegerLiteral (0)
-         |  |- [step]
-         |  |  `- AssignStmt
-         |  |     |- [target]
-         |  |     |  `- Identifier k
-         |  |     `- [value]
-         |  |        `- BinaryOperator +
-         |  |           |- Identifier k
-         |  |           `- IntegerLiteral (1)
-         |  `- [body]
-         |     `- CompoundStmt
-         |        `- IfStmt
-         |           |- [cond]
-         |           |  `- BinaryOperator >
-         |           |     |- Identifier k
-         |           |     `- IntegerLiteral (10)
-         |           `- [then body]
-         |              |- CompoundStmt
-         |              |  `- ReturnStmt
-         |- ForStmt
-         |  |- [init]
-         |  |  `- VarDecl m : u8
-         |  |     `- IntegerLiteral (0)
-         |  |- [cond]
-         |  |  `- BinaryOperator <
-         |  |     |- Identifier m
-         |  |     `- IntegerLiteral (10)
-         |  `- [body]
-         |     `- CompoundStmt
-         |        |- AssignStmt
-         |        |  |- [target]
-         |        |  |  `- Identifier x
-         |        |  `- [value]
-         |        |     `- BinaryOperator +
-         |        |        |- Identifier x
-         |        |        `- Identifier m
-         |        `- AssignStmt
-         |           |- [target]
-         |           |  `- Identifier m
-         |           `- [value]
-         |              `- BinaryOperator +
-         |                 |- Identifier m
-         |                 `- IntegerLiteral (1)
-         |- ForStmt
-         |  `- [body]
-         |     `- CompoundStmt
-         |        |- IfStmt
-         |        |  |- [cond]
-         |        |  |  `- BinaryOperator >
-         |        |  |     |- Identifier x
-         |        |  |     `- IntegerLiteral (1000)
-         |        |  `- [then body]
-         |        |     |- CompoundStmt
-         |        |     |  `- ReturnStmt
-         |        `- AssignStmt
-         |           |- [target]
-         |           |  `- Identifier x
-         |           `- [value]
-         |              `- BinaryOperator +
-         |                 |- Identifier x
-         |                 `- IntegerLiteral (1)
-         |- ForStmt
-         |  |- [init]
-         |  |  `- VarDecl n : u8
-         |  |     `- IntegerLiteral (0)
-         |  |- [cond]
-         |  |  `- BinaryOperator <
-         |  |     |- Identifier n
-         |  |     `- IntegerLiteral (10)
-         |  `- [step]
-         |     `- AssignStmt
-         |        |- [target]
-         |        |  `- Identifier n
-         |        `- [value]
-         |           `- BinaryOperator +
-         |              |- Identifier n
-         |              `- IntegerLiteral (1)
-         |- ForStmt
-         |  |- [init]
-         |  |  `- VarDecl p : u8
-         |  |     `- IntegerLiteral (0)
-         |  |- [cond]
-         |  |  `- BinaryOperator <
-         |  |     |- Identifier p
-         |  |     `- IntegerLiteral (5)
-         |  |- [step]
-         |  |  `- AssignStmt
-         |  |     |- [target]
-         |  |     |  `- Identifier p
-         |  |     `- [value]
-         |  |        `- BinaryOperator +
-         |  |           |- Identifier p
-         |  |           `- IntegerLiteral (1)
-         |  `- [body]
-         |     `- CompoundStmt
-         |        `- IfStmt
-         |           |- [cond]
-         |           |  `- BinaryOperator ==
-         |           |     |- Identifier p
-         |           |     `- IntegerLiteral (0)
-         |           |- [then body]
-         |           |  `- CompoundStmt
-         |           |     `- AssignStmt
-         |           |        |- [target]
-         |           |        |  `- Identifier x
-         |           |        `- [value]
-         |           |           `- IntegerLiteral (0)
-         |              `- IfStmt
-         |                 |- [cond]
-         |                 |  `- BinaryOperator ==
-         |                 |     |- Identifier p
-         |                 |     `- IntegerLiteral (1)
-         |                 |- [then body]
-         |                 |  `- CompoundStmt
-         |                 |     `- AssignStmt
-         |                 |        |- [target]
-         |                 |        |  `- Identifier x
-         |                 |        `- [value]
-         |                 |           `- IntegerLiteral (1)
-         |                    `- CompoundStmt
-         |                       `- AssignStmt
-         |                          |- [target]
-         |                          |  `- Identifier x
-         |                          `- [value]
-         |                             `- IntegerLiteral (2)
-         |- WhileStmt
-         |  |- [cond]
-         |  |  `- BinaryOperator <
-         |  |     |- Identifier x
-         |  |     `- IntegerLiteral (50)
-         |  `- [body]
-         |     `- CompoundStmt
-         |        `- IfStmt
-         |           |- [cond]
-         |           |  `- BinaryOperator <
-         |           |     |- Identifier x
-         |           |     `- IntegerLiteral (10)
-         |           |- [then body]
-         |           |  `- CompoundStmt
-         |           |     `- AssignStmt
-         |           |        |- [target]
-         |           |        |  `- Identifier x
-         |           |        `- [value]
-         |           |           `- BinaryOperator +
-         |           |              |- Identifier x
-         |           |              `- IntegerLiteral (5)
-         |              `- IfStmt
-         |                 |- [cond]
-         |                 |  `- BinaryOperator <
-         |                 |     |- Identifier x
-         |                 |     `- IntegerLiteral (30)
-         |                 |- [then body]
-         |                 |  `- CompoundStmt
-         |                 |     `- ForStmt
-         |                 |        |- [init]
-         |                 |        |  `- VarDecl q : u8
-         |                 |        |     `- IntegerLiteral (0)
-         |                 |        |- [cond]
-         |                 |        |  `- BinaryOperator <
-         |                 |        |     |- Identifier q
-         |                 |        |     `- IntegerLiteral (3)
-         |                 |        |- [step]
-         |                 |        |  `- AssignStmt
-         |                 |        |     |- [target]
-         |                 |        |     |  `- Identifier q
-         |                 |        |     `- [value]
-         |                 |        |        `- BinaryOperator +
-         |                 |        |           |- Identifier q
-         |                 |        |           `- IntegerLiteral (1)
-         |                 |        `- [body]
-         |                 |           `- CompoundStmt
-         |                 |              `- AssignStmt
-         |                 |                 |- [target]
-         |                 |                 |  `- Identifier x
-         |                 |                 `- [value]
-         |                 |                    `- BinaryOperator +
-         |                 |                       |- Identifier x
-         |                 |                       `- Identifier q
-         |                    `- CompoundStmt
-         |                       `- AssignStmt
-         |                          |- [target]
-         |                          |  `- Identifier x
-         |                          `- [value]
-         |                             `- BinaryOperator +
-         |                                |- Identifier x
-         |                                `- IntegerLiteral (1)
-         `- ReturnStmt
+   |- FunctionDecl main() -> void
+   |  `- CompoundStmt
+   |     |- VarDecl x : u8
+   |     |  `- IntegerLiteral (10)
+   |     |- IfStmt
+   |     |  |- [cond]
+   |     |  |  `- BinaryOperator >
+   |     |  |     |- Identifier x
+   |     |  |     `- IntegerLiteral (0)
+   |     |  `- [then body]
+   |     |     |- CompoundStmt
+   |     |     |  `- AssignStmt
+   |     |     |     |- [target]
+   |     |     |     |  `- Identifier x
+   |     |     |     `- [value]
+   |     |     |        `- BinaryOperator -
+   |     |     |           |- Identifier x
+   |     |     |           `- IntegerLiteral (1)
+   |     |- IfStmt
+   |     |  |- [cond]
+   |     |  |  `- BinaryOperator >
+   |     |  |     |- Identifier x
+   |     |  |     `- IntegerLiteral (0)
+   |     |  |- [then body]
+   |     |  |  `- CompoundStmt
+   |     |  |     `- AssignStmt
+   |     |  |        |- [target]
+   |     |  |        |  `- Identifier x
+   |     |  |        `- [value]
+   |     |  |           `- BinaryOperator -
+   |     |  |              |- Identifier x
+   |     |  |              `- IntegerLiteral (1)
+   |     |     `- CompoundStmt
+   |     |        `- AssignStmt
+   |     |           |- [target]
+   |     |           |  `- Identifier x
+   |     |           `- [value]
+   |     |              `- IntegerLiteral (0)
+   |     |- IfStmt
+   |     |  |- [cond]
+   |     |  |  `- BinaryOperator ==
+   |     |  |     |- Identifier x
+   |     |  |     `- IntegerLiteral (0)
+   |     |  |- [then body]
+   |     |  |  `- CompoundStmt
+   |     |  |     `- AssignStmt
+   |     |  |        |- [target]
+   |     |  |        |  `- Identifier x
+   |     |  |        `- [value]
+   |     |  |           `- IntegerLiteral (1)
+   |     |     `- IfStmt
+   |     |        |- [cond]
+   |     |        |  `- BinaryOperator ==
+   |     |        |     |- Identifier x
+   |     |        |     `- IntegerLiteral (1)
+   |     |        |- [then body]
+   |     |        |  `- CompoundStmt
+   |     |        |     `- AssignStmt
+   |     |        |        |- [target]
+   |     |        |        |  `- Identifier x
+   |     |        |        `- [value]
+   |     |        |           `- IntegerLiteral (2)
+   |     |           `- CompoundStmt
+   |     |              `- AssignStmt
+   |     |                 |- [target]
+   |     |                 |  `- Identifier x
+   |     |                 `- [value]
+   |     |                    `- IntegerLiteral (3)
+   |     |- IfStmt
+   |     |  |- [cond]
+   |     |  |  `- BinaryOperator ==
+   |     |  |     |- Identifier x
+   |     |  |     `- IntegerLiteral (0)
+   |     |  |- [then body]
+   |     |  |  `- CompoundStmt
+   |     |  |     `- AssignStmt
+   |     |  |        |- [target]
+   |     |  |        |  `- Identifier x
+   |     |  |        `- [value]
+   |     |  |           `- IntegerLiteral (10)
+   |     |     `- IfStmt
+   |     |        |- [cond]
+   |     |        |  `- BinaryOperator ==
+   |     |        |     |- Identifier x
+   |     |        |     `- IntegerLiteral (1)
+   |     |        |- [then body]
+   |     |        |  `- CompoundStmt
+   |     |        |     `- AssignStmt
+   |     |        |        |- [target]
+   |     |        |        |  `- Identifier x
+   |     |        |        `- [value]
+   |     |        |           `- IntegerLiteral (11)
+   |     |           `- IfStmt
+   |     |              |- [cond]
+   |     |              |  `- BinaryOperator ==
+   |     |              |     |- Identifier x
+   |     |              |     `- IntegerLiteral (2)
+   |     |              |- [then body]
+   |     |              |  `- CompoundStmt
+   |     |              |     `- AssignStmt
+   |     |              |        |- [target]
+   |     |              |        |  `- Identifier x
+   |     |              |        `- [value]
+   |     |              |           `- IntegerLiteral (12)
+   |     |                 `- IfStmt
+   |     |                    |- [cond]
+   |     |                    |  `- BinaryOperator ==
+   |     |                    |     |- Identifier x
+   |     |                    |     `- IntegerLiteral (3)
+   |     |                    |- [then body]
+   |     |                    |  `- CompoundStmt
+   |     |                    |     `- AssignStmt
+   |     |                    |        |- [target]
+   |     |                    |        |  `- Identifier x
+   |     |                    |        `- [value]
+   |     |                    |           `- IntegerLiteral (13)
+   |     |                       `- CompoundStmt
+   |     |                          `- AssignStmt
+   |     |                             |- [target]
+   |     |                             |  `- Identifier x
+   |     |                             `- [value]
+   |     |                                `- IntegerLiteral (99)
+   |     |- IfStmt
+   |     |  |- [cond]
+   |     |  |  `- BinaryOperator ==
+   |     |  |     |- Identifier x
+   |     |  |     `- IntegerLiteral (0)
+   |     |  |- [then body]
+   |     |  |  `- CompoundStmt
+   |     |  |     `- AssignStmt
+   |     |  |        |- [target]
+   |     |  |        |  `- Identifier x
+   |     |  |        `- [value]
+   |     |  |           `- IntegerLiteral (10)
+   |     |     `- IfStmt
+   |     |        |- [cond]
+   |     |        |  `- BinaryOperator ==
+   |     |        |     |- Identifier x
+   |     |        |     `- IntegerLiteral (1)
+   |     |        |- [then body]
+   |     |        |  `- CompoundStmt
+   |     |        |     `- AssignStmt
+   |     |        |        |- [target]
+   |     |        |        |  `- Identifier x
+   |     |        |        `- [value]
+   |     |        |           `- IntegerLiteral (11)
+   |     |           `- IfStmt
+   |     |              |- [cond]
+   |     |              |  `- BinaryOperator ==
+   |     |              |     |- Identifier x
+   |     |              |     `- IntegerLiteral (2)
+   |     |              `- [then body]
+   |     |                 |- CompoundStmt
+   |     |                 |  `- AssignStmt
+   |     |                 |     |- [target]
+   |     |                 |     |  `- Identifier x
+   |     |                 |     `- [value]
+   |     |                 |        `- IntegerLiteral (12)
+   |     |- IfStmt
+   |     |  |- [cond]
+   |     |  |  `- BinaryOperator >
+   |     |  |     |- Identifier x
+   |     |  |     `- IntegerLiteral (0)
+   |     |  `- [then body]
+   |     |     |- CompoundStmt
+   |     |     |  `- IfStmt
+   |     |     |     |- [cond]
+   |     |     |     |  `- BinaryOperator >
+   |     |     |     |     |- Identifier x
+   |     |     |     |     `- IntegerLiteral (5)
+   |     |     |     |- [then body]
+   |     |     |     |  `- CompoundStmt
+   |     |     |     |     `- AssignStmt
+   |     |     |     |        |- [target]
+   |     |     |     |        |  `- Identifier x
+   |     |     |     |        `- [value]
+   |     |     |     |           `- IntegerLiteral (100)
+   |     |     |        `- CompoundStmt
+   |     |     |           `- AssignStmt
+   |     |     |              |- [target]
+   |     |     |              |  `- Identifier x
+   |     |     |              `- [value]
+   |     |     |                 `- IntegerLiteral (50)
+   |     |- IfStmt
+   |     |  |- [cond]
+   |     |  |  `- BinaryOperator >
+   |     |  |     |- Identifier x
+   |     |  |     `- IntegerLiteral (0)
+   |     |  |- [then body]
+   |     |  |  `- CompoundStmt
+   |     |  |     `- WhileStmt
+   |     |  |        |- [cond]
+   |     |  |        |  `- BinaryOperator >
+   |     |  |        |     |- Identifier x
+   |     |  |        |     `- IntegerLiteral (5)
+   |     |  |        `- [body]
+   |     |  |           `- CompoundStmt
+   |     |  |              `- AssignStmt
+   |     |  |                 |- [target]
+   |     |  |                 |  `- Identifier x
+   |     |  |                 `- [value]
+   |     |  |                    `- BinaryOperator -
+   |     |  |                       |- Identifier x
+   |     |  |                       `- IntegerLiteral (1)
+   |     |     `- IfStmt
+   |     |        |- [cond]
+   |     |        |  `- BinaryOperator ==
+   |     |        |     |- Identifier x
+   |     |        |     `- IntegerLiteral (0)
+   |     |        |- [then body]
+   |     |        |  `- CompoundStmt
+   |     |        |     `- AssignStmt
+   |     |        |        |- [target]
+   |     |        |        |  `- Identifier x
+   |     |        |        `- [value]
+   |     |        |           `- IntegerLiteral (1)
+   |     |           `- CompoundStmt
+   |     |              `- IfStmt
+   |     |                 |- [cond]
+   |     |                 |  `- BinaryOperator <
+   |     |                 |     |- Identifier x
+   |     |                 |     `- IntegerLiteral (0)
+   |     |                 |- [then body]
+   |     |                 |  `- CompoundStmt
+   |     |                 |     `- AssignStmt
+   |     |                 |        |- [target]
+   |     |                 |        |  `- Identifier x
+   |     |                 |        `- [value]
+   |     |                 |           `- IntegerLiteral (0)
+   |     |                    `- IfStmt
+   |     |                       |- [cond]
+   |     |                       |  `- BinaryOperator ==
+   |     |                       |     |- Identifier x
+   |     |                       |     `- IntegerLiteral (1)
+   |     |                       |- [then body]
+   |     |                       |  `- CompoundStmt
+   |     |                       |     `- AssignStmt
+   |     |                       |        |- [target]
+   |     |                       |        |  `- Identifier x
+   |     |                       |        `- [value]
+   |     |                       |           `- IntegerLiteral (2)
+   |     |                          `- CompoundStmt
+   |     |                             `- AssignStmt
+   |     |                                |- [target]
+   |     |                                |  `- Identifier x
+   |     |                                `- [value]
+   |     |                                   `- IntegerLiteral (3)
+   |     |- WhileStmt
+   |     |  |- [cond]
+   |     |  |  `- BinaryOperator >
+   |     |  |     |- Identifier x
+   |     |  |     `- IntegerLiteral (0)
+   |     |  `- [body]
+   |     |     `- CompoundStmt
+   |     |        `- AssignStmt
+   |     |           |- [target]
+   |     |           |  `- Identifier x
+   |     |           `- [value]
+   |     |              `- BinaryOperator -
+   |     |                 |- Identifier x
+   |     |                 `- IntegerLiteral (1)
+   |     |- WhileStmt
+   |     |  |- [cond]
+   |     |  |  `- BinaryOperator !=
+   |     |  |     |- Identifier x
+   |     |  |     `- IntegerLiteral (0)
+   |     |- WhileStmt
+   |     |  |- [cond]
+   |     |  |  `- BinaryOperator ==
+   |     |  |     |- BinaryOperator &
+   |     |  |     |  |- Identifier x
+   |     |  |     |  `- IntegerLiteral (1)
+   |     |  |     `- IntegerLiteral (0)
+   |     |  `- [body]
+   |     |     `- CompoundStmt
+   |     |        `- AssignStmt
+   |     |           |- [target]
+   |     |           |  `- Identifier x
+   |     |           `- [value]
+   |     |              `- BinaryOperator +
+   |     |                 |- Identifier x
+   |     |                 `- IntegerLiteral (1)
+   |     |- ForStmt
+   |     |  |- [init]
+   |     |  |  `- VarDecl i : u8
+   |     |  |     `- IntegerLiteral (0)
+   |     |  |- [cond]
+   |     |  |  `- BinaryOperator <
+   |     |  |     |- Identifier i
+   |     |  |     `- IntegerLiteral (10)
+   |     |  |- [step]
+   |     |  |  `- AssignStmt
+   |     |  |     |- [target]
+   |     |  |     |  `- Identifier i
+   |     |  |     `- [value]
+   |     |  |        `- BinaryOperator +
+   |     |  |           |- Identifier i
+   |     |  |           `- IntegerLiteral (1)
+   |     |  `- [body]
+   |     |     `- CompoundStmt
+   |     |        `- AssignStmt
+   |     |           |- [target]
+   |     |           |  `- Identifier x
+   |     |           `- [value]
+   |     |              `- BinaryOperator +
+   |     |                 |- Identifier x
+   |     |                 `- Identifier i
+   |     |- VarDecl j : u8
+   |     |  `- IntegerLiteral (0)
+   |     |- ForStmt
+   |     |  |- [cond]
+   |     |  |  `- BinaryOperator <
+   |     |  |     |- Identifier j
+   |     |  |     `- IntegerLiteral (10)
+   |     |  |- [step]
+   |     |  |  `- AssignStmt
+   |     |  |     |- [target]
+   |     |  |     |  `- Identifier j
+   |     |  |     `- [value]
+   |     |  |        `- BinaryOperator +
+   |     |  |           |- Identifier j
+   |     |  |           `- IntegerLiteral (1)
+   |     |  `- [body]
+   |     |     `- CompoundStmt
+   |     |        `- AssignStmt
+   |     |           |- [target]
+   |     |           |  `- Identifier x
+   |     |           `- [value]
+   |     |              `- BinaryOperator +
+   |     |                 |- Identifier x
+   |     |                 `- Identifier j
+   |     |- ForStmt
+   |     |  |- [init]
+   |     |  |  `- VarDecl k : u8
+   |     |  |     `- IntegerLiteral (0)
+   |     |  |- [step]
+   |     |  |  `- AssignStmt
+   |     |  |     |- [target]
+   |     |  |     |  `- Identifier k
+   |     |  |     `- [value]
+   |     |  |        `- BinaryOperator +
+   |     |  |           |- Identifier k
+   |     |  |           `- IntegerLiteral (1)
+   |     |  `- [body]
+   |     |     `- CompoundStmt
+   |     |        `- IfStmt
+   |     |           |- [cond]
+   |     |           |  `- BinaryOperator >
+   |     |           |     |- Identifier k
+   |     |           |     `- IntegerLiteral (10)
+   |     |           `- [then body]
+   |     |              |- CompoundStmt
+   |     |              |  `- ReturnStmt
+   |     |- ForStmt
+   |     |  |- [init]
+   |     |  |  `- VarDecl m : u8
+   |     |  |     `- IntegerLiteral (0)
+   |     |  |- [cond]
+   |     |  |  `- BinaryOperator <
+   |     |  |     |- Identifier m
+   |     |  |     `- IntegerLiteral (10)
+   |     |  `- [body]
+   |     |     `- CompoundStmt
+   |     |        |- AssignStmt
+   |     |        |  |- [target]
+   |     |        |  |  `- Identifier x
+   |     |        |  `- [value]
+   |     |        |     `- BinaryOperator +
+   |     |        |        |- Identifier x
+   |     |        |        `- Identifier m
+   |     |        `- AssignStmt
+   |     |           |- [target]
+   |     |           |  `- Identifier m
+   |     |           `- [value]
+   |     |              `- BinaryOperator +
+   |     |                 |- Identifier m
+   |     |                 `- IntegerLiteral (1)
+   |     |- ForStmt
+   |     |  `- [body]
+   |     |     `- CompoundStmt
+   |     |        |- IfStmt
+   |     |        |  |- [cond]
+   |     |        |  |  `- BinaryOperator >
+   |     |        |  |     |- Identifier x
+   |     |        |  |     `- IntegerLiteral (1000)
+   |     |        |  `- [then body]
+   |     |        |     |- CompoundStmt
+   |     |        |     |  `- ReturnStmt
+   |     |        `- AssignStmt
+   |     |           |- [target]
+   |     |           |  `- Identifier x
+   |     |           `- [value]
+   |     |              `- BinaryOperator +
+   |     |                 |- Identifier x
+   |     |                 `- IntegerLiteral (1)
+   |     |- ForStmt
+   |     |  |- [init]
+   |     |  |  `- VarDecl n : u8
+   |     |  |     `- IntegerLiteral (0)
+   |     |  |- [cond]
+   |     |  |  `- BinaryOperator <
+   |     |  |     |- Identifier n
+   |     |  |     `- IntegerLiteral (10)
+   |     |  `- [step]
+   |     |     `- AssignStmt
+   |     |        |- [target]
+   |     |        |  `- Identifier n
+   |     |        `- [value]
+   |     |           `- BinaryOperator +
+   |     |              |- Identifier n
+   |     |              `- IntegerLiteral (1)
+   |     |- ForStmt
+   |     |  |- [init]
+   |     |  |  `- VarDecl p : u8
+   |     |  |     `- IntegerLiteral (0)
+   |     |  |- [cond]
+   |     |  |  `- BinaryOperator <
+   |     |  |     |- Identifier p
+   |     |  |     `- IntegerLiteral (5)
+   |     |  |- [step]
+   |     |  |  `- AssignStmt
+   |     |  |     |- [target]
+   |     |  |     |  `- Identifier p
+   |     |  |     `- [value]
+   |     |  |        `- BinaryOperator +
+   |     |  |           |- Identifier p
+   |     |  |           `- IntegerLiteral (1)
+   |     |  `- [body]
+   |     |     `- CompoundStmt
+   |     |        `- IfStmt
+   |     |           |- [cond]
+   |     |           |  `- BinaryOperator ==
+   |     |           |     |- Identifier p
+   |     |           |     `- IntegerLiteral (0)
+   |     |           |- [then body]
+   |     |           |  `- CompoundStmt
+   |     |           |     `- AssignStmt
+   |     |           |        |- [target]
+   |     |           |        |  `- Identifier x
+   |     |           |        `- [value]
+   |     |           |           `- IntegerLiteral (0)
+   |     |              `- IfStmt
+   |     |                 |- [cond]
+   |     |                 |  `- BinaryOperator ==
+   |     |                 |     |- Identifier p
+   |     |                 |     `- IntegerLiteral (1)
+   |     |                 |- [then body]
+   |     |                 |  `- CompoundStmt
+   |     |                 |     `- AssignStmt
+   |     |                 |        |- [target]
+   |     |                 |        |  `- Identifier x
+   |     |                 |        `- [value]
+   |     |                 |           `- IntegerLiteral (1)
+   |     |                    `- CompoundStmt
+   |     |                       `- AssignStmt
+   |     |                          |- [target]
+   |     |                          |  `- Identifier x
+   |     |                          `- [value]
+   |     |                             `- IntegerLiteral (2)
+   |     |- WhileStmt
+   |     |  |- [cond]
+   |     |  |  `- BinaryOperator <
+   |     |  |     |- Identifier x
+   |     |  |     `- IntegerLiteral (50)
+   |     |  `- [body]
+   |     |     `- CompoundStmt
+   |     |        `- IfStmt
+   |     |           |- [cond]
+   |     |           |  `- BinaryOperator <
+   |     |           |     |- Identifier x
+   |     |           |     `- IntegerLiteral (10)
+   |     |           |- [then body]
+   |     |           |  `- CompoundStmt
+   |     |           |     `- AssignStmt
+   |     |           |        |- [target]
+   |     |           |        |  `- Identifier x
+   |     |           |        `- [value]
+   |     |           |           `- BinaryOperator +
+   |     |           |              |- Identifier x
+   |     |           |              `- IntegerLiteral (5)
+   |     |              `- IfStmt
+   |     |                 |- [cond]
+   |     |                 |  `- BinaryOperator <
+   |     |                 |     |- Identifier x
+   |     |                 |     `- IntegerLiteral (30)
+   |     |                 |- [then body]
+   |     |                 |  `- CompoundStmt
+   |     |                 |     `- ForStmt
+   |     |                 |        |- [init]
+   |     |                 |        |  `- VarDecl q : u8
+   |     |                 |        |     `- IntegerLiteral (0)
+   |     |                 |        |- [cond]
+   |     |                 |        |  `- BinaryOperator <
+   |     |                 |        |     |- Identifier q
+   |     |                 |        |     `- IntegerLiteral (3)
+   |     |                 |        |- [step]
+   |     |                 |        |  `- AssignStmt
+   |     |                 |        |     |- [target]
+   |     |                 |        |     |  `- Identifier q
+   |     |                 |        |     `- [value]
+   |     |                 |        |        `- BinaryOperator +
+   |     |                 |        |           |- Identifier q
+   |     |                 |        |           `- IntegerLiteral (1)
+   |     |                 |        `- [body]
+   |     |                 |           `- CompoundStmt
+   |     |                 |              `- AssignStmt
+   |     |                 |                 |- [target]
+   |     |                 |                 |  `- Identifier x
+   |     |                 |                 `- [value]
+   |     |                 |                    `- BinaryOperator +
+   |     |                 |                       |- Identifier x
+   |     |                 |                       `- Identifier q
+   |     |                    `- CompoundStmt
+   |     |                       `- AssignStmt
+   |     |                          |- [target]
+   |     |                          |  `- Identifier x
+   |     |                          `- [value]
+   |     |                             `- BinaryOperator +
+   |     |                                |- Identifier x
+   |     |                                `- IntegerLiteral (1)
+   |     `- ReturnStmt
+   |- ForwardDecl __heap_start : u16
+   `- ForwardDecl __memory_top : u16

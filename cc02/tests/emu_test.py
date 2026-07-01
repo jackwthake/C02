@@ -43,6 +43,7 @@ def load_and_run(bin_path, max_cycles=50000):
     mpu = MPU65C02()
     with open(bin_path, "rb") as f:
         rom = f.read()
+    rom = rom[:ROM_SIZE]  # strip symbol table if present
     for i, byte in enumerate(rom):
         mpu.memory[ROM_START + i] = byte
     mpu.pc = mpu.memory[0xFFFC] | (mpu.memory[0xFFFD] << 8)
@@ -279,6 +280,54 @@ def test_string_deref():
     val = mpu.memory[0x6000]
     if val != ord('!'):
         return False, f"memory[$6000] = ${val:02X}, expected ${ord('!'):02X} ('!')"
+    return True, None
+
+
+def test_local_str():
+    """Local string pointer (u8 *msg = \"Hi!\"), loop writes chars to PORTB."""
+    source = os.path.join(SCRIPT_DIR, "emu_local_str.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != ord('!'):
+        return False, f"memory[$6000] = ${val:02X}, expected ${ord('!'):02X} ('!')"
+    return True, None
+
+
+def test_break_loop():
+    """`break` inside a `while (true)` exits after the 5th iteration, i == 5."""
+    source = os.path.join(SCRIPT_DIR, "emu_break_loop.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 5:
+        return False, f"memory[$6000] = {val}, expected 5"
+    return True, None
+
+
+def test_continue_while():
+    """`continue` inside `while` skips odd i; sum of evens 2+4+...+10 = 30."""
+    source = os.path.join(SCRIPT_DIR, "emu_continue_while.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 30:
+        return False, f"memory[$6000] = {val}, expected 30"
+    return True, None
+
+
+def test_continue_for():
+    """`continue` inside `for` still runs the incrementer; sum of evens 0+2+...+8 = 20."""
+    source = os.path.join(SCRIPT_DIR, "emu_continue_for.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 20:
+        return False, f"memory[$6000] = {val}, expected 20"
     return True, None
 
 
@@ -621,6 +670,109 @@ def test_mod_u8():
     return True, None
 
 
+def test_div_i8():
+    """-6 / 2 == -3 (0xFD). Exercises quotient sign-fix path in __sdiv8."""
+    source = os.path.join(SCRIPT_DIR, "emu_div_i8.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 0xFD:
+        return False, f"memory[$6000] = ${val:02X}, expected $FD (-3)"
+    return True, None
+
+
+def test_mod_i8():
+    """-7 % 2 == -1 (0xFF). Exercises remainder sign-fix path in __sdiv8."""
+    source = os.path.join(SCRIPT_DIR, "emu_mod_i8.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 0xFF:
+        return False, f"memory[$6000] = ${val:02X}, expected $FF (-1)"
+    return True, None
+
+
+def test_mul_u16():
+    """300 * 13 == 3900 (0x0F3C): tests 16-bit shift-and-add with carry propagation."""
+    source = os.path.join(SCRIPT_DIR, "emu_mul_u16.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    lo = mpu.memory[0x6000]
+    hi = mpu.memory[0x6001]
+    val = lo | (hi << 8)
+    if val != 3900:
+        return False, f"memory[$6000:$6001] = {val:#06x}, expected {3900:#06x}"
+    return True, None
+
+
+def test_mul_u16_wrap():
+    """256 * 256 == 0 (overflow wraps to low 16 bits)."""
+    source = os.path.join(SCRIPT_DIR, "emu_mul_u16_wrap.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    lo = mpu.memory[0x6000]
+    hi = mpu.memory[0x6001]
+    val = lo | (hi << 8)
+    if val != 0:
+        return False, f"memory[$6000:$6001] = {val:#06x}, expected 0x0000"
+    return True, None
+
+
+def test_div_u16():
+    """50000 / 0xC001 == 1, 50000 % 0xC001 == 847: tests high-bit divisor path."""
+    source = os.path.join(SCRIPT_DIR, "emu_div_u16.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    quot = mpu.memory[0x6000] | (mpu.memory[0x6001] << 8)
+    rem  = mpu.memory[0x6002] | (mpu.memory[0x6003] << 8)
+    if quot != 1:
+        return False, f"quotient = {quot:#06x}, expected 0x0001"
+    if rem != 847:
+        return False, f"remainder = {rem:#06x}, expected {847:#06x}"
+    return True, None
+
+
+def test_global_ram_top():
+    """__heap_start == $0205: u8 x@$0200, __heap_start@$0201, __memory_top@$0203, heap starts at $0205."""
+    source = os.path.join(SCRIPT_DIR, "emu_global_ram_top.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000] | (mpu.memory[0x6001] << 8)
+    if val != 0x0205:
+        return False, f"__heap_start = {val:#06x}, expected 0x0205"
+    return True, None
+
+
+def test_binop_widen():
+    """u8(1) + u16(500): narrow operand widened, result is 501 = 0x01F5 (high byte = 1)."""
+    source = os.path.join(SCRIPT_DIR, "emu_binop_widen.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 1:
+        return False, f"memory[$6000] = ${val:02X}, expected $01 (high byte of 501)"
+    return True, None
+
+
+def test_cmp_mixed_sign():
+    """i8(-1) < u8(100): unsigned-wins normalization => -1 reinterpreted as 255, 255<100=false."""
+    source = os.path.join(SCRIPT_DIR, "emu_cmp_mixed_sign.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    val = mpu.memory[0x6000]
+    if val != 1:
+        return False, f"memory[$6000] = ${val:02X}, expected $01 (branch NOT taken)"
+    return True, None
+
+
 def test_implicit_widen():
     """u8 200 widened to u16: low byte=200, high byte=0 (not garbage)."""
     source = os.path.join(SCRIPT_DIR, "emu_implicit_widen.c02")
@@ -810,6 +962,7 @@ TESTS = [
     ("cmp_neq", test_cmp_neq),
     ("cmp_lte", test_cmp_lte),
     ("string_deref", test_string_deref),
+    ("local_str", test_local_str),
     ("inc_global", test_inc_global),
     ("cmp_global", test_cmp_global),
     ("cmp_u16_lt", test_cmp_u16_lt),
@@ -846,6 +999,14 @@ TESTS = [
     ("mul_u8", test_mul_u8),
     ("div_u8", test_div_u8),
     ("mod_u8", test_mod_u8),
+    ("div_i8", test_div_i8),
+    ("mod_i8", test_mod_i8),
+    ("mul_u16", test_mul_u16),
+    ("mul_u16_wrap", test_mul_u16_wrap),
+    ("div_u16", test_div_u16),
+    ("global_ram_top", test_global_ram_top),
+    ("binop_widen", test_binop_widen),
+    ("cmp_mixed_sign", test_cmp_mixed_sign),
     ("lcd_simplified", test_lcd_simplified),
     ("field_local", test_field_local),
     ("field_global", test_field_global),
@@ -855,6 +1016,9 @@ TESTS = [
     ("func_call_u16", test_func_call_u16),
     ("func_clobber", test_func_clobber),
     ("func_recursive", test_func_recursive),
+    ("break_loop", test_break_loop),
+    ("continue_while", test_continue_while),
+    ("continue_for", test_continue_for),
 ]
 
 

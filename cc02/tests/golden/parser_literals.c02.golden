@@ -29,51 +29,53 @@
    |  `- StringLiteral "hello world"
    |- GlobalVarDecl empty : u8*
    |  `- StringLiteral ""
-   `- FunctionDecl main() -> void
-      `- CompoundStmt
-         |- VarDecl a : u8
-         |  `- BinaryOperator &
-         |     |- IntegerLiteral (255)
-         |     `- IntegerLiteral (15)
-         |- VarDecl b : u8
-         |  `- BinaryOperator |
-         |     |- IntegerLiteral (12)
-         |     `- IntegerLiteral (3)
-         |- VarDecl c : u8
-         |  `- BinaryOperator <<
-         |     |- IntegerLiteral (1)
-         |     `- IntegerLiteral (4)
-         |- VarDecl d : u16
-         |  `- BinaryOperator +
-         |     |- IntegerLiteral (4096)
-         |     `- IntegerLiteral (4095)
-         |- IfStmt
-         |  |- [cond]
-         |  |  `- IntegerLiteral (1)
-         |  `- [then body]
-         |     |- CompoundStmt
-         |     |  `- VarDecl x : u8
-         |     |     `- IntegerLiteral (1)
-         |- WhileStmt
-         |  |- [cond]
-         |  |  `- IntegerLiteral (0)
-         |  `- [body]
-         |     `- CompoundStmt
-         |        `- VarDecl y : u8
-         |           `- IntegerLiteral (0)
-         |- VarDecl ptr : u8*
-         |  `- IntegerLiteral (0)
-         |- IfStmt
-         |  |- [cond]
-         |  |  `- BinaryOperator ==
-         |  |     |- Identifier ptr
-         |  |     `- IntegerLiteral (0)
-         |  `- [then body]
-         |     |- CompoundStmt
-         |     |  `- AssignStmt
-         |     |     |- [target]
-         |     |     |  `- Identifier ptr
-         |     |     `- [value]
-         |     |        `- UnaryOperator &
-         |     |           `- Identifier a
-         `- ReturnStmt
+   |- FunctionDecl main() -> void
+   |  `- CompoundStmt
+   |     |- VarDecl a : u8
+   |     |  `- BinaryOperator &
+   |     |     |- IntegerLiteral (255)
+   |     |     `- IntegerLiteral (15)
+   |     |- VarDecl b : u8
+   |     |  `- BinaryOperator |
+   |     |     |- IntegerLiteral (12)
+   |     |     `- IntegerLiteral (3)
+   |     |- VarDecl c : u8
+   |     |  `- BinaryOperator <<
+   |     |     |- IntegerLiteral (1)
+   |     |     `- IntegerLiteral (4)
+   |     |- VarDecl d : u16
+   |     |  `- BinaryOperator +
+   |     |     |- IntegerLiteral (4096)
+   |     |     `- IntegerLiteral (4095)
+   |     |- IfStmt
+   |     |  |- [cond]
+   |     |  |  `- IntegerLiteral (1)
+   |     |  `- [then body]
+   |     |     |- CompoundStmt
+   |     |     |  `- VarDecl x : u8
+   |     |     |     `- IntegerLiteral (1)
+   |     |- WhileStmt
+   |     |  |- [cond]
+   |     |  |  `- IntegerLiteral (0)
+   |     |  `- [body]
+   |     |     `- CompoundStmt
+   |     |        `- VarDecl y : u8
+   |     |           `- IntegerLiteral (0)
+   |     |- VarDecl ptr : u8*
+   |     |  `- IntegerLiteral (0)
+   |     |- IfStmt
+   |     |  |- [cond]
+   |     |  |  `- BinaryOperator ==
+   |     |  |     |- Identifier ptr
+   |     |  |     `- IntegerLiteral (0)
+   |     |  `- [then body]
+   |     |     |- CompoundStmt
+   |     |     |  `- AssignStmt
+   |     |     |     |- [target]
+   |     |     |     |  `- Identifier ptr
+   |     |     |     `- [value]
+   |     |     |        `- UnaryOperator &
+   |     |     |           `- Identifier a
+   |     `- ReturnStmt
+   |- ForwardDecl __heap_start : u16
+   `- ForwardDecl __memory_top : u16

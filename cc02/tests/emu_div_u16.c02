@@ -1,0 +1,9 @@
+reg u16 QUOT @ 0x6000;
+reg u16 REM  @ 0x6002;
+
+fn main() -> void {
+  u16 a = 50000;
+  u16 b = 0xC001;
+  QUOT = a / b;
+  REM  = a % b;
+}

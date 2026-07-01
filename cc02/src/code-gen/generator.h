@@ -17,7 +17,7 @@ typedef struct {
   char     *func_name;
 } fixup_t;
 
-#define ZP_MAP_MAX 112  // $04–$EE = 235 bytes, but max ~112 unique operands
+#define ZP_MAP_MAX 110  // $04–$DF = 220 bytes; address guard in zp_map_add enforces $E0 hard stop
 
 typedef struct {
   tac_operand_kind_t kind;
@@ -43,9 +43,9 @@ typedef struct {
 } global_entry_t;
 
 typedef struct {
-  size_t   patch_pos;
-  unsigned global_idx;
-  uint8_t  byte;
+  size_t      patch_pos;
+  const char *str_val;
+  uint8_t     byte;
 } data_fixup_t;
 
 typedef struct {
@@ -61,6 +61,13 @@ typedef struct {
 
   int needs_mul8;
   int needs_div8;
+  int needs_sdiv8;
+
+  int needs_mul16;
+  int needs_div16;
+  int needs_sdiv16;
+
+  int overflow;
 
   func_label_t *func_labels;
   unsigned      func_label_count;
@@ -85,6 +92,6 @@ typedef struct {
   unsigned      data_fixup_capacity;
 } emitter_t;
 
-uint8_t *generate_rom(ir_gen_t *gen, size_t *final_rom_size);
+uint8_t *generate_rom(ir_gen_t *gen, size_t *final_rom_size, int emit_symbols);
 
 #endif

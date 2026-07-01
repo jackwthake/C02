@@ -7,6 +7,185 @@ and this project adheres to [Semantic Versioning](https://semver.org/) - while
 the project is in `0.x`, breaking changes may land in MINOR releases; PATCH
 releases are reserved for bug fixes only.
 
+## [v1.0.0] 2026-07-01
+
+- **v1.0 milestone: Complete Single-File Language** — every must-have and
+  should-have feature from `docs/roadmap.md`'s v1.0 checklist is now
+  implemented: function calls, pointer store, address-of, implicit widening,
+  string literal locals, pointer arithmetic (`*(ptr + i)`), break/continue,
+  struct field access, multiply/divide/modulo, and bitwise/shift operators.
+  The only items left unchecked are explicitly-optional "nice-to-have"s
+  (short-circuit `&&`/`||` codegen outside boolean-context use, and the
+  `&=`/`|=`/`^=`/`<<=`/`>>=` compound assignment forms) — the roadmap's own
+  goal, "someone can sit down and write a non-trivial 65C02 program without
+  hitting an unimplemented wall," is met;
+
+- **`break` and `continue`** — both now supported inside `while` and `for`
+  loops. The analyzer tracks a `loop_depth` counter (incremented for the
+  duration of a loop body) and rejects either statement outside a loop
+  (`ERR_BREAK_OUTSIDE_LOOP` / `ERR_CONTINUE_OUTSIDE_LOOP`). The IR generator
+  maintains a `loop_ctx_t { continue_label, break_label }` stack; both
+  statements desugar to a plain `TAC_JUMP` to the appropriate label, so
+  codegen needed no changes. For `for` loops, `continue` jumps to a new
+  label sitting between the body and the incrementer, so the incrementer
+  still runs before the next condition check. See
+  `docs/break-continue-implementation.md` for the full design writeup,
+  including a bonus fix along the way: the `for`-loop incrementer was being
+  lowered with `lower_expr` instead of `lower_stmt`, so `i = i + 1`-style
+  incrementers (as opposed to `++i`) were silently generating no code;
+
+- **Local string literal initializers** — `u8 *p = "some string";` now works
+  inside function bodies, not just at global scope. The string data is placed in
+  the ROM data section via the existing `data_fixup_t` backpatch mechanism (same
+  as global strings); the pointer value (ROM address of the string) is written
+  into the local's ZP slot during function entry via `TAC_COPY` with an
+  `OPERAND_CONST_STR` source. Callee-saves push and pop the pointer ZP slot
+  across nested calls to preserve it across function boundaries. The pointer
+  occupies 2 bytes of ZP for the lifetime of the function;
+
+- **Variable shadowing is now a semantic error** — a variable declaration
+  (or function parameter) that reuses a name still visible from an enclosing,
+  still-live scope now raises `ERR_SHADOWED_DECLARATION` instead of silently
+  compiling. Root cause: the IR/codegen identify a variable purely by its bare
+  name (`OPERAND_VAR.name`, matched via `strcmp` in `zp_map_build`), with no
+  per-scope qualifier, so a shadowed inner declaration (e.g. a `for (u8 i = 0;
+  ...)` nested inside a function that already has an outer `u8 i`) aliased the
+  *same* zero-page storage as its outer namesake — the inner loop's own
+  init/exit value silently clobbered the outer variable. This surfaced as
+  `break` firing on the wrong iteration in `arithmetic_demo.c02`. Reusing a
+  name across scopes that never overlap on the scope stack (e.g. two sibling
+  `for` loops each declaring their own `i`) is unaffected and remains legal;
+
+## [v0.2.17] 2026-06-27
+
+- **ROM overflow detection** — the `EMIT()` macro now bounds-checks `code_pos`
+  against `ROM_SIZE` before writing, setting an `overflow` flag on `emitter_t`
+  instead of silently writing past the end of the 32 KB buffer. A new
+  `PATCH_BYTE(pos, val)` macro applies the same guard to all branch-offset and
+  address backpatches. `resolve_func_fixups` and `resolve_local_fixups`
+  early-return when overflow is already set. `generate_rom` checks `e.overflow`
+  independently after the code section, data section, and symbol-table phases,
+  printing a targeted diagnostic and returning `NULL` on failure. Previously,
+  programs that grew past 32 KB would corrupt the ROM buffer without any error.
+  `emit_symbol_table` now also writes through `EMIT()` instead of raw pointer
+  writes, inheriting the overflow guard.
+
+- **`__heap_start` implicit compiler global** — programs may declare
+  `decl u16 __heap_start;` to read the address of the first free RAM byte after
+  all user globals are allocated. The driver injects the declaration
+  automatically so no user `decl` is required in practice. The value is
+  initialized during the bootstrap sequence. Intended as a base pointer for
+  simple bump allocators.
+
+- **`__memory_top` implicit compiler global** — `decl u16 __memory_top;`
+  evaluates to `$3FFF`, the top of the general-purpose RAM region (see
+  `docs/memmap.md`). Injected alongside `__heap_start`. Both constants are
+  defined as `RAM_TOP` in the codegen memory map.
+
+- **Compiler extern two-pass allocation** — `emit_compiler_extern_inits` is
+  refactored into an explicit two-pass design: pass 1 allocates all RAM slots
+  (settling `e->ram_pos`), pass 2 emits initializers. This ensures
+  `__heap_start` captures the correct first-free-RAM address regardless of
+  declaration order. Unknown non-function externs now print a diagnostic and
+  cause codegen to fail instead of being silently skipped.
+  - `ALLOC_COMPILER_SLOT` / `EMIT_COMPILER_VALUE` — pair of local macros that
+    collapse the slot-allocation and value-emission boilerplate to one line each;
+    both are `#undef`'d immediately after the function.
+
+## [v0.2.16] 2026-06-27
+
+- **16-bit multiply / divide / modulo (`__mul16`, `__div16`, `__sdiv16`)** —
+  `TAC_MUL`, `TAC_DIV`, and `TAC_MOD` on `u16`/`i16` operands now compile to
+  subroutine calls rather than erroring. Three new helpers:
+  - `__mul16` — 16-iteration shift-and-add. Correct for both `u16` and `i16`
+    because the low 16 bits of a two's-complement product are sign-agnostic.
+    Overflow silently wraps to the low 16 bits (same as C).
+  - `__div16` — 16-iteration shift-subtract with CMP-based comparison. Uses a
+    `BCS dosub` guard before the 16-bit subtract so divisors with bit 15 set
+    (≥ `$8000`) are handled correctly; the naive SEC-before-compare approach
+    clobbers the overflow carry and produces wrong quotients for those values.
+  - `__sdiv16` — sign wrapper around `__div16`, mirroring `__sdiv8`: encodes
+    signs in `HELPER_SIGN` (`$EC`, bit 7 = negate quotient, bit 6 = negate
+    remainder), negates both operands, calls `__div16`, then restores signs.
+    Follows C truncation-toward-zero convention. `needs_sdiv16 = 1` implies
+    `needs_div16 = 1`.
+  - New 16-bit helper ZP zone: `$E0–$E7` (`HELPER16_ARG1`/`ARG2`/`RES`/`REM`,
+    2 bytes each), below the existing 8-bit zone at `$E8–$EC`.
+  - ZP operand map upper bound tightened from `$EE` to `$DF` to reflect the
+    new reserved zone; `zp_map_add` now enforces this with an address guard
+    (previously only a count guard existed).
+  - `EMIT_ARITH8(ROUTINE, RES_SLOT, NEEDS_FLAG)` /
+    `EMIT_ARITH16(ROUTINE, RES_SLOT, NEEDS_FLAG)` — pair of local macros
+    replacing the three verbose switch arms; bit width, arg-loading, and
+    result-storing all collapse to one line per dispatch branch.
+  - Emulator tests: `mul_u16` (300 × 13 = 3900), `mul_u16_wrap` (256 × 256 = 0,
+    overflow), `div_u16` (50000 / `$C001` = 1, remainder = 847 — exercises the
+    high-bit-divisor path).
+
+- **Symbol table embedded in ROM** — compiled binaries now carry a `"C02S"`
+  symbol table in the NOP fill area between the data section and `$FFF6`,
+  letting `c02-objdump` show real function names instead of auto-generated
+  labels. The table is always emitted by default; `--strip-debug` omits it.
+  Binary size stays exactly 32 KB so EEPROM flashing is unaffected.
+  - Footer layout: `$FFF6–$FFF7` = little-endian pointer to the table (or
+    `$EAEA` NOP fill if absent); `$FFF8–$FFF9` = code/data boundary
+    (unchanged); `$FFFA–$FFFF` = NMI/Reset/IRQ vectors.
+  - Format: magic `C02S` (4 bytes) + u16 entry count (LE) + entries of
+    u16 address (LE) + null-terminated name. All user-defined functions and
+    emitted helpers (`__mul8`, `__div16`, etc.) are included.
+  - Old binaries degrade gracefully: `$EAEA` at `$FFF6` passes the range
+    check but fails the magic-byte check, so the disassembler falls back to
+    `L0`/`L1`/… auto-labels without error.
+  - `c02-objdump`: `parse_symbols` reads the table and merges it into the
+    jump-target label map; `scan_end` for the data-section boundary scan
+    stops at the symbol table start rather than `$FFF8` to avoid
+    misidentifying table bytes as data.
+  - `driver.h`: `params_t` gains `int strip_debug`; `main.c` adds
+    `--strip-debug` to `long_options`.
+
+- **ZP map overflow error propagation** — previously, `zp_map_add` printed a
+  diagnostic to stderr and silently continued, potentially generating corrupt
+  code. `zp_map_add`, `zp_map_add_operand`, and `zp_map_build` now all return
+  `int` (0 = failure); `emit_function_from_cfg` checks `zp_map_build` and
+  returns 0, propagating to `generate_rom` which returns `NULL` — the same
+  path as all other codegen failures, ultimately exiting with
+  `CODE_GEN_ERROR_RET_CODE` (7).
+
+- **Bug fix: signed 8-bit division and modulo (`__sdiv8`)** — `TAC_DIV` and
+  `TAC_MOD` on `i8` operands previously routed through the unsigned `__div8`
+  helper, so `i8 -6 / 2` computed `250 / 2 = 125` instead of `-3`. A new
+  `__sdiv8` helper wraps `__div8`: it saves operand signs into a scratch byte at
+  `$EC` (HELPER_SIGN), negates both operands to their absolute values, calls
+  `__div8`, then restores the correct sign on the quotient (bit 7 of SIGN) and
+  remainder (bit 6 of SIGN) per C's truncation-toward-zero convention. Codegen
+  routes `TAC_DIV`/`TAC_MOD` through `__sdiv8` when `is_signed_type(dst.type)`;
+  `__sdiv8` always calls `__div8`, so `needs_sdiv8 = 1` implies `needs_div8 = 1`.
+  New opcode emitters: `bpl_rel`. `$EC` added to the helper ZP zone.
+- Emulator tests: `div_i8` (−6 / 2 = −3, PORTB = $FD), `mod_i8` (−7 % 2 = −1,
+  PORTB = $FF).
+
+- **Bug fix: binary op operand widening and sign normalisation** — binary ops
+  derived both the result type and comparison signedness from the LEFT operand
+  only (`ir.c`), ignoring the right operand entirely. Consequences: `u8 + u16`
+  computed at 8 bits (the u16 high byte was silently dropped), while `u16 + u8`
+  was accidentally correct; `i8 < u8` used a signed compare while `u8 < i8` used
+  an unsigned compare — a trichotomy violation where both `a < b` and `b < a`
+  could be simultaneously true. Fixed in the IR generator with four new helpers:
+  - `ir_type_width` / `ir_is_signed` — predicates for 8-vs-16-bit and
+    signedness without an `ir_gen_t *` context.
+  - `binop_common_type(left, right)` — returns the wider type; for equal widths,
+    unsigned wins (C's usual arithmetic conversions), eliminating operand-order
+    dependence in mixed-sign comparisons.
+  - `emit_widen_if_needed(gen, cfg, op, target)` — emits `TAC_CAST` when the
+    operand type differs from the target; `OPERAND_CONST_INT` values are
+    re-typed in place (no instruction emitted).
+  - Binop lowering now normalises both operands to the common type before
+    arithmetic and comparison ops. Shifts are guarded separately (result type =
+    left, shift count is never widened). Pointer arithmetic skips widening.
+- Emulator tests: `binop_widen` (`u8(1) + u16(500) = 501`, high byte = $01),
+  `cmp_mixed_sign` (`i8(−1) < u8(100)` with unsigned-wins → $FF reinterpreted as
+  255, 255 < 100 = false, branch not taken, PORTB = $01).
+
 ## [v0.2.15] 2026-06-26
 
 - **Function call codegen (`TAC_CALL`)** — full caller/callee ABI using a fixed

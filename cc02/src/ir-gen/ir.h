@@ -109,6 +109,8 @@ typedef enum {
   // functions
   TAC_CALL,         // dst = call name(args...)
   TAC_RETURN,       // return src1
+  TAC_CONTINUE,
+  TAC_BREAK,
 
   // structs
   TAC_FIELD_LOAD,   // dst = src1.field
@@ -256,6 +258,11 @@ typedef struct {
 #define IR_ARENA_CHUNK_SIZE 4096
 
 typedef struct {
+  unsigned continue_label;  // TAC_JUMP target for continue (cond_label for while, incr_label for for)
+  unsigned break_label;     // TAC_JUMP target for break (end_label)
+} loop_ctx_t;
+
+typedef struct {
   arena_t arena;
   ir_module_t module;
 
@@ -264,6 +271,9 @@ typedef struct {
   unsigned reg_capacity;
   unsigned cfg_capacity;
   unsigned extern_capacity;
+
+  loop_ctx_t loop_stack[64]; // nesting context for break/continue desugaring
+  int loop_depth;
 } ir_gen_t;
 
 

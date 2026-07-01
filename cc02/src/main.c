@@ -16,6 +16,7 @@ static void print_help(const char *prog_name) {
   fprintf(stderr, "  --ir-dump            Dump the IR after lowering\n");
   fprintf(stderr, "  --syntax-check-only  Stop after syntax and semantic checks\n");
   fprintf(stderr, "  --time-report        Prints a report showing how long each stage of compilation took\n");
+  fprintf(stderr, "  --strip-debug        Omit symbol table from output binary\n");
   fprintf(stderr, "  -c,                  Incremental compile, generate object file\n");
   fprintf(stderr, "  -o, --output         Specify output file\n");
 }
@@ -30,6 +31,7 @@ static int read_params(int argc, char * const *argv, params_t *params) {
     {"ir-dump", no_argument, 0, 6},
     {"syntax-check-only", no_argument, 0, 4},
     {"time-report", no_argument, 0, 5},
+    {"strip-debug", no_argument, 0, 7},
     {"output", required_argument, 0, 'o'},
     {0, 0, 0, 0},
   };
@@ -65,6 +67,9 @@ static int read_params(int argc, char * const *argv, params_t *params) {
         break;
       case 5:
         params->time_report = 1;
+        break;
+      case 7:
+        params->strip_debug = 1;
         break;
       default:
         fprintf(stderr, "Bad options: use %s -h to display help message\n", argv[0]);

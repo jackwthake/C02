@@ -1,0 +1,14 @@
+reg u8 PORTB @ 0x6000;
+
+fn main() -> void {
+  u8 i = 0;
+  u8 sum = 0;
+  while (i < 10) {
+    ++i;
+    if (i % 2 != 0) {
+      continue;
+    }
+    sum = sum + i;
+  }
+  PORTB = sum;
+}

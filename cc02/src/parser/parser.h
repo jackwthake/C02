@@ -54,6 +54,8 @@ typedef enum {
   NODE_WHILE,
   NODE_FOR,
   NODE_BLOCK,
+  NODE_BREAK,
+  NODE_CONTINUE,
 
   // top-level
   NODE_FUNCTION,
