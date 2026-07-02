@@ -35,6 +35,21 @@ features as often as bug fixes.
   which routinely produces a syntactically invalid grouped expression when
   the cast target isn't a recognised type;
 
+- **Globals and hardware registers in the `C02S` symbol table** — the
+  embedded ROM symbol table previously only recorded function labels, so
+  `c02-objdump` disassembly showed every variable access as a raw address
+  (`STA $0200`, `STA $6000`). `emit_symbol_table` now also walks
+  `e->global_entries` (user globals plus the compiler's implicit
+  `__heap_start`/`__memory_top`) and `e->gen->module.regs` (hardware `reg`
+  declarations, whose addresses were previously only baked in as raw
+  constants by the IR) into the same flat table as the function labels — no
+  disassembler changes needed, since it already treats every entry
+  generically as an address-to-name map for operand substitution.
+  Disassembly now reads `STA counter` / `STA PORTB` instead of raw
+  addresses. Only the base address of a multi-byte global gets a name (the
+  high byte of a `u16` still shows as a raw address), matching the
+  one-entry-per-symbol convention used everywhere else in the table;
+
 ## [v1.0.2] 2026-07-02
 
 - **`asm { }` inline assembly blocks** — a statement-level escape hatch that
