@@ -1,0 +1,12 @@
+`- TranslationUnitDecl
+   |- FunctionDecl nmi() -> void interrupt
+   |  `- CompoundStmt
+   |     `- ReturnStmt
+   |- FunctionDecl irq() -> void interrupt
+   |  `- CompoundStmt
+   |     `- ReturnStmt
+   |- FunctionDecl main() -> void
+   |  `- CompoundStmt
+   |     `- ReturnStmt
+   |- ForwardDecl __heap_start : u16
+   `- ForwardDecl __memory_top : u16

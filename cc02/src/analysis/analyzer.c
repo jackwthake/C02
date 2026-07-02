@@ -734,6 +734,26 @@ static void pass1_register_globals(analyzer_t *a, ast_t program) {
     }
 
     INSERT_SYMBOL(decl, sym);
+
+    // Check if the symbol is a function marked as an interrupt handler. If so, validate its name and signature. 
+    if (decl->kind == NODE_FUNCTION && decl->function.is_interrupt) {
+      int bad_name = strcmp(decl->function.name, "nmi") != 0 &&
+                     strcmp(decl->function.name, "irq") != 0;
+      int bad_sig  = decl->function.return_type.kind != TYPE_VOID ||
+                     decl->function.return_type.is_ptr ||
+                     decl->function.params.count > 0;
+
+      if (bad_name || bad_sig) {
+        error_t warn = (error_t){
+          .type = WARN_INVALID_INTERRUPT,
+          .loc = decl->loc,
+          .name_error = { .name = decl->function.name }
+        };
+
+        print_warning(&warn);
+        decl->function.is_interrupt = 0;  // poison: don't generate an interrupt vector for this
+      }
+    }
   }
 }
 

@@ -1,8 +1,10 @@
 # C02 Roadmap & Design Notes
 
-This document outlines the path from the current state of the compiler to
-v1.0 and beyond. It covers feature milestones, the planned compilation
-pipeline, and design sketches for major upcoming features.
+This document tracks what's next: upcoming feature milestones, the planned
+compilation pipeline, and design sketches for unimplemented features.
+Everything that's already shipped (including the full v1.0 feature
+checklist) is recorded in `CHANGELOG.md` instead of here.
+
 
 ## Compilation Pipeline
 
@@ -44,116 +46,100 @@ A stable cross-platform format is not a priority until the IR stabilizes.
 
 ---
 
-## v1.0 — Complete Single-File Language
+## Backburner
 
-The goal: someone can sit down and write a non-trivial 65C02 program
-without hitting an "unimplemented" wall. All features the frontend accepts
-should compile to correct code.
+Nice-to-haves that were scoped for a milestone but didn't make the cut.
+Nothing on the active roadmap depends on these — revisit opportunistically.
 
-### v1.0 Feature Checklist
-
-#### Must-have (language is broken without these)
-
-- [x] **Function calls** — wire up the ABI zone (`$EF–$FF`), emit caller
-      copies args into ABI slots before `JSR`, callee prologue copies from
-      ABI into local ZP slots. Return values through `$02` (RET).
-- [x] **Pointer store** (`*p = val`) — `TAC_STORE` with var/temp
-      destination needs codegen via `STA ($nn),Y` indirect indexed.
-      Currently silently no-ops (see BUG_REPORT.md BUG-2).
-- [x] **Address-of** (`&x`) — `TAC_ADDR_OF` needs codegen. For ZP locals:
-      load the ZP address as a constant. For globals: load the RAM address.
-- [x] **Type casts / implicit widening** — `u8` → `u16` must zero-extend
-      the high byte. Currently reads garbage.
-- [x] Variables holding string have to be initialized as globals, this needs fixing
-- [x] `*(ptr + i)` gives analyzer error, complaining that there is a type mismatch
-      because ptr is a ptr and i is a normal integer value
-- [x] Language currently does not support `break` or `continue` keywords
-
-#### Should-have (language is painful without these)
-
-- [x] **Struct field access codegen** — `TAC_FIELD_LOAD` / `TAC_FIELD_STORE`
-      using the computed field offsets already in the IR. Base address + offset
-      for by-value structs, indirect + offset for struct pointers.
-- [x] **Multiply / divide / modulo** — no native 6502 instructions. Needs
-      runtime helper routines (shift-and-add for multiply, repeated
-      subtraction or restoring division for divide) emitted into ROM.
-      8-bit first, 16-bit as a follow-up.
-- [x] **Bitwise ops** (`&`, `|`, `^`, `~`) — straightforward: `AND`, `ORA`,
-      `EOR` instructions, global-aware via the existing helper macro pattern.
-- [x] **Shift ops** (`<<`, `>>`) — `ASL`/`LSR` for single-bit shifts,
-      loop for multi-bit. Arithmetic right shift (`>>` on signed) needs
-      sign-extension via `ROR` after checking the sign bit.
-
-#### Nice-to-have (v1 can ship without)
-
-- [ ] **Logical AND/OR short-circuit codegen** — the IR already lowers
-      `&&`/`||` to labels and conditional jumps, but codegen needs to handle
-      the resulting `TAC_AND`/`TAC_OR` if they appear in non-short-circuit
-      contexts.
-- [x] **Compound assignment codegen** (`+=`, `-=`, etc.) — these lower
-      through the existing binary op + assignment IR path, so they may
-      already work once the underlying ops are implemented. Needs testing.
-      - [ ] `&=, |=, ^=, <<=, >>=` need implementing but arithmetic compound
-            assignments work
-
-### v1.0 Non-goals
-
-- Multi-file linking (single-file programs only)
-- Optimization passes
-- Arrays / subscript syntax
-- Full path-coverage return analysis
+- [ ] **Logical AND/OR short-circuit codegen** *(deferred from v1.0)* — the
+      IR already lowers `&&`/`||` to labels and conditional jumps, but
+      codegen needs to handle the resulting `TAC_AND`/`TAC_OR` when they
+      appear outside a bare condition context (e.g. `u8 x = a && b;` rather
+      than `if (a && b)`).
+- [ ] **`&=, |=, ^=, <<=, >>=` compound assignment** *(deferred from v1.0)*
+      — arithmetic compound assignments (`+=`, `-=`, etc.) already work;
+      the bitwise/shift forms still need implementing.
 
 ---
 
 ## v1.1 — Interrupt Handlers & Inline Assembly
 
-These two features are tightly related: interrupt handlers need inline
-assembly for the save/restore prologue (v1), and become fully automatic
-once the codegen understands the `interrupt` calling convention.
+Two independent features bundled into one milestone: hardware interrupt
+support, and a minimal inline-assembly escape hatch. Turned out inline asm
+wasn't a prerequisite for interrupts after all — register save/restore is
+handled natively in codegen with real 65C02 push/pull instructions, no
+`asm {}` block required. That feature is now independent, unstarted work.
 
-### Interrupt handlers
+### v1.1 Feature Checklist
 
-Functions named `nmi` and `irq` are recognized by the codegen as interrupt
-handlers:
+#### Interrupt handlers *(complete)*
 
 ```c
-fn nmi() -> void interrupt {
+reg u8 IFR @ 0x600D;   // VIA interrupt flag register — board-specific address,
+                       // declared like any other peripheral register, not
+                       // compiler-implicit (unlike __heap_start/__memory_top)
+
+fn nmi() interrupt -> void {
   u8 status = IFR;   // read VIA to clear interrupt
 }
 
-fn irq() -> void interrupt {
+fn irq() interrupt -> void {
   PORTB = 0xFF;
 }
 ```
 
-The `interrupt` keyword after the return type tells codegen:
+- [x] **`interrupt` qualifier** — parsed between the parameter list and
+      `->`, on both definitions and forward declarations. `is_interrupt` is
+      a real field threaded end-to-end (parser `node_t` → IR `cfg_t` →
+      codegen) rather than codegen guessing from the function name.
+      `--ast-dump` and `--ir-dump` both surface it
+      (`interrupt fn nmi() -> void`).
+- [x] **`RTI` ($40) instead of `RTS` ($60)** on every return path.
+- [x] **Real register save/restore** — entry emits `PHA; PHX; PHY` before
+      anything else (including the normal per-function ZP save, which
+      itself clobbers `A`) touches a register; exit mirrors with
+      `PLY; PLX; PLA` before `RTI`. `PHX`/`PHY`/`PLX`/`PLY` are genuine
+      65C02 opcodes ($DA/$5A/$FA/$7A) — an earlier draft faked the pushes
+      with `TXS`, which doesn't push anything, it just clobbers the
+      hardware stack pointer and corrupts the return address the hardware
+      auto-pushes on interrupt entry. Verified by an emulator test
+      (`interrupt_registers_preserved` in `emu_test.py`) that fires a real
+      NMI mid-loop via py65 and asserts SP/A/X/Y are bit-identical after
+      the handler returns.
+- [x] **Vector wiring gated on the qualifier, not just the name** —
+      `emit_vectors` only patches `$FFFA` (NMI) / `$FFFE` (IRQ) with a
+      function's address if it's *both* named `nmi`/`irq` *and* declared
+      `interrupt`. A plain function that happens to be named `nmi` is left
+      alone (vector stays `$0000`) instead of being wired to hardware as a
+      function that ends in `RTS`.
+- [x] **Bad signatures warn, not error, and get poisoned back to an
+      ordinary function** — `pass1_register_globals` checks that an
+      `interrupt`-qualified function is named `nmi`/`irq`, returns `void`
+      (not `void*`), and takes zero parameters (the hardware never
+      populates the ABI zone for an interrupt, so parameters would read
+      garbage). A violation prints `WARN_INVALID_INTERRUPT` and resets
+      `is_interrupt` to `0` on the AST node, matching the codebase's
+      existing poisoning convention (see `TYPE_INVALID`) rather than
+      cascading into a miscompile.
+- [x] **Test coverage** — parser/IR golden dumps (`parser_interrupt.c02`,
+      `ir_interrupt.c02`) plus five emulator tests covering register
+      preservation, vector gating, and both invalid-signature warnings.
 
-1. **Emit `RTI` ($40) instead of `RTS` ($60)** — `RTI` restores the
-   processor status register and PC from the stack, which `RTS` does not.
-2. **Wire the vector table** — `emit_vectors` patches `$FFFA` (NMI) or
-   `$FFFE` (IRQ) with the handler's ROM address instead of `$0000`.
-3. **Auto-emit register save/restore** — the codegen wraps the function
-   body with `PHA; TXA; PHA; TYA; PHA` (prologue) and
-   `PLA; TAY; PLA; TAX; PLA` (epilogue) so the handler doesn't corrupt
-   the interrupted code's A/X/Y registers.
+**ZP conflict note (resolved by the existing calling convention):** the
+original concern here was that interrupt handlers and the code they
+interrupt share the same per-function ZP region (maps both start at `$04`).
+In practice this is already covered by the callee-saves ZP convention every
+non-`main` function uses — an interrupt handler's own `emit_zp_save`/
+`emit_zp_restore` preserves whatever was sitting in its claimed ZP slots
+before the handler ran, the same protection a JSR'd function gives its
+caller. The remaining real limitation is hardware-stack *depth*, not
+correctness: every byte an interrupt handler saves (A/X/Y plus its ZP
+slots) is pushed onto the same `$0100–$01FF` stack used for `JSR` return
+addresses, so a deep call chain interrupted by a handler with many locals
+could in principle exhaust the 256-byte stack. There's no overflow
+detection for this yet.
 
-The vector is matched by function name: `strcmp(cfg->name, "nmi")` and
-`strcmp(cfg->name, "irq")`, the same way `main` is already identified for
-`JSR main`. An `interrupt` function that isn't named `nmi` or `irq` still
-gets `RTI` + register save/restore but isn't wired to a vector — useful
-for BRK handlers or shared helper routines.
-
-**ZP conflict note:** interrupt handlers and `main` currently share the ZP
-register file (per-function maps both start at `$04`). The auto register
-save/restore covers A/X/Y but not ZP locals. For v1.1 this is a documented
-limitation — handlers should be short and avoid deep expression trees. A
-future improvement could reserve a separate ZP region for interrupt
-contexts or spill to RAM.
-
-### Inline assembly
-
-A minimal `asm {}` block that emits raw instructions at the current point
-in the codegen output:
+#### Inline assembly *(not started)*
 
 ```c
 fn wait() -> void {
@@ -163,19 +149,7 @@ fn wait() -> void {
     CLI
   }
 }
-```
 
-#### v1.1 scope (minimal)
-
-- Instructions are opcode mnemonics with addressing modes, no operand
-  constraints — the user writes literal addresses, not C02 variable names.
-- The codegen parses each line, looks up the opcode/mode, and emits bytes
-  through the existing `EMIT()` macro.
-- No interaction with the ZP map or register allocator — the user is
-  responsible for not stomping on compiler-managed ZP slots.
-- Labels within `asm {}` blocks are local to the block.
-
-```c
 fn delay() -> void {
   asm {
     LDX #$FF
@@ -186,16 +160,23 @@ fn delay() -> void {
 }
 ```
 
-#### Future scope (post-v1.1)
+- [ ] Parse `asm { ... }` blocks: opcode mnemonics with addressing modes,
+      no operand constraints — the user writes literal addresses, not C02
+      variable names.
+- [ ] Codegen parses each line, looks up the opcode/mode, and emits bytes
+      through the existing `EMIT()` macro.
+- [ ] No interaction with the ZP map or register allocator — the user is
+      responsible for not stomping on compiler-managed ZP slots.
+- [ ] Labels within `asm {}` blocks are local to the block.
 
-- **Operand constraints** — let `asm` blocks reference C02 variables.
-  The codegen resolves the variable's ZP/RAM address and substitutes it
-  in. Syntax TBD but something simpler than gcc's constraint language:
-  ```c
-  asm { LDA {x}; STA $6000 }
-  ```
-- **Clobber declarations** — tell the compiler which registers the asm
-  block modifies so it can save/restore around it.
+#### Future scope (post-v1.1, not scoped yet)
+
+- [ ] **Operand constraints** — let `asm` blocks reference C02 variables.
+      The codegen resolves the variable's ZP/RAM address and substitutes
+      it in. Syntax TBD but something simpler than gcc's constraint
+      language: `asm { LDA {x}; STA $6000 }`
+- [ ] **Clobber declarations** — tell the compiler which registers the asm
+      block modifies so it can save/restore around it.
 
 ---
 

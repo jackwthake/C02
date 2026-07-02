@@ -1,0 +1,13 @@
+// ir_interrupt.c02
+// An `interrupt`-qualified function must be lowered into a cfg_t with
+// is_interrupt set, which --ir-dump surfaces as an `interrupt` prefix.
+
+reg u8 PORTB @ 0x6000;
+
+fn nmi() interrupt -> void {
+  PORTB = 1;
+}
+
+fn main() -> void {
+  return;
+}

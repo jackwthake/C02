@@ -190,6 +190,7 @@ static void print_instr(tac_instr_t *ins) {
 }
 
 static void print_cfg(cfg_t *cfg) {
+  if (cfg->is_interrupt) printf("interrupt ");
   printf("fn %s(", cfg->name);
   for (unsigned i = 0; i < cfg->params.count; i++) {
     if (i > 0) printf(", ");

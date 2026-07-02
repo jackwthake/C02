@@ -197,6 +197,7 @@ struct node_t {
       param_list_t params;
       type_t       return_type;
       node_t      *body;
+      int          is_interrupt;
     } function;                           // NODE_FUNCTION
 
     struct {

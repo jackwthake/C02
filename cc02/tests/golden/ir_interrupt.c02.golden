@@ -1,0 +1,20 @@
+
+--- Registers ---
+  reg u8 PORTB @ 0x6000
+
+--- Externs ---
+  decl u16 __heap_start
+  decl u16 __memory_top
+
+--- Functions ---
+interrupt fn nmi() -> void {
+block0:
+  *0x6000 = 1
+  return
+}
+
+fn main() -> void {
+block0:
+  return
+}
+

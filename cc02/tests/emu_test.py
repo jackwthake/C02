@@ -939,6 +939,161 @@ def test_func_recursive():
     return True, None
 
 
+def test_interrupt_registers_preserved():
+    """Firing an NMI mid-loop must not corrupt the interrupted program's SP/A/X/Y
+    (regression test for the TXS-instead-of-PHX/PHY stack corruption bug), and
+    the handler itself must still run and produce its side effect."""
+    source = os.path.join(SCRIPT_DIR, "emu_interrupt_roundtrip.c02")
+    with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as tmp:
+        bin_path = tmp.name
+    try:
+        ok, stderr = compile_c02(source, bin_path)
+        if not ok:
+            return False, f"compilation failed: {stderr}"
+
+        mpu = MPU65C02()
+        with open(bin_path, "rb") as f:
+            rom = f.read()[:ROM_SIZE]
+        for i, b in enumerate(rom):
+            mpu.memory[ROM_START + i] = b
+        mpu.pc = mpu.memory[0xFFFC] | (mpu.memory[0xFFFD] << 8)
+
+        # Run reset + a few loop iterations so SP/A/X/Y are in a realistic,
+        # non-pristine state before the interrupt hits.
+        for _ in range(200):
+            mpu.step()
+
+        sp_before = mpu.sp
+        regs_before = (mpu.a, mpu.x, mpu.y)
+        pc_before = mpu.pc
+
+        mpu.nmi()
+
+        for _ in range(2000):
+            if mpu.pc == pc_before and mpu.sp == sp_before:
+                break
+            mpu.step()
+        else:
+            return False, (f"never returned to the interrupted instruction "
+                            f"(pc=${pc_before:04X} sp=${sp_before:02X}); "
+                            f"stuck at pc=${mpu.pc:04X} sp=${mpu.sp:02X}")
+
+        if mpu.sp != sp_before:
+            return False, f"SP corrupted: was ${sp_before:02X}, now ${mpu.sp:02X}"
+        if (mpu.a, mpu.x, mpu.y) != regs_before:
+            a, x, y = regs_before
+            return False, (f"registers corrupted: was A={a} X={x} Y={y}, "
+                            f"now A={mpu.a} X={mpu.x} Y={mpu.y}")
+        if mpu.memory[0x6000] != 42:
+            return False, f"nmi() side effect missing: memory[$6000] = {mpu.memory[0x6000]}, expected 42"
+
+        # Confirm main's loop is still making forward progress, not stuck.
+        stuck = True
+        for _ in range(200):
+            old_pc = mpu.pc
+            mpu.step()
+            if mpu.pc != old_pc:
+                stuck = False
+        if stuck:
+            return False, "main loop stopped advancing after the interrupt returned"
+
+        return True, None
+    finally:
+        if os.path.exists(bin_path):
+            os.unlink(bin_path)
+
+
+def test_interrupt_requires_keyword():
+    """A function merely named `irq` without the `interrupt` qualifier must not
+    be wired into the hardware IRQ vector — it was codegen'd as an ordinary
+    function (ends in RTS), so jumping hardware into it would crash."""
+    source = os.path.join(SCRIPT_DIR, "emu_interrupt_unmarked.c02")
+    with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as tmp:
+        bin_path = tmp.name
+    try:
+        ok, stderr = compile_c02(source, bin_path)
+        if not ok:
+            return False, f"compilation failed: {stderr}"
+        with open(bin_path, "rb") as f:
+            rom = bytearray(f.read())
+        vec_lo = rom[0xFFFE - ROM_START]
+        vec_hi = rom[0xFFFF - ROM_START]
+        addr = vec_lo | (vec_hi << 8)
+        if addr != 0:
+            return False, f"IRQ vector is ${addr:04X}, expected $0000 (irq() has no `interrupt` qualifier)"
+        return True, None
+    finally:
+        if os.path.exists(bin_path):
+            os.unlink(bin_path)
+
+
+def test_interrupt_invalid_return_warns():
+    """`nmi() interrupt -> u8` is a bad signature: it must warn (not error — the
+    compile still succeeds), and the analyzer's poisoning (is_interrupt = 0)
+    must keep it out of the NMI vector, since it was codegen'd as an ordinary
+    function ending in RTS."""
+    source = os.path.join(SCRIPT_DIR, "emu_interrupt_invalid_return.c02")
+    with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as tmp:
+        bin_path = tmp.name
+    try:
+        ok, stderr = compile_c02(source, bin_path)
+        if not ok:
+            return False, f"expected a warning, not a hard failure: {stderr}"
+        if "nmi" not in stderr or "invalid signature" not in stderr:
+            return False, f"expected an invalid-signature warning mentioning nmi, got: {stderr!r}"
+        with open(bin_path, "rb") as f:
+            rom = bytearray(f.read())
+        addr = rom[0xFFFA - ROM_START] | (rom[0xFFFB - ROM_START] << 8)
+        if addr != 0:
+            return False, f"NMI vector is ${addr:04X}, expected $0000 (bad signature should poison is_interrupt)"
+        return True, None
+    finally:
+        if os.path.exists(bin_path):
+            os.unlink(bin_path)
+
+
+def test_interrupt_invalid_params_warns():
+    """`nmi(u8 x) interrupt -> void` is a bad signature (hardware never
+    populates the ABI zone for an interrupt): must warn, and must be poisoned
+    out of the NMI vector just like the bad-return-type case."""
+    source = os.path.join(SCRIPT_DIR, "emu_interrupt_invalid_params.c02")
+    with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as tmp:
+        bin_path = tmp.name
+    try:
+        ok, stderr = compile_c02(source, bin_path)
+        if not ok:
+            return False, f"expected a warning, not a hard failure: {stderr}"
+        if "nmi" not in stderr or "invalid signature" not in stderr:
+            return False, f"expected an invalid-signature warning mentioning nmi, got: {stderr!r}"
+        with open(bin_path, "rb") as f:
+            rom = bytearray(f.read())
+        addr = rom[0xFFFA - ROM_START] | (rom[0xFFFB - ROM_START] << 8)
+        if addr != 0:
+            return False, f"NMI vector is ${addr:04X}, expected $0000 (bad signature should poison is_interrupt)"
+        return True, None
+    finally:
+        if os.path.exists(bin_path):
+            os.unlink(bin_path)
+
+
+def test_interrupt_valid_signature_silent():
+    """A correctly-declared `nmi() interrupt -> void` must not trigger the
+    invalid-signature warning (guards against the check being over-eager)."""
+    source = os.path.join(SCRIPT_DIR, "emu_interrupt_roundtrip.c02")
+    with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as tmp:
+        bin_path = tmp.name
+    try:
+        ok, stderr = compile_c02(source, bin_path)
+        if not ok:
+            return False, f"compilation failed: {stderr}"
+        if stderr.strip():
+            return False, f"expected no diagnostics for a valid interrupt handler, got: {stderr!r}"
+        return True, None
+    finally:
+        if os.path.exists(bin_path):
+            os.unlink(bin_path)
+
+
 # ----------------------------------------------------------------
 # Runner
 # ----------------------------------------------------------------
@@ -1019,6 +1174,11 @@ TESTS = [
     ("break_loop", test_break_loop),
     ("continue_while", test_continue_while),
     ("continue_for", test_continue_for),
+    ("interrupt_registers_preserved", test_interrupt_registers_preserved),
+    ("interrupt_requires_keyword", test_interrupt_requires_keyword),
+    ("interrupt_invalid_return_warns", test_interrupt_invalid_return_warns),
+    ("interrupt_invalid_params_warns", test_interrupt_invalid_params_warns),
+    ("interrupt_valid_signature_silent", test_interrupt_valid_signature_silent),
 ]
 
 

@@ -1,0 +1,15 @@
+// parser_interrupt.c02
+// Exercises the `interrupt` function qualifier: it sits between the
+// parameter list and the `->` return type, on both definitions.
+
+fn nmi() interrupt -> void {
+  return;
+}
+
+fn irq() interrupt -> void {
+  return;
+}
+
+fn main() -> void {
+  return;
+}

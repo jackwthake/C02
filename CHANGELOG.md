@@ -2,10 +2,44 @@
 
 All notable changes to this project will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/) - while
-the project is in `0.x`, breaking changes may land in MINOR releases; PATCH
-releases are reserved for bug fixes only.
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+Version numbers increment loosely rather than following strict
+[Semantic Versioning](https://semver.org/) - PATCH bumps have carried new
+features as often as bug fixes.
+
+## [v1.0.1] 2026-07-01
+
+- **`interrupt` function qualifier** — a function can now be declared
+  `fn nmi() interrupt -> void { ... }` (the qualifier sits between the
+  parameter list and `->`, on both definitions and forward declarations).
+  `is_interrupt` is threaded as a real field through the AST (`node_t`) and
+  IR (`cfg_t`) rather than codegen guessing interrupt-ness from the function
+  name. Codegen emits `RTI` instead of `RTS` on every return path, and saves
+  the interrupted code's A/X/Y registers with genuine 65C02 push/pull
+  opcodes (`PHA; PHX; PHY` on entry, `PLY; PLX; PLA` on exit) *before*
+  anything else — including the normal per-function ZP save, which itself
+  clobbers `A` — touches a register. `emit_vectors` only wires a function's
+  address into `$FFFA` (NMI) / `$FFFE` (IRQ) when it is both named `nmi`/
+  `irq` *and* declared `interrupt`; a plain function that happens to share
+  the name is left alone rather than being jumped into by hardware as a
+  function that ends in `RTS`;
+
+- **`WARN_INVALID_INTERRUPT`** — the first warning-level diagnostic in the
+  compiler (previously every diagnostic was a hard error). An
+  `interrupt`-qualified function that isn't named `nmi`/`irq`, doesn't
+  return `void`, or takes parameters (the hardware never populates the ABI
+  zone for an interrupt, so parameters would read garbage) now prints a
+  non-fatal warning and has `is_interrupt` reset to `0` on the AST node —
+  the function still compiles, just as an ordinary one, following the same
+  poisoning convention as `TYPE_INVALID` rather than generating broken
+  interrupt code silently;
+
+- **Test coverage** — `--ast-dump` and `--ir-dump` both surface the
+  qualifier (`interrupt fn nmi() -> void`); five new emulator tests in
+  `emu_test.py` fire a real NMI mid-loop via py65 and assert SP/A/X/Y
+  survive intact, that the vector table is only wired when the qualifier is
+  present, and that both invalid-signature cases warn without failing the
+  build;
 
 ## [v1.0.0] 2026-07-01
 

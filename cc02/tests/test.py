@@ -96,19 +96,23 @@ def run_test(path):
             return False
         return compare_golden(filename, normalize(result.stderr, path), "stderr", require_golden=True)
 
-    # Good test: must succeed (exit 0) with no stderr noise, and the dump it
-    # prints to stdout must match the golden.
+    # Good test: must succeed (exit 0), and the dump it prints to stdout must
+    # match the golden. A successful compile can still print warnings to
+    # stderr (e.g. an invalid `interrupt` signature) — those are checked
+    # against a separate `<name>.warn.golden` so they don't collide with the
+    # stdout dump golden. Anything on stderr with a nonzero exit would have
+    # already been caught above, so stderr here is warning-only by construction.
     if result.returncode != 0:
         print(f"  {FAIL} {filename}")
         print(f"         expected success (exit 0), got exit {result.returncode}")
         if result.stderr:
             print(f"         stderr: {result.stderr.strip()}")
         return False
+    stdout_ok = compare_golden(filename, result.stdout, "stdout", require_golden=False)
+    stderr_ok = True
     if result.stderr.strip():
-        print(f"  {FAIL} {filename} (unexpected stderr on a successful compile)")
-        print(f"         stderr: {result.stderr.strip()}")
-        return False
-    return compare_golden(filename, result.stdout, "stdout", require_golden=False)
+        stderr_ok = compare_golden(filename + ".warn", normalize(result.stderr, path), "stderr", require_golden=False)
+    return stdout_ok and stderr_ok
 
 def run_valgrind(path):
     filename = os.path.basename(path)
@@ -171,19 +175,26 @@ def update_golden(path):
             print(f"  {FAIL} {filename} (expected exit {expected}, got {result.returncode} during update)")
             return
         content = normalize(result.stderr, path)
+        warn_content = None
     else:
-        # Good test: golden the dump (stdout) from a successful compile.
+        # Good test: golden the dump (stdout) from a successful compile, plus
+        # any warning printed to stderr (separate golden — see run_test).
         if result.returncode != 0:
             print(f"  {FAIL} {filename} (binary failed during update)")
             if result.stderr:
                 print(f"         stderr: {result.stderr.strip()}")
             return
         content = result.stdout
+        warn_content = normalize(result.stderr, path) if result.stderr.strip() else None
 
     os.makedirs(GOLDEN_DIR, exist_ok=True)
     golden_path = os.path.join(GOLDEN_DIR, filename + ".golden")
     with open(golden_path, "w") as f:
         f.write(content)
+    if warn_content is not None:
+        warn_path = os.path.join(GOLDEN_DIR, filename + ".warn.golden")
+        with open(warn_path, "w") as f:
+            f.write(warn_content)
     print(f"  updated {filename}")
 
 REPO_ROOT = os.path.join(SCRIPT_DIR, "../..")

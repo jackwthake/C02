@@ -165,6 +165,7 @@ typedef struct {
   char *name;                 // function name (points into token array)
   type_t return_type;
   param_list_t params;
+  int is_interrupt;           // true for `interrupt`-qualified functions
 
   basic_block_t **blocks;     // arena-allocated array of block pointers
   unsigned block_count;

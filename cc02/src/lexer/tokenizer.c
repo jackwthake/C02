@@ -401,6 +401,7 @@ static int tokenize_keyword_or_identifier(token_t *tokens, unsigned *token_count
   MATCH_KEYWORD("struct",   Kw_struct)
   MATCH_KEYWORD("break",    Kw_break)
   MATCH_KEYWORD("continue", Kw_continue)
+  MATCH_KEYWORD("interrupt", Kw_interrupt)
   MATCH_KEYWORD("void",     Kw_void)
   MATCH_KEYWORD("if",       Kw_if)
   MATCH_KEYWORD("else",     Kw_else)

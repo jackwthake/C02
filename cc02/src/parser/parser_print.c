@@ -160,6 +160,7 @@ static void print_ast_label(node_t *node) {
       }
       printf(") -> ");
       print_type_suffix(node->function.return_type);
+      if (node->function.is_interrupt) printf(" interrupt");
       break;
     case NODE_REG_DECL:
       printf("%s %s : ", node_kind_name(node->kind), node->reg_decl.name ? node->reg_decl.name : "<anon>");

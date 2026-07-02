@@ -1,0 +1,13 @@
+reg u8 PORTB @ 0x6000;
+u8 counter = 0;
+
+fn nmi() interrupt -> void {
+  u8 sentinel = 42;
+  PORTB = sentinel;
+}
+
+fn main() -> void {
+  while (true) {
+    counter = counter + 1;
+  }
+}

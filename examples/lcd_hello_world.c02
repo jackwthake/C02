@@ -15,7 +15,7 @@ fn lcd_send_command(u8 cmd) -> void {
   PORTA = 0x00; // E=0 to complete command
 }
 
-fn lcd_init() -> void {
+fn lcd_init() interrupt -> void {
   // Set the data direction registers for PORTA and PORTB to output
   DDRB = 0xFF; // Set all pins of PORTB as output
   DDRA = 0xE0; // Set top 3 bits of PORTA as output (for RS, RW, E)
@@ -37,11 +37,23 @@ fn lcd_putc(u8 ch) -> void {
   PORTA = 0x32; // RS
 }
 
-fn main() -> void {
+fn main() interrupt -> void {
   u8 *msg = "Hello C02!";
   lcd_init();
   
   for (u8 *p = msg; *p != null; ++p) {
     lcd_putc(*p);
   }
+}
+
+
+fn nmi() interrupt -> void {
+  // Handle NMI interrupt (if needed)
+  // For this example, we will just return from the interrupt
+}
+
+fn irq() interrupt -> void {
+  // Handle IRQ interrupt (if needed)
+  // For this example, we will just return from the interrupt
+  ++__heap_start;
 }

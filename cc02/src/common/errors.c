@@ -41,6 +41,10 @@ static char *type_to_string(type_t type, char *buf, size_t buf_size) {
   fprintf(stderr, BOLD_WHITE "%s" RESET ":" BOLD_WHITE "%u" RESET ":" BOLD_WHITE "%u: "  \
               BOLD_RED "error: " RESET, (e)->loc.file_path, (e)->loc.line, (e)->loc.column)
 
+#define PRINT_WRN_HEADER(e)                                                              \
+  fprintf(stderr, BOLD_WHITE "%s" RESET ":" BOLD_WHITE "%u" RESET ":" BOLD_WHITE "%u: "  \
+              BOLD_YELLOW "warning: " RESET, (e)->loc.file_path, (e)->loc.line, (e)->loc.column)
+
 
 static void print_parse_kind_error(error_t *e) {
   const token_t *tok = &e->parse.found;
@@ -224,5 +228,26 @@ void print_error(error_t *e) {
     default:
       print_semantic_kind_error(e);
       return;
+  }
+}
+
+
+void print_warning(error_t *e) {
+  switch (e->type) {
+    case WARN_UNUSED_VARIABLE:
+    case WARN_UNUSED_FUNCTION:
+    case WARN_UNUSED_STRUCT:
+    case WARN_UNUSED_FIELD:
+      return; // unimplemented
+
+    case WARN_INVALID_INTERRUPT:   // interrupt function declared with invalid signature (not void, or not zero args)
+      PRINT_WRN_HEADER(e);
+      fprintf(stderr, "interrupt function '%s' has invalid signature (must be void and take no arguments), ignoring keyword.\n",
+              e->name_error.name);
+      print_error_line(e->loc);
+      return;
+    
+    default:
+      return; // unreachable - parser kinds handled in print_parse_kind_error
   }
 }

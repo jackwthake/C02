@@ -826,6 +826,7 @@ static void lower_function(ir_gen_t *gen, node_t *node) {
   cfg->name = node->function.name;
   cfg->return_type = node->function.return_type;
   cfg->params = node->function.params;
+  cfg->is_interrupt = node->function.is_interrupt;
   cfg->next_temp = 0;
   cfg->next_label = 0;
   cfg->block_count = 0;

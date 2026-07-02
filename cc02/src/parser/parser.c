@@ -974,6 +974,12 @@ static node_t *parse_function(parser_t *p) {
   func_decl->function.params = parse_function_params(p);
   GUARD(p);
 
+  // an `interrupt` function gets register-save/RTI codegen instead of a plain RTS
+  func_decl->function.is_interrupt = (CUR_TOK.type == Kw_interrupt);
+  if (func_decl->function.is_interrupt) {
+    ++p->pos; // consume interrupt
+  }
+
   EXPECT_SYMBOL(s_arrow, "'->' before return type", "function declaration")
   GUARD(p);
   ++p->pos; // consume ->
@@ -1074,6 +1080,11 @@ static node_t *parse_fwd_decl(parser_t *p) {
 
     n->fwd_decl.params = parse_function_params(p);
     GUARD(p);
+
+    // check if next symbol is interrupt, skip if not, parse return type
+    if (CUR_TOK.type == Kw_interrupt) {
+      ++p->pos; // consume interrupt
+    }
 
     EXPECT_SYMBOL(s_arrow, "'->' before return type", "forward declaration");
     GUARD(p);

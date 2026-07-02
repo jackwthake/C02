@@ -376,12 +376,17 @@ OP_EMITTER_SINGLE_ARG(bvc_rel, 0x50)
 
 OP_EMITTER_NO_ARG(txs, 0x9A)
 OP_EMITTER_NO_ARG(rts, 0x60)
+OP_EMITTER_NO_ARG(rti, 0x40)
 OP_EMITTER_NO_ARG(clc, 0x18)
 OP_EMITTER_NO_ARG(sec, 0x38)
 OP_EMITTER_NO_ARG(tax, 0xAA)
 OP_EMITTER_NO_ARG(dex, 0xCA)
 OP_EMITTER_NO_ARG(pha, 0x48)
 OP_EMITTER_NO_ARG(pla, 0x68)
+OP_EMITTER_NO_ARG(phx, 0xDA)
+OP_EMITTER_NO_ARG(plx, 0xFA)
+OP_EMITTER_NO_ARG(phy, 0x5A)
+OP_EMITTER_NO_ARG(ply, 0x7A)
 
 
 OP_EMITTER_ABS(jmp_abs, 0x4C)
@@ -514,12 +519,33 @@ static void emit_data_section(emitter_t *e, ir_gen_t *gen) {
 static void emit_vectors(emitter_t *e) {
   unsigned pos = 0xFFFA - ROM_START;
 
-  e->rom[pos++] = 0x00;               // NMI low  (unused)
-  e->rom[pos++] = 0x00;               // NMI high (unused)
+  // Only functions actually declared `interrupt` get wired into the vector table —
+  // a plain function that happens to be named "nmi"/"irq" was emitted with a normal
+  // RTS and must never be jumped into by hardware.
+  int nmi_is_interrupt = 0, irq_is_interrupt = 0;
+  for (unsigned i = 0; i < e->gen->module.cfg_count; i++) {
+    cfg_t *cfg = &e->gen->module.cfgs[i];
+    if (!cfg->is_interrupt) continue;
+    if (strcmp(cfg->name, "nmi") == 0) nmi_is_interrupt = 1;
+    else if (strcmp(cfg->name, "irq") == 0) irq_is_interrupt = 1;
+  }
+
+  uint16_t nmi_addr = 0;
+  uint16_t irq_addr = 0;
+  for (unsigned i = 0; i < e->func_label_count; i++) {
+    if (nmi_is_interrupt && strcmp(e->func_labels[i].name, "nmi") == 0) {
+      nmi_addr = e->func_labels[i].addr;
+    } else if (irq_is_interrupt && strcmp(e->func_labels[i].name, "irq") == 0) {
+      irq_addr = e->func_labels[i].addr;
+    }
+  }
+
+  e->rom[pos++] = (uint8_t)(nmi_addr & 0xFF);     // NMI low
+  e->rom[pos++] = (uint8_t)(nmi_addr >> 8);        // NMI high
   e->rom[pos++] = ROM_START & 0xFF;   // Reset low
   e->rom[pos++] = ROM_START >> 8;     // Reset high
-  e->rom[pos++] = 0x00;               // IRQ low  (unused)
-  e->rom[pos++] = 0x00;               // IRQ high (unused)
+  e->rom[pos++] = (uint8_t)(irq_addr & 0xFF);     // IRQ low
+  e->rom[pos++] = (uint8_t)(irq_addr >> 8);        // IRQ high
 }
 
 
@@ -698,6 +724,17 @@ static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
 
   zp_map_t map;
   if (!zp_map_build(e, &map, cfg)) return 0;
+
+  // The hardware only saves PC and status on interrupt entry, not A/X/Y — the
+  // handler must save them itself, before anything else (including emit_zp_save
+  // below, which clobbers A) touches a register. PHX/PHY are real 65C02 pushes,
+  // unlike TXS/TYS, which change the stack pointer instead of pushing anything.
+  int is_interrupt = cfg->is_interrupt;
+  if (is_interrupt) {
+    pha(e);
+    phx(e);
+    phy(e);
+  }
 
   // main is only called by the bootstrap, which has no ZP state to preserve.
   // Every other callee saves the caller's ZP slots on entry and restores on return.
@@ -882,7 +919,16 @@ static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
           // Return value is already in RET ($02/$03) above the restored region.
           if (!is_main)
             emit_zp_restore(e, &map);
-          rts(e);
+          if (!is_interrupt) {
+            rts(e);
+          } else {
+            // Reverse of the entry pushes. RTI restores PC and status from the
+            // values the hardware pushed automatically on interrupt entry.
+            ply(e);
+            plx(e);
+            pla(e);
+            rti(e);
+          }
           break;
         }
 

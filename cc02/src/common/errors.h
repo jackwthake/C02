@@ -58,6 +58,13 @@ typedef enum {
   ERR_INCOMPLETE_STRUCT_FIELD, // by-value struct field references an incomplete/forward-declared or self-referential struct
   ERR_BREAK_OUTSIDE_LOOP,   // break statement not inside a while/for loop
   ERR_CONTINUE_OUTSIDE_LOOP, // continue statement not inside a while/for loop
+
+  // semantic warnings (not fatal, but printed to stderr)
+  WARN_UNUSED_VARIABLE,     // variable declared but never used
+  WARN_UNUSED_FUNCTION,     // function declared but never called
+  WARN_UNUSED_STRUCT,       // struct declared but never used
+  WARN_UNUSED_FIELD,        // struct field declared but never used
+  WARN_INVALID_INTERRUPT,   // interrupt function declared with invalid signature (not void, or not zero args)
 } error_type_t;
 
 typedef struct {
@@ -104,5 +111,7 @@ typedef struct {
 // errors the expected/context lines). Handles every error_type_t variant -
 // this is the only place that needs to know how to render an error_t.
 void print_error(error_t *e);
+
+void print_warning(error_t *e);
 
 #endif // __ERRORS_H__
