@@ -31,6 +31,7 @@
 - [Binary Layout](#binary-layout)
   - [RAM](#ram)
   - [ROM](#rom)
+- [References](#references)
 - [Third-Party Licenses](#third-party-licenses)
 
 ## Getting Started: Key Features & Architecture
@@ -383,7 +384,8 @@ The `$FFF8–$FFF9` boundary word and the `$FFF6–$FFF7` symbol-table pointer a
 ### References
 
 1. [Crafting Interpreters](https://craftinginterpreters.com/contents.html) — the primary reference used throughout development.
-2. [rui314/chibicc](https://github.com/rui314/chibicc) — structurally similar (recursive descent, etc.), found after starting this project; not directly followed, but worth a look.
+2. [6502 Instruction Set](https://www.masswerk.at/6502/6502_instruction_set.html) — comprehensive list of 6502 instruction set
+3. [rui314/chibicc](https://github.com/rui314/chibicc) — structurally similar (recursive descent, etc.), found after starting this project; not directly followed, but worth a look.
 
 ---
 
