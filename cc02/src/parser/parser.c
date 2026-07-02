@@ -130,10 +130,50 @@ static node_t *parse_struct_init(parser_t *p, char *struct_name);
 static node_t *logical_or(parser_t *p); // recursive descent entry point
 
 
+// Purely name-based: a local variable that happens to share a name with a
+// declared struct (e.g. `u8 Point = 5;`) makes `(Point) - 1` misparse as a
+// cast rather than a subtraction. Pathological and not worth a scope-aware
+// lookup for - it fails loud (ERR_STRUCT_CAST_BY_VALUE or a type mismatch)
+// rather than silently miscompiling.
+static int is_known_struct_name(parser_t *p, char *name) {
+  for (unsigned i = 0; i < p->struct_name_count; ++i) {
+    if (strcmp(p->struct_names[i], name) == 0) return 1;
+  }
+  return 0;
+}
+
+
+// A single pass over the full token stream, run once before parsing starts
+// (see parse()), collecting the name of every `struct Name { ... }` decl.
+// is_token_type_name consults this set to tell a struct-type cast/decl
+// apart from a plain identifier — the two are indistinguishable by token
+// shape alone (`(Point)x` vs `(a) - b` both start `( l_identifier )`).
+static void prescan_struct_names(parser_t *p) {
+  unsigned count = 0;
+  for (unsigned i = 0; i + 1 < p->count; ++i) {
+    if (p->tokens[i].type == Kw_struct && p->tokens[i + 1].type == l_identifier) {
+      ++count;
+    }
+  }
+
+  p->struct_name_count = count;
+  p->struct_names = count ? (char **)arena_alloc(&p->arena, sizeof(char *) * count) : NULL;
+
+  unsigned idx = 0;
+  for (unsigned i = 0; i + 1 < p->count; ++i) {
+    if (p->tokens[i].type == Kw_struct && p->tokens[i + 1].type == l_identifier) {
+      p->struct_names[idx++] = p->tokens[i + 1].string_val;
+    }
+  }
+}
+
+
 static inline int is_token_type_name(parser_t *p) {
   switch (CUR_TOK.type) {
     case t_u8: case t_i8: case t_u16:  case t_i16: case Kw_void:
       return 1;
+    case l_identifier:
+      return is_known_struct_name(p, CUR_TOK.string_val);
     default:
       return 0;
   }
@@ -258,6 +298,7 @@ static node_t *primary(parser_t *p) {
         break;
       } else {
         expr = logical_or(p);
+        GUARD(p);
 
         EXPECT_SYMBOL(s_rparen, "')' to close grouped expression", "grouped expression");
         GUARD(p);
@@ -1191,9 +1232,11 @@ static node_t *parse_toplevel(parser_t *p) {
 
 ast_t parse(parser_t *p, token_t *tokens, unsigned num_tokens) {
   p->tokens = tokens;
-  p->count = num_tokens; 
+  p->count = num_tokens;
   p->pos = p->has_errored = 0;
   p->err = NULL;
+
+  prescan_struct_names(p);
 
   scratch_t scratch = {0};
   while (p->pos < p->count && CUR_TOK.type != t_eof) {

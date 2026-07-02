@@ -1,0 +1,6 @@
+[1;37manalyzer_bad_struct_cast_by_value.c02[0m:[1;37m15[0m:[1;37m23: [1;31merror: [0mcannot cast to struct 'Point' by value; cast to 'Point*' instead
+[1;34m15 |[0m   Point p = (Point)raw;
+[1;34m   |[1;31m                       ^[0m
+[31m
+Semantic analysis failed with [1;31m1[0m[31m errors.
+[0m

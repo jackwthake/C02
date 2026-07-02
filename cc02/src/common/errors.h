@@ -58,6 +58,7 @@ typedef enum {
   ERR_INCOMPLETE_STRUCT_FIELD, // by-value struct field references an incomplete/forward-declared or self-referential struct
   ERR_BREAK_OUTSIDE_LOOP,   // break statement not inside a while/for loop
   ERR_CONTINUE_OUTSIDE_LOOP, // continue statement not inside a while/for loop
+  ERR_STRUCT_CAST_BY_VALUE, // cast to a non-pointer struct type; codegen only knows how to size pointer-to-struct casts
 
   // semantic warnings (not fatal, but printed to stderr)
   WARN_UNUSED_VARIABLE,     // variable declared but never used

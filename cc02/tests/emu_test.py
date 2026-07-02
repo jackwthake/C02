@@ -879,6 +879,27 @@ def test_field_ptr():
     return True, None
 
 
+def test_cast_struct_ptr():
+    """Cast a constant address to Point*, write both fields through it,
+    check memory at the cast address directly and via PORTB. Exercises
+    TAC_CAST with an OPERAND_CONST_INT src (the memory-mapped-struct use
+    case), not just a variable holding an address."""
+    source = os.path.join(SCRIPT_DIR, "emu_cast_struct_ptr.c02")
+    mpu, err = compile_and_run(source)
+    if mpu is None:
+        return False, f"compilation failed: {err}"
+    x = mpu.memory[0x1000]
+    y = mpu.memory[0x1001]
+    if x != 55:
+        return False, f"memory[$1000] (q.x) = {x}, expected 55"
+    if y != 22:
+        return False, f"memory[$1001] (q.y) = {y}, expected 22"
+    val = mpu.memory[0x6000]
+    if val != 22:
+        return False, f"memory[$6000] = {val}, expected 22"
+    return True, None
+
+
 def test_func_call_u8():
     """fn add(a, b: u8) -> u8; add(10, 32) → PORTB=42."""
     source = os.path.join(SCRIPT_DIR, "emu_func_call_u8.c02")
@@ -1166,6 +1187,7 @@ TESTS = [
     ("field_local", test_field_local),
     ("field_global", test_field_global),
     ("field_ptr", test_field_ptr),
+    ("cast_struct_ptr", test_cast_struct_ptr),
     ("func_call_u8", test_func_call_u8),
     ("func_call_void", test_func_call_void),
     ("func_call_u16", test_func_call_u16),

@@ -1,0 +1,17 @@
+// analyzer_bad_struct_cast_by_value.c02
+// A cast to a struct type by value is rejected: codegen only knows how to
+// size a cast from codegen_type_size, which has a correct case for
+// pointer-to-struct (2 bytes) but falls through to a bogus 1-byte default
+// for a bare struct type. Reject it during analysis instead of silently
+// truncating.
+
+struct Point {
+  u16 x;
+  u16 y;
+}
+
+fn main() -> void {
+  u16 raw = 0x2000;
+  Point p = (Point)raw;
+  return;
+}

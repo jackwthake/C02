@@ -1,0 +1,69 @@
+`- TranslationUnitDecl
+   |- StructDecl Point {u16 x, u16 y}
+   |- FunctionDecl main() -> void
+   |  `- CompoundStmt
+   |     |- VarDecl a : u16
+   |     |  `- IntegerLiteral (5)
+   |     |- VarDecl b : u16
+   |     |  `- IntegerLiteral (3)
+   |     |- VarDecl c : u16
+   |     |  `- BinaryOperator -
+   |     |     |- Identifier a
+   |     |     `- Identifier b
+   |     |- VarDecl d : u16
+   |     |  `- BinaryOperator *
+   |     |     |- BinaryOperator +
+   |     |     |  |- Identifier a
+   |     |     |  `- Identifier b
+   |     |     `- IntegerLiteral (2)
+   |     |- VarDecl e : u16
+   |     |  `- BinaryOperator &
+   |     |     |- Identifier a
+   |     |     `- Identifier b
+   |     |- VarDecl p : Point*
+   |     |  `- CStyleCastExpr Point*
+   |     |     `- IntegerLiteral (8192)
+   |     |- AssignStmt
+   |     |  |- [target]
+   |     |  |  `- FieldAccess .x
+   |     |  |     `- Identifier p
+   |     |  `- [value]
+   |     |     `- IntegerLiteral (1)
+   |     |- ForStmt
+   |     |  |- [init]
+   |     |  |  `- VarDecl q : Point
+   |     |  |     `- StructInitExpr Point
+   |     |  |        |- [.x]
+   |     |  |        |  `- IntegerLiteral (0)
+   |     |  |        `- [.y]
+   |     |  |           `- IntegerLiteral (0)
+   |     |  |- [cond]
+   |     |  |  `- BinaryOperator <
+   |     |  |     |- FieldAccess .x
+   |     |  |     |  `- Identifier q
+   |     |  |     `- IntegerLiteral (10)
+   |     |  |- [step]
+   |     |  |  `- AssignStmt
+   |     |  |     |- [target]
+   |     |  |     |  `- FieldAccess .x
+   |     |  |     |     `- Identifier q
+   |     |  |     `- [value]
+   |     |  |        `- BinaryOperator +
+   |     |  |           |- FieldAccess .x
+   |     |  |           |  `- Identifier q
+   |     |  |           `- IntegerLiteral (1)
+   |     |  `- [body]
+   |     |     `- CompoundStmt
+   |     |        `- AssignStmt
+   |     |           |- [target]
+   |     |           |  `- FieldAccess .y
+   |     |           |     `- Identifier q
+   |     |           `- [value]
+   |     |              `- FieldAccess .x
+   |     |                 `- Identifier q
+   |     `- ReturnStmt
+   |- ForwardDecl __heap_start : u16
+   |- ForwardDecl __memory_top : u16
+   `- FunctionDecl __enable_interrupts() -> void
+      `- CompoundStmt
+         `- AsmBlockStmt CLI

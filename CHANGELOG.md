@@ -7,6 +7,34 @@ Version numbers increment loosely rather than following strict
 [Semantic Versioning](https://semver.org/) - PATCH bumps have carried new
 features as often as bug fixes.
 
+## [Unreleased]
+
+- **Casts to struct pointer types (`(Point*)addr`)** — `is_token_type_name`
+  previously only recognised built-in type keywords, so a struct name after
+  `(` was never treated as a cast target; `(Point*)x` silently mis-parsed
+  (or hard-failed) instead of producing a cast. Fixed with a one-time
+  prescan of the token stream (before parsing starts) that collects every
+  declared struct name into the parser; `is_token_type_name` now accepts an
+  identifier only when it's a *known* struct name. A naive "just accept any
+  identifier" fix was considered and rejected — it would have broken
+  ordinary grouped expressions like `(a) - b` or `(a + b) * c`, which are
+  token-for-token ambiguous with a cast until the identifier's meaning is
+  known. Casting a struct *by value* (`(Point)x`, no pointer) is rejected
+  at analysis time with a new `ERR_STRUCT_CAST_BY_VALUE` diagnostic, since
+  codegen only knows how to size the pointer case (2 bytes) — the by-value
+  case would otherwise silently truncate to codegen's 1-byte default.
+  Covered by new parser/analyzer golden tests and an emulator test that
+  casts a constant address to `Point*` and verifies both fields land at the
+  correct offsets;
+
+- **Parser: fixed a memory leak on a malformed grouped-expression** — the
+  `(expr)` branch of `primary()` was missing a `GUARD(p)` check after
+  parsing the inner expression, so when that inner parse failed, control
+  fell through to a second error-generating check that overwrote (and
+  leaked) the first `error_t`. Surfaced by the struct-cast test above,
+  which routinely produces a syntactically invalid grouped expression when
+  the cast target isn't a recognised type;
+
 ## [v1.0.2] 2026-07-02
 
 - **`asm { }` inline assembly blocks** — a statement-level escape hatch that

@@ -1,0 +1,10 @@
+// parser_bad_unknown_type_cast.c02
+// A cast to a name that isn't a declared struct anywhere in the file has
+// no valid parse: is_token_type_name only recognises identifiers the
+// parser's struct-name prescan found, so this falls back to being parsed
+// as a grouped expression and fails there.
+
+fn main() -> void {
+  Bogus *p = (Bogus*)0x2000;
+  return;
+}

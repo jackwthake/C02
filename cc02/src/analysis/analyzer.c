@@ -394,9 +394,25 @@ static type_t resolve_expr_type(analyzer_t *a, node_t *expr) {
       return sym->function.return_type;
     }
 
-    case NODE_CAST:
+    case NODE_CAST: {
       resolve_expr_type(a, expr->cast.operand);
-      return expr->cast.cast_type;
+
+      type_t t = expr->cast.cast_type;
+      if (t.kind == TYPE_STRUCT) {
+        if (!validate_decl_type(a, t, expr->loc, t.struct_name, 1)) return TYPE_ERROR;
+
+        // codegen sizes a cast purely from the destination type
+        // (codegen_type_size), which only knows struct size for the
+        // pointer case (2 bytes); a by-value struct type falls through to
+        // its 1-byte default, silently truncating. Reject it here instead.
+        if (!t.is_ptr) {
+          EMIT_NAME_ERROR(ERR_STRUCT_CAST_BY_VALUE, expr->loc, t.struct_name);
+          return TYPE_ERROR;
+        }
+      }
+
+      return t;
+    }
 
     case NODE_DEREF: {
       type_t inner = resolve_expr_type(a, expr->deref_target);

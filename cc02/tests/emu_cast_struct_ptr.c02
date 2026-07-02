@@ -1,0 +1,16 @@
+reg u8 PORTB @ 0x6000;
+
+struct Point {
+  u8 x;
+  u8 y;
+}
+
+fn main() -> void {
+  // constant-address cast — the canonical use case (memory-mapped struct),
+  // lowers to TAC_CAST with an OPERAND_CONST_INT src, a different codegen
+  // path than casting a variable holding an address.
+  Point *q = (Point*)0x1000;
+  q.x = 55;
+  q.y = 22;
+  PORTB = q.y;
+}

@@ -199,6 +199,12 @@ static void print_semantic_kind_error(error_t *e) {
       }
       break;
 
+    case ERR_STRUCT_CAST_BY_VALUE:
+      PRINT_ERR_HEADER(e);
+      fprintf(stderr, "cannot cast to struct '%s' by value; cast to '%s*' instead\n",
+              e->name_error.name, e->name_error.name);
+      break;
+
     case ERR_BREAK_OUTSIDE_LOOP:
       PRINT_ERR_HEADER(e);
       fprintf(stderr, "'break' statement not within a loop\n");

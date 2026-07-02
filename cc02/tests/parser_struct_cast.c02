@@ -1,0 +1,33 @@
+// parser_struct_cast.c02
+// Casts to a struct pointer type, and the ambiguity this creates with a
+// plain parenthesised expression followed by an operator that's also a
+// unary prefix (-, *, &). `(Point*)addr` must parse as a cast; `(a) - b`
+// and `(a + b) * c` must still parse as ordinary binary expressions, not
+// as a cast of a unary operand. A for-loop initialiser may also declare a
+// struct-typed local, same as any other statement position.
+
+struct Point {
+  u16 x;
+  u16 y;
+}
+
+fn main() -> void {
+  u16 a = 5;
+  u16 b = 3;
+
+  // grouped expression followed by an operator that overlaps with a unary
+  // prefix operator - must NOT be parsed as a cast.
+  u16 c = (a) - b;
+  u16 d = (a + b) * 2;
+  u16 e = (a) & b;
+
+  // cast to a pointer-to-struct type
+  Point *p = (Point*)0x2000;
+  p.x = 1;
+
+  for (Point q = Point{ .x = 0, .y = 0 }; q.x < 10; q.x += 1) {
+    q.y = q.x;
+  }
+
+  return;
+}

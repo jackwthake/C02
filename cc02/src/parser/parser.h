@@ -260,7 +260,15 @@ typedef struct {
   token_t *tokens;
   unsigned count;
   unsigned pos;
-  
+
+  // Names of every `struct Name { ... }` in the token stream, collected by
+  // a prescan before parsing starts (see prescan_struct_names in parser.c).
+  // Lets is_token_type_name distinguish a cast to a struct type, e.g.
+  // `(Point)x`, from a parenthesised expression, e.g. `(a) - b`, without
+  // which the two are token-for-token ambiguous at the point `(` is seen.
+  char **struct_names;
+  unsigned struct_name_count;
+
   unsigned has_errored;
   error_t *err;
 } parser_t;
