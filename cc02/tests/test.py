@@ -214,8 +214,70 @@ EXAMPLES_DIR = "examples"
 # label, total lines, list of (child_label, lines) for tree expansion
 Section = namedtuple("Section", ["label", "total", "children"])
 
+# Extensions that use '#'-to-end-of-line comments, no block-comment form.
+HASH_COMMENT_EXTS = {".py", ".mk"}
+
+def _count_hash_style(text):
+    count = 0
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped and not stripped.startswith("#"):
+            count += 1
+    return count
+
+def _count_c_style(text):
+    """Counts lines that have real content once '//' line comments and
+    '/* ... */' block comments (including ones spanning multiple lines) are
+    stripped out. A line with trailing code before a comment still counts
+    (e.g. 'x = 5; // note'); a line that's blank once comments are removed
+    doesn't. Doesn't understand string literals, so a '//' or '/*' inside a
+    string will be (mis)treated as a real comment marker - a known, accepted
+    limitation shared by most simple line counters."""
+    count = 0
+    in_block = False
+    for line in text.splitlines():
+        i, n, kept = 0, len(line), False
+        while i < n:
+            if in_block:
+                end = line.find("*/", i)
+                if end == -1:
+                    i = n
+                else:
+                    i = end + 2
+                    in_block = False
+                continue
+            two = line[i:i + 2]
+            if two == "/*":
+                in_block = True
+                i += 2
+                continue
+            if two == "//":
+                break
+            if not line[i].isspace():
+                kept = True
+            i += 1
+        if kept:
+            count += 1
+    return count
+
+def count_meaningful_lines(filepath, ext):
+    """Returns (meaningful, raw) line counts: 'meaningful' excludes blank
+    lines and comment-only lines, matching the ext's comment syntax (falls
+    back to C-style for anything not in HASH_COMMENT_EXTS, e.g. .c02, .rs);
+    'raw' is the plain total-lines-in-file count."""
+    try:
+        with open(filepath) as fh:
+            text = fh.read()
+    except (OSError, UnicodeDecodeError):
+        return 0, 0
+    raw = len(text.splitlines())
+    if ext in HASH_COMMENT_EXTS:
+        return _count_hash_style(text), raw
+    return _count_c_style(text), raw
+
 def count_lines_in(root_dir, extensions):
     counts = {}
+    raw_total = 0
     abs_root = os.path.join(REPO_ROOT, root_dir)
     for dirpath, dirnames, filenames in os.walk(abs_root):
         dirnames[:] = [d for d in dirnames if d not in IGNORED_DIRS]
@@ -226,13 +288,10 @@ def count_lines_in(root_dir, extensions):
             if ext not in extensions:
                 continue
             filepath = os.path.join(dirpath, f)
-            try:
-                with open(filepath) as fh:
-                    lines = sum(1 for _ in fh)
-            except (OSError, UnicodeDecodeError):
-                continue
+            lines, raw = count_meaningful_lines(filepath, ext)
             counts[ext] = counts.get(ext, 0) + lines
-    return counts
+            raw_total += raw
+    return counts, raw_total
 
 def count_lines_by_folder(root_dir, extensions, default_folder="driver"):
     """Count lines grouped by immediate subdirectory; files at the root go into default_folder."""
@@ -247,11 +306,7 @@ def count_lines_by_folder(root_dir, extensions, default_folder="driver"):
             if ext not in extensions:
                 continue
             filepath = os.path.join(dirpath, f)
-            try:
-                with open(filepath) as fh:
-                    lines = sum(1 for _ in fh)
-            except (OSError, UnicodeDecodeError):
-                continue
+            lines, _raw = count_meaningful_lines(filepath, ext)
             relpath = os.path.relpath(filepath, abs_root)
             parts = relpath.split(os.sep)
             folder = parts[0] if len(parts) > 1 else default_folder
@@ -259,13 +314,10 @@ def count_lines_by_folder(root_dir, extensions, default_folder="driver"):
     return folder_counts
 
 def count_file(rel_path):
-    try:
-        with open(os.path.join(REPO_ROOT, rel_path)) as fh:
-            return sum(1 for _ in fh)
-    except (OSError, UnicodeDecodeError):
-        return 0
+    ext = ".mk" if os.path.basename(rel_path) == "Makefile" else os.path.splitext(rel_path)[1]
+    return count_meaningful_lines(os.path.join(REPO_ROOT, rel_path), ext)
 
-def print_loc_table(sections):
+def print_loc_table(sections, raw_total=None):
     grand_total = sum(s.total for s in sections)
     if grand_total == 0:
         print("no recognized source files found")
@@ -273,12 +325,14 @@ def print_loc_table(sections):
 
     # measure column widths from actual data
     all_labels = [s.label for s in sections] + ["Grand Total"]
+    if raw_total is not None:
+        all_labels.append("Grand Total (raw)")
     for s in sections:
         for i, (child_label, _) in enumerate(s.children):
             prefix = "  └─ " if i == len(s.children) - 1 else "  ├─ "
             all_labels.append(prefix + child_label)
     label_w = max(len(l) for l in all_labels)
-    lines_w = max(len(f"{grand_total:,}"), len("Lines"))
+    lines_w = max(len(f"{max(grand_total, raw_total or 0):,}"), len("Lines"))
 
     sep = "─" * (label_w + lines_w + 11)
     print(f"\n{'Module':<{label_w}}  {'Lines':>{lines_w}}   % Total")
@@ -295,27 +349,35 @@ def print_loc_table(sections):
 
     print(sep)
     print(f"{'Grand Total':<{label_w}}  {grand_total:>{lines_w},}   100.0%")
+    if raw_total is not None:
+        print(f"{'Grand Total (raw)':<{label_w}}  {raw_total:>{lines_w},}")
 
 def count_lines():
     # --- Compiler ---
-    compiler_ext_counts = count_lines_in(COMPILER_SRC_DIR, COMPILER_EXTS)
+    compiler_ext_counts, compiler_raw = count_lines_in(COMPILER_SRC_DIR, COMPILER_EXTS)
     for mkfile in COMPILER_MAKEFILES:
-        lines = count_file(mkfile)
+        lines, raw = count_file(mkfile)
         if lines:
             compiler_ext_counts[".mk"] = compiler_ext_counts.get(".mk", 0) + lines
+        compiler_raw += raw
     compiler_total = sum(compiler_ext_counts.values())
 
     folder_counts = count_lines_by_folder(COMPILER_SRC_DIR, COMPILER_EXTS)
     compiler_children = sorted(folder_counts.items(), key=lambda x: x[1], reverse=True)
 
     # --- Test Harness ---
-    harness_counts = count_lines_in(TESTS_REL, {*COMPILER_EXTS, *HARNESS_EXTS})
-    for ext, lines in count_lines_in(EXAMPLES_DIR, HARNESS_EXTS).items():
+    harness_counts, harness_raw = count_lines_in(TESTS_REL, {*COMPILER_EXTS, *HARNESS_EXTS})
+    examples_counts, examples_raw = count_lines_in(EXAMPLES_DIR, HARNESS_EXTS)
+    for ext, lines in examples_counts.items():
         harness_counts[ext] = harness_counts.get(ext, 0) + lines
+    harness_raw += examples_raw
     harness_total = sum(harness_counts.values())
 
     # --- Disassembler ---
-    objdump_total = sum(count_lines_in(OBJDUMP_DIR, OBJDUMP_EXTS).values())
+    objdump_counts, objdump_raw = count_lines_in(OBJDUMP_DIR, OBJDUMP_EXTS)
+    objdump_total = sum(objdump_counts.values())
+
+    raw_total = compiler_raw + harness_raw + objdump_raw
 
     # To add a new toolchain component, append a Section here and add its
     # directory/extension constants above.
@@ -329,7 +391,7 @@ def count_lines():
         print("no recognized source files found")
         return
 
-    print_loc_table(sections)
+    print_loc_table(sections, raw_total)
 
 if __name__ == "__main__":
     if "--cloc" in sys.argv:
