@@ -89,6 +89,7 @@ DEFINE_NODE_SCRATCH(scratch)                                              // nod
 DEFINE_VALUE_SCRATCH(field_scratch, field_t, field_list_t)                // struct decl fields
 DEFINE_VALUE_SCRATCH(param_scratch, param_t, param_list_t)                // function params
 DEFINE_VALUE_SCRATCH(field_init_scratch, field_init_t, field_init_list_t) // struct initializer { .field = val }
+DEFINE_VALUE_SCRATCH(asm_scratch, char*, asm_line_list_t)                 // asm {} block mnemonics
 
 
 static inline int token_type_to_parser_type(token_type_t t) {
@@ -676,8 +677,47 @@ static node_t *parse_struct_init(parser_t *p, char *struct_name) {
 }
 
 
+// Parses `asm { MNEMONIC ... }` - a bare list of opcode mnemonics, one per
+// token, no operands/addressing modes/labels. Codegen owns the table of
+// which mnemonics are actually valid; the parser just collects identifiers.
+static node_t *parse_asm_block(parser_t *p) {
+  node_t *n = ALLOC_NODE(p);
+  n->kind = NODE_ASM_BLOCK;
+
+  ++p->pos; // consume asm
+
+  EXPECT_SYMBOL(s_lbrace, "'{' to open asm block", "asm block");
+  GUARD(p);
+  ++p->pos; // consume {
+
+  asm_scratch_t scratch = { 0 };
+
+  while (CUR_TOK.type != s_rbrace && CUR_TOK.type != t_eof) {
+    EXPECT_SYMBOL(l_identifier, "opcode mnemonic", "asm block");
+    if (p->err) { free(scratch.items); return NULL; }
+
+    asm_scratch_push(&scratch, CUR_TOK.string_val, p);
+    if (p->err) { free(scratch.items); return NULL; }
+    ++p->pos;
+  }
+
+  n->asm_block = asm_scratch_commit(&scratch, &p->arena);
+  free(scratch.items);
+
+  EXPECT_SYMBOL(s_rbrace, "'}' to close asm block", "asm block");
+  GUARD(p);
+  ++p->pos; // consume }
+
+  // if next token is a semicolon, consume it. This is optional
+  if (CUR_TOK.type == s_semicolon) ++p->pos;
+
+  return n;
+}
+
+
 static node_t *parse_stmt(parser_t *p) {
   switch (CUR_TOK.type) {
+    case Kw_asm: return parse_asm_block(p);
     case Kw_struct: return parse_struct_decl(p);
 
     case Kw_return: {

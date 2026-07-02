@@ -387,6 +387,11 @@ OP_EMITTER_NO_ARG(phx, 0xDA)
 OP_EMITTER_NO_ARG(plx, 0xFA)
 OP_EMITTER_NO_ARG(phy, 0x5A)
 OP_EMITTER_NO_ARG(ply, 0x7A)
+OP_EMITTER_NO_ARG(cli, 0x58)
+OP_EMITTER_NO_ARG(sei, 0x78)
+OP_EMITTER_NO_ARG(nop, 0xEA)
+OP_EMITTER_NO_ARG(wai, 0xCB)
+OP_EMITTER_NO_ARG(stp, 0xDB)
 
 
 OP_EMITTER_ABS(jmp_abs, 0x4C)
@@ -404,6 +409,48 @@ OP_EMITTER_ABS(sbc_abs, 0xED)
 #undef OP_EMITTER_SINGLE_ARG
 #undef OP_EMITTER_NO_ARG
 #undef OP_EMITTER_ABS
+
+
+// asm {} blocks support bare no-operand mnemonics only (no addressing modes,
+// operands, or labels yet - see docs/roadmap.md). This table is the single
+// source of truth for which mnemonics are valid; unrecognized ones are a
+// codegen-stage error rather than a parser/analyzer one, since this is the
+// only place that actually knows the opcode set.
+typedef struct {
+  const char *mnemonic;
+  void (*emit)(emitter_t *e);
+} asm_no_arg_op_t;
+
+static const asm_no_arg_op_t ASM_NO_ARG_OPS[] = {
+  { "CLI", cli }, { "SEI", sei }, { "NOP", nop }, { "WAI", wai }, { "STP", stp },
+  { "RTS", rts }, { "RTI", rti }, { "CLC", clc }, { "SEC", sec },
+  { "TAX", tax }, { "DEX", dex },
+  { "PHA", pha }, { "PLA", pla },
+  { "PHX", phx }, { "PLX", plx },
+  { "PHY", phy }, { "PLY", ply },
+};
+#define ASM_NO_ARG_OP_COUNT (sizeof(ASM_NO_ARG_OPS) / sizeof(ASM_NO_ARG_OPS[0]))
+
+// Emits an `asm {}` block: looks up each mnemonic in ASM_NO_ARG_OPS and calls
+// its emitter directly. Returns 0 (codegen failure) on an unrecognized mnemonic.
+static int emit_asm_block(emitter_t *e, tac_instr_t *instruction) {
+  for (unsigned i = 0; i < instruction->asm_mnemonic_count; i++) {
+    const char *mnemonic = instruction->asm_mnemonics[i];
+    unsigned found = 0;
+    for (unsigned j = 0; j < ASM_NO_ARG_OP_COUNT; j++) {
+      if (strcmp(mnemonic, ASM_NO_ARG_OPS[j].mnemonic) == 0) {
+        ASM_NO_ARG_OPS[j].emit(e);
+        found = 1;
+        break;
+      }
+    }
+    if (!found) {
+      fprintf(stderr, "codegen: unrecognized asm mnemonic '%s'\n", mnemonic);
+      return 0;
+    }
+  }
+  return 1;
+}
 
 
 // Emit JSR with a placeholder address and queue a fixup for later resolution.
@@ -551,7 +598,7 @@ static void emit_vectors(emitter_t *e) {
 
 // Emit the reset stub: SEI, CLD, stack init, frame pointer init.
 static void emit_bootstrap(emitter_t *e) {
-  EMIT(0x78); // SEI
+  sei(e);
   EMIT(0xD8); // CLD
 
   ldx_imm(e, 0XFF); // Init hardware stack
@@ -1456,6 +1503,11 @@ static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
           }
           break;
         }
+
+        case TAC_ASM:
+          if (!emit_asm_block(e, instruction))
+            return 0;
+          break;
 
         default:
           fprintf(stderr, "codegen: unhandled TAC op %d\n", instruction->op);

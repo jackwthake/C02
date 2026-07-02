@@ -7,6 +7,34 @@ Version numbers increment loosely rather than following strict
 [Semantic Versioning](https://semver.org/) - PATCH bumps have carried new
 features as often as bug fixes.
 
+## [v1.0.2] 2026-07-02
+
+- **`asm { }` inline assembly blocks** — a statement-level escape hatch that
+  emits bare opcode mnemonics verbatim: `CLI`, `SEI`, `NOP`, `WAI`, `STP`,
+  `RTS`, `RTI`, `CLC`, `SEC`, `TAX`, `DEX`, `PHA`/`PLA`, `PHX`/`PLX`,
+  `PHY`/`PLY` — no operands, addressing modes, or labels yet (that's later
+  work, tracked in `docs/roadmap.md`). Threaded through the full pipeline as
+  a first-class citizen rather than a special case: `NODE_ASM_BLOCK` in the
+  parser, a no-op in the analyzer (mnemonics aren't C02 expressions, so
+  there's nothing to type-check), `TAC_ASM` in the IR (serializable through
+  `-c`/`.o`, bumping `IR_VERSION` to 4), and a codegen mnemonic table that's
+  the single source of truth for which opcodes are valid — an unrecognized
+  mnemonic is a codegen-stage error, since codegen is the only place that
+  actually owns the opcode set;
+
+- **`__enable_interrupts()` builtin** — closes a real gap surfaced while
+  testing the v1.0.1 interrupt work: the bootstrap emits `SEI` once and
+  nothing ever emitted the matching `CLI`, so the I flag stayed set forever
+  and a `interrupt`-qualified `irq()` handler, despite being fully correct,
+  could never actually be invoked by hardware (NMI is unaffected — it's
+  non-maskable). Implemented as a real function body injected by the driver
+  alongside `__heap_start`/`__memory_top` (`fn __enable_interrupts() -> void
+  { asm { CLI } }`), not a special-cased builtin — once `asm{}` existed as a
+  general feature this needed zero special-casing anywhere else. Verified
+  live in a py65 emulation: I flag reads `true` before the call and `false`
+  after, and firing a real IRQ afterward invokes the handler and returns
+  cleanly, where before it would have been silently masked forever;
+
 ## [v1.0.1] 2026-07-01
 
 - **`interrupt` function qualifier** — a function can now be declared

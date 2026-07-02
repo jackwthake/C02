@@ -16,6 +16,7 @@
   X(Kw_break,         "break"      , 0)        \
   X(Kw_continue,      "continue"   , 0)        \
   X(Kw_interrupt,     "interrupt"  , 0)        \
+  X(Kw_asm,           "asm"        , 0)        \
   X(Kw_for,           "for"        , 0)        \
   X(t_u8,             "u8"         , 0)        \
   X(t_i8,             "i8"         , 0)        \

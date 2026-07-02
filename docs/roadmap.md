@@ -64,11 +64,15 @@ Nothing on the active roadmap depends on these — revisit opportunistically.
 
 ## v1.1 — Interrupt Handlers & Inline Assembly
 
-Two independent features bundled into one milestone: hardware interrupt
-support, and a minimal inline-assembly escape hatch. Turned out inline asm
-wasn't a prerequisite for interrupts after all — register save/restore is
-handled natively in codegen with real 65C02 push/pull instructions, no
-`asm {}` block required. That feature is now independent, unstarted work.
+Two features bundled into one milestone, and more coupled than the original
+plan assumed. Register save/restore didn't need inline asm after all —
+codegen emits `PHA`/`PHX`/`PHY`/`RTI` natively. But *enabling* interrupts in
+the first place did: the bootstrap emits `SEI` once and nothing ever emits
+the matching `CLI`, so an `interrupt`-qualified `irq()` handler — despite
+being fully correct — could never actually be invoked by hardware (`nmi()`
+is unaffected; NMI is non-maskable). Closing that gap needed *some* way to
+emit a bare `CLI`, which is what actually motivated shipping a first,
+deliberately small slice of `asm { }` now instead of later.
 
 ### v1.1 Feature Checklist
 
@@ -124,6 +128,10 @@ fn irq() interrupt -> void {
 - [x] **Test coverage** — parser/IR golden dumps (`parser_interrupt.c02`,
       `ir_interrupt.c02`) plus five emulator tests covering register
       preservation, vector gating, and both invalid-signature warnings.
+- [x] **`irq()` masking** — IRQ is maskable and the bootstrap leaves it
+      masked (`SEI`) forever by default; call `__enable_interrupts()` (see
+      Inline assembly, below) before an `irq()` handler can actually fire.
+      `nmi()` needs no such call.
 
 **ZP conflict note (resolved by the existing calling convention):** the
 original concern here was that interrupt handlers and the code they
@@ -139,35 +147,58 @@ addresses, so a deep call chain interrupted by a handler with many locals
 could in principle exhaust the 256-byte stack. There's no overflow
 detection for this yet.
 
-#### Inline assembly *(not started)*
+#### Inline assembly *(partial — bare mnemonics only)*
 
 ```c
 fn wait() -> void {
   asm {
     SEI
-    WAI
+    NOP
     CLI
-  }
-}
-
-fn delay() -> void {
-  asm {
-    LDX #$FF
-  loop:
-    DEX
-    BNE loop
   }
 }
 ```
 
-- [ ] Parse `asm { ... }` blocks: opcode mnemonics with addressing modes,
-      no operand constraints — the user writes literal addresses, not C02
-      variable names.
-- [ ] Codegen parses each line, looks up the opcode/mode, and emits bytes
-      through the existing `EMIT()` macro.
-- [ ] No interaction with the ZP map or register allocator — the user is
-      responsible for not stomping on compiler-managed ZP slots.
-- [ ] Labels within `asm {}` blocks are local to the block.
+- [x] **`asm { }` parses as a statement** (`NODE_ASM_BLOCK`) — a sequence of
+      bare opcode mnemonics, one per token, no operands/addressing
+      modes/labels in this slice. Deliberately scoped down from the
+      original plan (below) to unblock `__enable_interrupts()` without
+      first designing the harder operand/addressing-mode syntax.
+- [x] **Threaded through the full pipeline, not special-cased** — the
+      analyzer no-ops it (mnemonics aren't C02 expressions, nothing to
+      type-check), IR lowers it to `TAC_ASM` (serializable through `-c`/
+      `.o` — `IR_VERSION` bumped to 4 for the new field), and codegen emits
+      each mnemonic via a `{name, emit_fn}` table that's the single source
+      of truth for which opcodes are valid. An unrecognized mnemonic is a
+      codegen-stage error, since codegen is the only place that actually
+      owns the opcode set.
+- [x] **Mnemonic set**: `CLI`, `SEI`, `NOP`, `WAI`, `STP`, `RTS`, `RTI`,
+      `CLC`, `SEC`, `TAX`, `DEX`, `PHA`/`PLA`, `PHX`/`PLX`, `PHY`/`PLY` —
+      every opcode that takes no operand on the 65C02.
+- [x] **`__enable_interrupts()` builtin** — `fn __enable_interrupts() ->
+      void { asm { CLI } }`, injected by the driver alongside
+      `__heap_start`/`__memory_top`, not special-cased anywhere else (once
+      `asm { }` exists as a real feature, this is just an ordinary
+      function). This is the actual reason `asm { }` shipped now rather
+      than later — see the milestone intro above. Verified live in a py65
+      emulation: the I flag reads `true` before the call and `false` after,
+      and a real IRQ fired afterward invokes the handler and returns
+      cleanly.
+- [ ] **Operands and addressing modes** (`LDA #$05`, `STA $6000`) — not
+      started; the harder design problem is parsing raw operand syntax
+      without colliding with the existing token grammar.
+- [ ] **Labels within `asm { }` blocks** — depends on operand support
+      existing first (a branch needs a target):
+      ```c
+      fn delay() -> void {
+        asm {
+          LDX #$FF
+        loop:
+          DEX
+          BNE loop
+        }
+      }
+      ```
 
 #### Future scope (post-v1.1, not scoped yet)
 

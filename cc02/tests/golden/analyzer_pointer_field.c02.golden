@@ -1,3 +1,4 @@
+  [36m__enable_interrupts[0m function () -> void
   [36mmain      [0m function () -> void
   [36m__memory_top[0m variable : u16
   [36m__heap_start[0m variable : u16

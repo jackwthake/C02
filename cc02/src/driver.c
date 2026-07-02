@@ -206,25 +206,40 @@ static int run_codegen(params_t *params, compiler_t *c, timing_t *t) {
 }
 
 
+// TODO: this will not be necessary when we have multi-file linking
+//       and thus a standard library to link to.
+static int bake_externs(compiler_t *c) {
+  const char *externs =
+    "\ndecl u16 __heap_start;\ndecl u16 __memory_top;\n"
+    "fn __enable_interrupts() -> void {\n  asm {\n    CLI\n  }\n}\n";
+  size_t extern_length = strlen(externs);
+
+  c->source_size += (long)extern_length;
+  char *new_source = realloc(c->source_code, (size_t)c->source_size);
+  if (!new_source) {
+    compiler_cleanup(c);
+    return TOKEN_ERROR_RET_CODE;
+  }
+
+  c->source_code = new_source;
+  strcat(c->source_code, externs);
+  return 0;
+}
+
+
 int run_compiler(params_t *params, timing_t *timing) {
   compiler_t c = {0};
 
   int status = load_source(params, &c, timing);
 
   if (status == 0 && !params->is_input_bin) {
-    // inject compiler globals;
-    const char *externs = "\ndecl u16 __heap_start;\ndecl u16 __memory_top;\n";
-    size_t extern_length = strlen(externs);
-
-    c.source_size += (long)extern_length;
-    char *new_source = realloc(c.source_code, (size_t)c.source_size);
-    if (!new_source) {
+    // inject compiler globals and builtins;
+    status = bake_externs(&c);
+    if (status != 0) {
+      fprintf(stderr, "Failed to bake externs into source code.\n");
       compiler_cleanup(&c);
-      return TOKEN_ERROR_RET_CODE;
+      return status;
     }
-    
-    c.source_code = new_source;
-    strcat(c.source_code, externs);
 
     status = run_frontend(params, &c, timing);
   }

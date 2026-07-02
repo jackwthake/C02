@@ -801,6 +801,12 @@ static void lower_stmt(ir_gen_t *gen, cfg_t *cfg, node_t *node) {
           .label = gen->loop_stack[gen->loop_depth - 1].break_label });
       break;
 
+    case NODE_ASM_BLOCK:
+      emit(gen, cfg, (tac_instr_t){ .op = TAC_ASM,
+        .asm_mnemonics = node->asm_block.items,
+        .asm_mnemonic_count = node->asm_block.count });
+      break;
+
     default:
       // expression statements (bare function calls like lcd_init())
       lower_expr(gen, cfg, node);

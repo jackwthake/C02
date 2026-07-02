@@ -81,6 +81,7 @@ static const char *node_kind_name(node_kind_t kind) {
     case NODE_PROGRAM:      return "TranslationUnitDecl";
     case NODE_CONTINUE:     return "ContinueStmt";
     case NODE_BREAK:        return "BreakStmt";
+    case NODE_ASM_BLOCK:    return "AsmBlockStmt";
     default:                return "Unknown";
   }
 }
@@ -149,6 +150,13 @@ static void print_ast_label(node_t *node) {
     case NODE_CONTINUE:
     case NODE_BREAK:
       printf("%s", node_kind_name(node->kind));
+      break;
+    case NODE_ASM_BLOCK:
+      printf("%s ", node_kind_name(node->kind));
+      for (unsigned i = 0; i < node->asm_block.count; ++i) {
+        if (i > 0) printf(", ");
+        printf("%s", node->asm_block.items[i]);
+      }
       break;
     case NODE_FUNCTION:
       printf("%s %s(", node_kind_name(node->kind), node->function.name ? node->function.name : "<anon>");
@@ -388,6 +396,7 @@ static void print_ast_(node_t *node, int is_last, const char *prefix) {
 
     case NODE_BREAK:
     case NODE_CONTINUE:
+    case NODE_ASM_BLOCK:
       break;
 
     case NODE_PROGRAM:

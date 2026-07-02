@@ -118,6 +118,9 @@ typedef enum {
 
   // type conversion
   TAC_CAST,         // dst = (type)src1
+
+  // inline assembly
+  TAC_ASM,          // asm { MNEMONIC ... } - emit each mnemonic verbatim
 } tac_op_t;
 
 
@@ -136,6 +139,9 @@ typedef struct {
   char *field_name;           // TAC_FIELD_LOAD, TAC_FIELD_STORE
 
   type_t cast_type;           // TAC_CAST
+
+  char **asm_mnemonics;       // TAC_ASM (arena-allocated array of token strings)
+  unsigned asm_mnemonic_count; // TAC_ASM
 } tac_instr_t;
 
 

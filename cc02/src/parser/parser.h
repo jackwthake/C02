@@ -56,6 +56,7 @@ typedef enum {
   NODE_BLOCK,
   NODE_BREAK,
   NODE_CONTINUE,
+  NODE_ASM_BLOCK,       // asm { MNEMONIC ... } - bare opcodes, no operands
 
   // top-level
   NODE_FUNCTION,
@@ -80,6 +81,11 @@ typedef struct {
   node_t   **items;
   unsigned   count;
 } node_list_t;
+
+typedef struct {
+  char   **items;         // mnemonic strings, pointing into the token array
+  unsigned count;
+} asm_line_list_t;
 
 typedef struct {
   type_t  type;
@@ -190,6 +196,8 @@ struct node_t {
     } for_stmt;                           // NODE_FOR
 
     node_list_t block;                    // NODE_BLOCK
+
+    asm_line_list_t asm_block;             // NODE_ASM_BLOCK
 
     // --- top-level ---
     struct {

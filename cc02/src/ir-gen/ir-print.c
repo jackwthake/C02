@@ -185,6 +185,15 @@ static void print_instr(tac_instr_t *ins) {
       printf(")");
       print_operand(ins->src1);
       break;
+
+    case TAC_ASM:
+      printf("asm { ");
+      for (unsigned i = 0; i < ins->asm_mnemonic_count; i++) {
+        if (i > 0) printf("; ");
+        printf("%s", ins->asm_mnemonics[i]);
+      }
+      printf(" }");
+      break;
   }
   printf("\n");
 }

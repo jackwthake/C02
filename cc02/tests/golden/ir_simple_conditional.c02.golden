@@ -20,3 +20,9 @@ block0:
   return
 }
 
+fn __enable_interrupts() -> void {
+block0:
+  asm { CLI }
+  return
+}
+

@@ -672,6 +672,11 @@ static void analyze_stmt(analyzer_t *a, node_t *node) {
         EMIT_PLAIN_ERROR(ERR_CONTINUE_OUTSIDE_LOOP, node->loc);
       break;
 
+    case NODE_ASM_BLOCK:
+      // Bare opcode mnemonics, not C02 expressions - nothing to type-check.
+      // Codegen owns the table of which mnemonics are actually valid.
+      break;
+
     default:
       resolve_expr_type(a, node);
       break;

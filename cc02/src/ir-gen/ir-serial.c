@@ -17,7 +17,7 @@
  */
 
 #define IR_MAGIC   0x43303249  /* "C02I" */
-#define IR_VERSION 3
+#define IR_VERSION 4
 
 
 // ----------------------------------------------------------------
@@ -79,6 +79,10 @@ static int write_instr(FILE *f, tac_instr_t *ins) {
   }
   if (!write_str(f, ins->field_name)) return 0;
   if (!write_type(f, ins->cast_type)) return 0;
+  if (!write_u32(f, ins->asm_mnemonic_count)) return 0;
+  for (unsigned i = 0; i < ins->asm_mnemonic_count; i++) {
+    if (!write_str(f, ins->asm_mnemonics[i])) return 0;
+  }
   return 1;
 }
 
@@ -263,6 +267,15 @@ static int read_instr(FILE *f, arena_t *a, tac_instr_t *ins) {
   }
   if (!read_str(f, a, &ins->field_name)) return 0;
   if (!read_type(f, a, &ins->cast_type)) return 0;
+  if (!read_u32(f, &ins->asm_mnemonic_count)) return 0;
+  if (ins->asm_mnemonic_count > 0) {
+    ins->asm_mnemonics = arena_alloc(a, sizeof(char*) * ins->asm_mnemonic_count);
+    for (unsigned i = 0; i < ins->asm_mnemonic_count; i++) {
+      if (!read_str(f, a, &ins->asm_mnemonics[i])) return 0;
+    }
+  } else {
+    ins->asm_mnemonics = NULL;
+  }
   return 1;
 }
 

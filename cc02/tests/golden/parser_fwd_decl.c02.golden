@@ -4,4 +4,7 @@
    |- FunctionDecl main() -> void
    |  `- CompoundStmt
    |- ForwardDecl __heap_start : u16
-   `- ForwardDecl __memory_top : u16
+   |- ForwardDecl __memory_top : u16
+   `- FunctionDecl __enable_interrupts() -> void
+      `- CompoundStmt
+         `- AsmBlockStmt CLI

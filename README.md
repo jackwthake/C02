@@ -50,7 +50,7 @@
 
 ## Current Status & Limitations
 
-C02 has reached its **v1.0 milestone** — the complete single-file language, per `docs/roadmap.md`'s checklist. The **complete frontend** (tokenizer, parser, semantic analyzer), **IR generation**, and **code generator** are functional and tested — non-trivial programs compile to valid 65C02 ROMs and run on real hardware without hitting an "unimplemented" wall. Development continues toward v1.1+ (interrupt handlers, inline assembly, multi-file linking, optimization passes — see `docs/roadmap.md`).
+C02 has reached its **v1.0 milestone** — the complete single-file language, per `docs/roadmap.md`'s checklist. The **complete frontend** (tokenizer, parser, semantic analyzer), **IR generation**, and **code generator** are functional and tested — non-trivial programs compile to valid 65C02 ROMs and run on real hardware without hitting an "unimplemented" wall. v1.1 (interrupt handlers, inline assembly) is underway — both now work in their initial, scoped-down form (see below). Development continues toward multi-file linking and optimization passes (see `docs/roadmap.md`).
 
 #### What works today
 
@@ -69,9 +69,12 @@ C02 has reached its **v1.0 milestone** — the complete single-file language, pe
 - **String literals:** `u8 *msg = "...";` works both at global scope and as a local variable initializer inside a function body. String data is placed once in the ROM data section with backpatching fixups.
 - **Compiler implicit globals:** `__heap_start` and `__memory_top` are injected automatically as `decl u16` globals and initialized during the bootstrap. `__heap_start` holds the first free RAM byte after all user globals *and* the compiler implicit globals themselves are allocated (each takes 2 bytes of RAM) — useful as a base pointer for bump allocators. `__memory_top` holds the top of the general-purpose RAM region (`$3FFF`). Both are available in any `.c02` file without a manual `decl`.
 - **Function calls:** full `JSR`/`RTS` ABI with up to 8 parameters passed through the `$EF–$FE` fixed-slot ABI zone. A callee-saves convention (PHA all ZP slots on entry, PLA in reverse on return) preserves caller locals across calls. Bounded recursion is supported — stack depth is limited to ≈256 / (function ZP byte count).
+- **Interrupt handlers:** the `interrupt` function qualifier marks `nmi()`/`irq()` as hardware interrupt handlers — codegen emits `RTI` instead of `RTS`, automatically saves/restores A/X/Y around the handler body, and wires the NMI/IRQ vector table (`$FFFA`/`$FFFE`) to the handler's address. A qualified function with the wrong name, a non-`void` return, or parameters prints a warning and compiles as an ordinary function instead of silently miscompiling.
+- **Inline assembly (`asm { }`):** bare no-operand opcode mnemonics emitted verbatim as a statement. Backs the compiler's own `__enable_interrupts()` builtin (injected like `__heap_start`/`__memory_top`), which must be called before a maskable `irq()` handler can actually fire — `NMI` is non-maskable and needs no such call.
 
 #### Not yet implemented
 
+- **Inline assembly operands, addressing modes, and labels** — `asm { }` blocks currently support only bare no-operand mnemonics (`CLI`, `SEI`, `NOP`, `WAI`, `STP`, `RTS`, `RTI`, `CLC`, `SEC`, `TAX`, `DEX`, `PHA`/`PLA`, `PHX`/`PLX`, `PHY`/`PLY`) — no operands (`LDA #$05`), addressing modes, or in-block labels yet.
 - **Arrays** — no array type or subscript syntax (`a[i]`). Use pointer arithmetic (`*(ptr + i)`) in the meantime.
 - **Compound bitwise/shift assignment** — `&=`, `|=`, `^=`, `<<=`, `>>=` are not yet supported; the arithmetic compound forms (`+=`, `-=`, `*=`, `/=`, `%=`) work.
 - **Short-circuit `&&`/`||` outside boolean context** — short-circuit evaluation works correctly when used directly as a loop/if condition; using the result as a plain value in other expression contexts is not yet supported.
@@ -168,6 +171,19 @@ fn name(u8 a, u16 *b) -> void {
 
 - Parameter list is `(type name, type name, ...)`, can be empty: `()`.
 - Return type is required, introduced with `->`.
+
+#### Interrupt Functions
+
+```c
+fn irq() interrupt -> void {
+  PORTB = 0xFF;
+}
+```
+
+- The `interrupt` qualifier sits between the parameter list and `->`, and marks a function as a hardware interrupt handler.
+- Must be named `nmi` or `irq`, return `void`, and take no parameters — those are the only two names with a corresponding vector (`$FFFA` / `$FFFE`), and the hardware never populates the ABI zone for an interrupt call. A qualified function that doesn't satisfy this compiles anyway, but as an ordinary function (with a warning), not as a handler.
+- `RTI`, and A/X/Y save/restore around the handler body, are emitted automatically — no manual register bookkeeping needed.
+- `irq()` is maskable — call `__enable_interrupts()` before it can actually fire. `nmi()` is non-maskable and needs no such call.
 
 #### Registers (`reg`)
 
@@ -266,6 +282,22 @@ for (u8 i = 0; i < 10; i += 1) {
 // function call statement
 do_thing(a, b);
 ```
+
+#### Inline Assembly (`asm`)
+
+```c
+fn wait() -> void {
+  asm {
+    SEI
+    NOP
+    CLI
+  }
+}
+```
+
+- `asm { }` is a statement: a sequence of bare opcode mnemonics, emitted verbatim, one per line.
+- No operands, addressing modes, or labels yet — only mnemonics that take no argument on the 65C02 (`CLI`, `SEI`, `NOP`, `WAI`, `STP`, `RTS`, `RTI`, `CLC`, `SEC`, `TAX`, `DEX`, `PHA`/`PLA`, `PHX`/`PLX`, `PHY`/`PLY`).
+- The compiler's own `__enable_interrupts()` builtin is implemented this way (`fn __enable_interrupts() -> void { asm { CLI } }`) — once `asm { }` exists as a language feature, it needs no special-casing anywhere else.
 
 ### Expressions
 
