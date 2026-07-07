@@ -1,8 +1,0 @@
-// Gap B/E: integer literals that don't fit any supported type are errors. The
-// analyzer used to return its error sentinel without emitting a diagnostic, so
-// these were silently swallowed. Covers a too-large positive and negative.
-
-fn main() -> void {
-  u16 big = 70000;                // > 65535
-  i16 small = -70000;             // < -32768
-}

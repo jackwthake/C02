@@ -1,28 +1,34 @@
-.PHONY: all clean cc02 c02-objdump test update-tests
+.PHONY: all clean c02-frontend c02-as c02-objdump
 
-all: cc02 c02-objdump
+BIN_DIR = bin
 
-cc02: cc02/
-	@printf '==> cc02\n'
-	@$(MAKE) -C cc02
+all: c02-frontend c02-as c02-objdump $(BIN_DIR)/c02c
+
+# Install the driver script alongside the binaries it invokes.
+$(BIN_DIR)/c02c: c02c | $(BIN_DIR)
+	@printf '\n==> c02c\n'
+	install -m 755 c02c $@
+
+$(BIN_DIR):
+	mkdir -p $@
+
+c02-frontend: c02-frontend
+	@printf '==> c02-frontend\n'
+	@$(MAKE) -C c02-frontend
+
+c02-as: c02-as/
+	@printf '==> c02-as\n'
+	@$(MAKE) -C c02-as
 
 c02-objdump: c02-objdump/
 	@printf '\n==> c02-objdump\n'
 	@$(MAKE) -C c02-objdump
 
-test: cc02
-	@printf '==> build cc02 smoke tests\n'
-	@$(MAKE) -C cc02/tests/smoke
-	@printf '\n\n'
-	@python3 cc02/tests/test.py
-	@printf '\n'
-	@python3 cc02/tests/test.py --cloc
-
-update-tests: cc02
-	python3 cc02/tests/test.py --update
-
 clean:
-	@printf '\n==> cc02 clean\n'
-	@$(MAKE) -C cc02 clean
+	@printf '==> c02-frontend clean\n'
+	@$(MAKE) -C c02-frontend clean
+	@printf '==> c02-as clean\n'
+	@$(MAKE) -C c02-as clean
 	@printf '\n==> c02-objdump clean\n'
 	@$(MAKE) -C c02-objdump clean
+	rm -f $(BIN_DIR)/c02c

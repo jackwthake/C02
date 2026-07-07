@@ -8,3 +8,11 @@ bin/
 *.bin
 __pycache__/
 compile_commands.json
+
+# Haskell / cabal (c02-frontend)
+dist-newstyle/
+dist/
+.ghc.environment.*
+cabal.project.local
+cabal.project.local~
+*.hi

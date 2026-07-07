@@ -1,4 +1,0 @@
-decl fn send_byte(u8 b) -> void;
-fn send_byte(u8 b) -> void {}
-
-fn main() -> void {}

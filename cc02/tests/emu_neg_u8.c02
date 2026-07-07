@@ -1,7 +1,0 @@
-reg u8 PORTB @ 0x6000;
-
-fn main() -> void {
-  i8 x = 42;
-  i8 y = -x;
-  PORTB = y;
-}

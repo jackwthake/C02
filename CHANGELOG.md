@@ -7,6 +7,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/) - while
 the project is in `0.x`, breaking changes may land in MINOR releases; PATCH
 releases are reserved for bug fixes only.
 
+## [Unreleased]
+
+A ground-up re-architecture of the compiler: the monolithic `cc02` binary is
+being split into a multi-stage toolchain — a Haskell **frontend**
+(lexer/parser/analysis/IR generation), a planned OCaml **linker/optimizer**,
+and a C **backend** (`c02-as`) — coordinated by a `c02c` driver. The serialized
+IR object (`.o`) is the contract between stages. The v1.0 language and its 6502
+ROM output are unchanged; what changes is how the compiler is built and invoked.
+
+### Added
+
+- **`c02-as` — standalone code-generation backend.** Consumes a serialized IR
+  object file and emits a 32K 6502 ROM, with no dependency on the frontend,
+  AST, or symbol table. Lifted from `cc02`'s IR-object → codegen path (the one
+  part of the old toolchain that survives the rewrite) and trimmed to a
+  self-contained module: `ir.h` no longer pulls in the parser/analyzer, the
+  serializer keeps only its read half, and the loaded-IR context drops all
+  generation-side state. Output is verified byte-identical to `cc02` across the
+  example programs and the struct/field regression cases;
+
+- **Multiple `c02-as` build variants** — `make` (release, `-O3`), `make debug`
+  (`-O0 -ggdb`), and `make sanitize` (`-ggdb -fsanitize=address,undefined`),
+  each in its own build directory so the three coexist without clobbering each
+  other. The sanitized build runs clean (ASan + UBSan, leak detection on) over
+  the full example set;
+
+- **`c02-frontend` — Haskell frontend scaffold.** A `cabal` project that will
+  host the rewritten lexer, parser, semantic analysis, and IR generation.
+  Currently a stub that does not yet parse arguments or emit an object;
+
+- **`c02c` — compiler driver.** A script orchestrating the pipeline
+  (frontend → link/optimize → codegen), installed into `bin/` alongside the
+  binaries it invokes and able to resolve them whether run from `bin/` or the
+  repo root. The codegen stage is already wired for real, so `c02c prog.o -o
+  prog.bin` produces a ROM today; the frontend → codegen `.o` handoff is a TODO
+  pending the frontend;
+
+### Changed
+
+- **The IR object format is now a cross-language wire contract.** With the
+  frontend moving to Haskell, `ir-serial.c`'s read layout (magic, version,
+  length-prefixed strings, native endianness and integer widths) is the
+  interface any writer must match byte-for-byte, rather than an internal
+  same-binary detail. Documented as such in `ir.h` and `ir-serial.c`;
+
+- **Top-level build and CI rewired.** `make` now builds `c02-frontend`,
+  `c02-as`, and `c02-objdump` and installs `c02c`; the `cc02`-only `test` /
+  `update-tests` Makefile targets and the CI compile-examples step are gone;
+
+- **`.gitignore`** — added Haskell/cabal artifacts (`dist-newstyle/`, GHC
+  environment files, `cabal.project.local`, `*.hi`);
+
+### Removed
+
+- **`cc02` — the monolithic single-file compiler.** Its frontend
+  (lexer/parser/analyzer/IR generator) is being rewritten in Haskell and its
+  backend extracted into `c02-as`, so the combined binary and its test suite
+  are removed from this tree. It remains available in the pre-rewrite `main`
+  history;
+
 ## [v1.0.0] 2026-07-01
 
 - **v1.0 milestone: Complete Single-File Language** — every must-have and

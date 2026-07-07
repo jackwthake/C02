@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+#
+# c02c - the c02 compiler driver.
+#
+# Orchestrates the full pipeline: c02 source -> frontend -> link/optimize
+# -> codegen -> 6502 ROM.
+#
+# This is a stub. The Haskell frontend does not yet accept arguments or emit
+# an IR object, so the frontend -> codegen handoff is still a TODO. The
+# backend (codegen) already works, so any arguments passed to c02c are handed
+# straight to it for now - e.g. `c02c prog.o -o prog.bin` runs codegen for real.
+#
+set -euo pipefail
+
+# Locate the compiled binaries. `make` installs c02c into bin/ next to
+# c02-frontend and c02-as, so they normally sit alongside this script. When
+# running the source copy from the repo root instead, fall back to ./bin.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Test for a regular file, not just -x: at the repo root, c02-as/ and
+# c02-frontend/ are the source directories (and directories are "executable").
+if [[ -f "$SCRIPT_DIR/c02-as" && -x "$SCRIPT_DIR/c02-as" ]]; then
+  BIN_DIR="$SCRIPT_DIR"
+elif [[ -f "$SCRIPT_DIR/bin/c02-as" && -x "$SCRIPT_DIR/bin/c02-as" ]]; then
+  BIN_DIR="$SCRIPT_DIR/bin"
+else
+  echo "c02c: cannot find c02 binaries in $SCRIPT_DIR or $SCRIPT_DIR/bin (run 'make' first)" >&2
+  exit 1
+fi
+
+FRONTEND="$BIN_DIR/c02-frontend"
+CODEGEN="$BIN_DIR/c02-as"
+
+for tool in "$FRONTEND" "$CODEGEN"; do
+  if [[ ! -x "$tool" ]]; then
+    echo "c02c: missing $tool (run 'make' first)" >&2
+    exit 1
+  fi
+done
+
+# --- 1. frontend: c02 source -> IR object ----------------------------------
+# TODO: forward "$@" (the .c02 input and -o output) once the frontend parses
+# arguments and writes a .o. For now it ignores them and just runs.
+"$FRONTEND"
+
+# --- 2. link + optimize (future OCaml pass) --------------------------------
+# TODO: merge IR objects and run optimization passes here.
+
+# --- 3. codegen: IR object -> 6502 ROM -------------------------------------
+# TODO: consume the frontend's emitted .o. Until that exists, run the backend
+# directly on whatever was passed to c02c (e.g. an existing IR object).
+if [[ $# -gt 0 ]]; then
+  "$CODEGEN" "$@"
+fi
