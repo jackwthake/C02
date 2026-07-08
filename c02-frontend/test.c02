@@ -1,0 +1,10 @@
+reg u8 PORTB @ 0x6000;
+reg u8 PORTA @ 0x6001;
+reg u8 DDRB @ 0x6002;
+reg u8 DDRA @ 0x6003;
+
+u8 x = 69;
+u16 y = 0xFF;
+u8 z = 0b00001111;
+
+fn main () -> void{}
