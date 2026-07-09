@@ -45,7 +45,7 @@ Severity legend:
 | [G-1](#g-1-unterminated-block-comment-silently-swallowed) | G | Executed | Unterminated `/* ` swallows to EOF, no lexer error | [§1.5](SPEC.md#15-comments) |
 | [G-2](#g-2-decl-fn--interrupt-drops-the-qualifier) | G | Executed | `decl fn ... interrupt` parses but the qualifier is unrepresentable in the AST | [§4.6](SPEC.md#46-forward-declarations-decl) |
 | [G-3](#g-3-for-init-cannot-reuse-an-existing-variable) | G | Executed | `for (i = 0; ...)` reusing an existing var is a parse error | [§5.5](SPEC.md#55-for-loop-clauses) |
-| [G-4](#g-4-for-init-and-block-statements-disambiguate-differently) | G | Source | `for`-init and block-statement disambiguation use different mechanisms for the same shape | [§5.5](SPEC.md#55-for-loop-clauses), [§7.1](SPEC.md#71-statementdeclaration-disambiguation) |
+| [G-4](#g-4-block-statements-disambiguate-by-shape-not-the-prescan) | G | Source | `cc02` disambiguates block/top-level statements by shape, not the prescan §7.1 now requires | [§7.1](SPEC.md#71-statementdeclaration-disambiguation), [§5.5](SPEC.md#55-for-loop-clauses) |
 | [G-5](#g-5-struct-name-shadowing-misparses-a-cast) | G | Source | A local var shadowing a struct name misparses `(Name) - 1` as a cast | [§6.6](SPEC.md#66-casts-vs-grouped-expressions) |
 | [G-6](#g-6-binary-literals-undocumented-upstream) | G | Source | `0b`/`0B` literals exist, undocumented upstream (informational) | [§1.3](SPEC.md#13-integer-literals) |
 | [P0-1](#p0-1-nested-struct-field-writes-are-lost) | P0 | Executed (bug_test.py) | Writes to nested struct fields never reach the object | n/a (codegen) |
@@ -129,21 +129,32 @@ fresh declaration (`for (u8 i = 0; ...)`) or an assignment-free expression
 is legal in that slot. The incrementer clause, by contrast, does support
 `=`/compound-assign.
 
-### G-4: `for`-init and block statements disambiguate differently
+### G-4: Block statements disambiguate by shape, not the prescan
 
-The identical token shape `a * b` is resolved by two different mechanisms
-depending on position:
-- As a block statement, disambiguation is purely shape-based (skip `*`
-  tokens, check for a following identifier) — `a * b;` **always** parses as
-  declaring `b : a*`, regardless of whether `a` is a real type.
-- As a `for`-init clause, disambiguation instead uses the whole-file
-  struct-name prescan (same mechanism as cast disambiguation, §6.6/G-5) —
-  `for (a * b; ...)` is a **multiplication expression** unless `a` is a
-  known struct name.
+`SPEC.md` §7.1 now specifies that block- and top-level statement
+disambiguation uses the same whole-file struct-name prescan as casts (§6.6)
+and `for`-init clauses (§5.5): a leading identifier introduces a declaration
+only if it's a base type or a prescanned struct name, otherwise the line is an
+expression statement. `cc02` implements the `for`-init clause that way but
+disambiguates block and top-level statements by a **different, purely
+shape-based** rule — skip `*` tokens, and if another identifier follows, it's
+a declaration — with no prescan consultation:
 
-So `for (Point p = get_point(); ...)` only declares `p` correctly because
-`Point` was found by the prescan; the equivalent statement at block scope
-would declare correctly regardless.
+- `cc02`, block/top level: `a * b;` **always** parses as declaring `b : a*`,
+  regardless of whether `a` is a real type. An unknown `a` fails at analysis
+  as `ERR_UNKNOWN_STRUCT`, and "multiply two identifiers, discard the result"
+  is unwritable at statement level.
+- Spec / Haskell frontend: `a * b;` is a declaration only if `a` is a known
+  type; otherwise it's a multiplication expression statement
+  (`ERR_UNDECLARED_IDENTIFIER` at analysis when the operands don't resolve).
+
+So the identical shape `a * b` resolves differently *within `cc02` itself*
+(shape-based at statement level, prescan in `for`-init), and `cc02`'s
+statement-level rule diverges from the spec's prescan.
+`for (Point p = get_point(); ...)` declares `p` under both `cc02` and the
+spec; `foo * bar;` at block scope declares under `cc02` but multiplies under
+the spec whenever `foo` isn't a known type. The Haskell frontend uses the
+prescan uniformly, matching the revised §7.1.
 
 *(Source: derived from reading `parse_for_initializer_clause` vs.
 `parse_stmt`'s identifier-led branch in `parser.c`; not independently
@@ -165,6 +176,14 @@ local variable has shadowed a struct name by the time it reaches this
 expression. This fails loudly downstream (a struct-cast-by-value or type
 error), not silently — accepted upstream as a known, intentional edge case,
 not fixed.
+
+The same scope-blindness has a `*`-declaration twin under the revised §7.1
+(which now shares this prescan for statement disambiguation): with `Point` a
+struct shadowed by a local, `Point * p;` still parses as a declaration of
+`p : Point*`, never as a multiply of the shadowing local. This is inherent to
+a scope-blind prescan and applies to the Haskell frontend too, not just
+`cc02`; it is the price of unifying the three disambiguations on one
+whole-file name set.
 
 ### G-6: Binary literals undocumented upstream
 
@@ -218,6 +237,14 @@ defeats that idiom entirely. **Verified:** result is `0xFF`, expected
 `0x7F`; `20 * 20` widened-multiply stores `144` with high byte `0` instead
 of `400` (`$0190`). Most likely footgun for hand-written or generated test
 programs to hit by accident.
+
+**Root cause is the parser, not codegen:** the wrong value is a direct
+consequence of the parse-precedence rule, which `SPEC.md` §6.6 now specifies
+as `unary` precedence (the standard C cast-expression rule). Filed as P0
+because it surfaces as a silent miscompile, but a frontend that binds the
+cast operand at `unary` precedence — as the Haskell rewrite does — parses
+`((u8)w) / 2` and `((u16)a) * b` and the miscompile disappears without any
+codegen change. `cc02`'s `logical_or`-precedence binding is the deviation.
 
 ### P0-3: Narrow store through wide pointer/register leaves stale high byte
 

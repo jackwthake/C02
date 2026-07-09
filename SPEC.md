@@ -192,7 +192,7 @@ if_stmt        ::= "if" "(" expr ")" block
 while_stmt     ::= "while" "(" expr ")" ( block | ";" )
 
 for_stmt       ::= "for" "(" for_init? ";" expr? ";" for_incr? ")" ( block | ";" )
-for_init       ::= ( type IDENT ( "=" expr )? ) | expr    (* no bare `=`; see §5.5 *)
+for_init       ::= ( type IDENT ( "=" expr )? ) | ( expr ( assign_op expr )? )
 for_incr       ::= expr ( assign_op expr )?
 
 return_stmt    ::= "return" expr? ";"
@@ -585,24 +585,27 @@ for (;;) { ... }            // all three clauses independently optional
 
 ```ebnf
 for_stmt  ::= "for" "(" for_init? ";" expr? ";" for_incr? ")" ( block | ";" )
-for_init  ::= ( type IDENT ( "=" expr )? ) | expr
+for_init  ::= ( type IDENT ( "=" expr )? ) | ( expr ( assign_op expr )? )
 for_incr  ::= expr ( assign_op expr )?
 ```
 
 Each clause is independently optional (empty init/empty cond/empty incr are
-all legal, signaled by an immediate `;` or `)`).
+all legal, signaled by an immediate `;` or `)`). The init clause's
+non-declaration branch is now identical to the incrementer: a full expression
+optionally followed by an assignment operator and right-hand side, so
+`for (i = 0; ...)` reusing an existing variable is well-formed.
 
-> ⚠ [G-3](DEVIATIONS.md#g-3-for-init-cannot-reuse-an-existing-variable): the
-> init clause cannot reuse an existing variable via plain assignment —
-> `for (i = 0; ...)` is a parse error unless `i` is freshly declared right
-> there. (The incrementer clause, by contrast, supports
-> `=`/compound-assign.)
->
-> ⚠ [G-4](DEVIATIONS.md#g-4-for-init-and-block-statements-disambiguate-differently):
-> this clause disambiguates "declaration vs. expression" using the
-> struct-name prescan (§6.6), not the shape-based lookahead used for
-> ordinary block statements (§7.1) — the same token shape resolves
-> differently by position.
+> ⚠ [G-3](DEVIATIONS.md#g-3-for-init-cannot-reuse-an-existing-variable):
+> `cc02` rejects reusing an existing variable via plain assignment in the
+> init clause — `for (i = 0; ...)` is a parse error there unless `i` is
+> freshly declared right there — even though the grammar above permits it.
+> `cc02`'s incrementer clause *does* accept `=`/compound-assign, so the
+> asymmetry is internal to `cc02`, not a property of the language.
+
+This clause disambiguates "declaration vs. expression" using the struct-name
+prescan (§6.6) — the same mechanism as casts and ordinary block statements
+(§7.1). See [G-4](DEVIATIONS.md#g-4-block-statements-disambiguate-by-shape-not-the-prescan)
+for how `cc02`'s block-statement disambiguation diverges from that shared rule.
 
 ### 5.6 Return / Break / Continue
 
@@ -769,21 +772,27 @@ an identifier in that prescanned set.
 > subtraction. Fails loudly downstream, not silently; accepted upstream
 > as-is.
 
-**Cast operand precedence:** once recognized as a cast, the operand is
-parsed at **`logical_or`** precedence (the top of the expression grammar) —
-not `unary`. This means a cast binds far looser than a C programmer would
-expect:
+**Cast operand precedence:** once recognized as a cast, the operand is parsed
+at **`unary`** precedence — the standard C cast-expression rule. A cast binds
+tighter than any binary operator, so it reaches only as far as the next
+unary/postfix term; it still stacks over prefix operators and nested casts
+(`(u8)-w`, `(u8)(u16)x`):
 
 ```c
 u16 w = 511;
-u8 x = (u8)w / 2;    // parses as (u8)(w / 2), NOT ((u8)w) / 2
+u8 x = (u8)w / 2;    // parses as ((u8)w) / 2  →  0x7F
+u16 r = (u16)a * b;  // casts a alone, then multiplies — the widened-multiply idiom holds
 ```
 
+To cast a whole binary expression, parenthesize it explicitly: `(u8)(w / 2)`.
+
 > ⚠ [P0-2](DEVIATIONS.md#p0-2-cast-binds-to-the-whole-following-expression):
-> this isn't just a surprising-precedence issue — it changes the *computed
-> value*. `(u8)w / 2` evaluates to `0xFF`, not `0x7F`. Verified silent
-> miscompile; likely the single most common footgun for hand-written or
-> generated test programs.
+> `cc02` instead parses the cast operand at `logical_or` precedence (the top
+> of the expression grammar), so a cast swallows the entire following
+> expression — `(u8)w / 2` computes `(u8)(w / 2)` = `0xFF`, not `0x7F`, and
+> `(u16)a * b` casts the *product*, silently defeating the widened-multiply
+> idiom. A verified silent miscompile, and the single most common footgun for
+> hand-written or generated test programs.
 
 ### 6.7 Literals
 
@@ -798,27 +807,54 @@ character literals.
 ### 7.1 Statement/Declaration Disambiguation
 
 At both block-statement level and top level, an identifier-led line is
-disambiguated by **shape alone**, with no symbol-table consultation: skip
-zero or more `*` tokens after the leading identifier; if another identifier
-follows, it's a type-led declaration (`type name;` / `type name = expr;`,
-`type` possibly pointer-qualified by the skipped stars); otherwise it falls
-through to an expression/assignment statement.
+disambiguated by the **whole-file struct-name prescan** (§6.6) — the *same*
+mechanism the cast-vs-grouping (§6.6) and `for`-init (§5.5) disambiguations
+use. A leading identifier begins a type-led declaration
+(`type name;` / `type name = expr;`) iff it names a base type
+(`u8`/`i8`/`u16`/`i16`/`void`) **or** an identifier in the prescanned
+struct-name set; the pointer stars and trailing name then parse as the rest
+of the declaration. Otherwise the line falls through to an
+expression/assignment statement.
 
 ```c
-foo * bar;
+Point * p;    // struct Point declared anywhere in the file → declares p : Point*
+foo * bar;    // foo is not a known struct → multiplication expression statement
 ```
 
-This **always** parses as "declare `bar` with type `foo*`" — never as a
-discarded multiplication — regardless of whether `foo` is an actual
-registered type. If `foo` isn't real, this fails at semantic analysis
-(`ERR_UNKNOWN_STRUCT`), not at parse time. There is no way to write
-"multiply two identifiers as a statement, discarding the result" in this
-language — the ambiguous shape always resolves to a declaration.
+The prescan is whole-file and scope-blind, so a struct-pointer declaration
+resolves correctly even when the `struct` definition appears **later** in the
+file than the use (forward reference). Disambiguation depends only on whether
+the leading identifier is a known type name — never on declaration order or on
+a symbol-table lookup at the use site.
 
-Note this is a **different mechanism** from the `for`-init clause's
-disambiguation (§5.5, §6.6), which uses the struct-name prescan instead —
-the two productions can disagree on the identical token shape depending on
-position.
+Two consequences follow:
+
+- An unknown type name in declaration position (`Widget * w;`, `Widget` never
+  declared as a struct) parses as a **multiplication expression**, not a
+  declaration. Its operands then fail to resolve at analysis
+  (`ERR_UNDECLARED_IDENTIFIER`), rather than the declaration reaching analysis
+  as `ERR_UNKNOWN_STRUCT`. Both are exit-5 analyzer errors on the same
+  program; only the diagnostic identity differs. Unlike a purely shape-based
+  rule, "multiply two identifiers as a statement, discarding the result" *is*
+  writable here whenever the leading name isn't a known type.
+- Because the prescan is scope-blind, a local variable that shadows a struct
+  name still parses `Name * x;` as a declaration of `x : Name*`, not as a
+  multiply of the shadowing local — the `*`-declaration twin of the cast
+  misparse in
+  [G-5](DEVIATIONS.md#g-5-struct-name-shadowing-misparses-a-cast).
+
+All three identifier-vs-type disambiguations in the grammar — block/top-level
+statements (here), casts (§6.6), and `for`-init clauses (§5.5) — share this
+one prescan mechanism, so the identical token shape resolves **identically**
+regardless of position.
+
+> ⚠ [G-4](DEVIATIONS.md#g-4-block-statements-disambiguate-by-shape-not-the-prescan):
+> `cc02` disambiguates block- and top-level statements by a purely shape-based
+> rule (skip `*` tokens, check for a following identifier) rather than the
+> prescan — so `foo * bar;` there **always** parses as a declaration of
+> `bar : foo*`, even when `foo` is not a known type. `cc02` uses the prescan
+> only in the `for`-init clause, so the identical shape resolves differently
+> by position within `cc02` itself.
 
 ### 7.2 Scope Stack & Shadowing
 
