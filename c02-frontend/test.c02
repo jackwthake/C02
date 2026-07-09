@@ -13,33 +13,14 @@ fn irq() interrupt -> void {
 
 decl fn nmi() interrupt -> void;
 
+struct Point {
+  u8 x;
+  u8 y;
+}
+
 fn main () -> void {
-  u8 x = 10;
-  x %= 5;
-  sum(10, 5);
-
-  while (x < 5);
-  sum(10, 5);
-
-  if (x == 5) {
-
-  } else if (x < 5) {
-
-  } else {
-    
-  }
-
-  for(;;);
-
-  for(u8 i = 0;;) {
-
-  }
-
-  for(u8 i = 0; i < 5;) {
-
-  }
-
-  for(u8 i = 0; i < 5; ++i) {
-
-  }
+  Point p = Point { .x = 1, .y = 2 + 3 };
+  u8 a = p.x;
+  u8 b = origin.pos.x;
+  u8 c = get().field;
 }

@@ -6,8 +6,14 @@ import Control.Monad.Combinators.Expr
 import Control.Monad
 import Data.Void
 import Data.Maybe (isNothing, maybeToList, isJust)
+import Data.Set (Set)
+import qualified Data.Set as Set
+import Control.Monad.Reader (ReaderT, runReaderT, asks)
 
-type Parser = Parsec Void String
+-- The parser carries a read-only environment: the set of struct type names from
+-- the whole-file prescan (SPEC 6.6). Reader (not State) because it's fixed before
+-- parsing begins and never changes — nothing to lose on backtrack.
+type Parser = ReaderT (Set String) (Parsec Void String)
 
 -- skip whitespace/comments between tokens
 sc :: Parser ()
@@ -22,7 +28,9 @@ symbol :: String -> Parser String
 symbol = L.symbol sc
 
 
-data BaseType = U8 | I8 | U16 | I16 | Void deriving (Show, Eq)
+data BaseType = U8 | I8 | U16 | I16 | Void
+              | StructName String          -- a named struct type (SPEC §3, matched by name)
+              deriving (Show, Eq)
 
 
 data TopLevelDecl = GlobalVarDecl VarDecl
@@ -30,6 +38,7 @@ data TopLevelDecl = GlobalVarDecl VarDecl
                   | FunctionDecl  FuncDecl
                   | FwdFuncDecl   FuncDecl
                   | FwdVarDecl    VarDecl
+                  | StructDef     StructDecl
                   deriving (Show, Eq)
 
 data Program = TopLevels [ TopLevelDecl ] deriving Show
@@ -59,15 +68,16 @@ data AssignmentOp = Equals     | PlusEquals | MinusEquals   -- =   +=  -=
                   deriving (Show, Eq)
 
 -- An expression.
--- TODO: field access, struct init.
-data Expr = IntLit     Int                   -- a NUMBER literal
-          | StrLit     String                -- a STRING literal
-          | Var        String                -- an IDENT reference
-          | Binary     BinOp    Expr Expr    -- left <op> right
-          | Unary      UnOp     Expr         -- <op> operand 
-          | Call       String   [Expr]       -- IDENT params
-          | Cast       BaseType Int  Expr    -- <type> ptrDepth operand
-          | Deref      Expr                  -- operand
+data Expr = IntLit     Int                     -- a NUMBER literal
+          | StrLit     String                  -- a STRING literal
+          | Var        String                  -- an IDENT reference
+          | Binary     BinOp    Expr Expr      -- left <op> right
+          | Unary      UnOp     Expr           -- <op> operand
+          | Call       String   [Expr]         -- IDENT params
+          | Cast       BaseType Int  Expr      -- <type> ptrDepth operand
+          | Deref      Expr                    -- operand
+          | Field      Expr     String         -- base '.' fieldname  (postfix, chains left)
+          | StructInit String   [(String, Expr)] -- StructName '{' .field = expr, ... '}'
           deriving (Show, Eq)
 
 type Block = [Stmt] 
@@ -77,8 +87,9 @@ data Stmt = LocVarDecl  VarDecl                                                -
           | Return      (Maybe Expr)                                           -- return expr?
           | If          [(Maybe Expr, Block)]                                  -- <(if-else cond?, block)> last item is list is always else
           | While       Expr (Maybe Block)                                     -- <cond> <block>?
-          | For         (Maybe Stmt) (Maybe Expr) (Maybe Stmt) (Maybe Block)   -- for (<init>?; <cond>?; <incr>?) <block>? 
+          | For         (Maybe Stmt) (Maybe Expr) (Maybe Stmt) (Maybe Block)   -- for (<init>?; <cond>?; <incr>?) <block>?
           | ExprStmt    Expr
+          | StructDeclStmt StructDecl                                          -- struct decl in statement position (SPEC §5)
           deriving (Show, Eq)
 
 
@@ -93,6 +104,11 @@ data RegDecl = RegDecl
   { regType     :: BaseType
   , regName     :: String
   , declAddress :: Int
+  } deriving (Show, Eq)
+
+data StructDecl = StructDecl
+  { structName   :: String
+  , structFields :: [NamedType]    -- each field: (BaseType, ptrDepth, name)
   } deriving (Show, Eq)
 
 data FuncDecl = FuncDecl
@@ -110,12 +126,27 @@ keyword keyw = lexeme (string keyw <* notFollowedBy alphaNumChar)
 
 
 -- Left-factored: parse the identifier once, then decide on what follows.
--- A Call if an arg list '(...)' follows, otherwise a plain Var reference.
-callOrVarParser :: Parser Expr
-callOrVarParser = do
-  name  <- lexeme identifier
-  margs <- optional (symbol "(" *> sepEndBy exprParser (symbol ",") <* symbol ")")
-  return $ maybe (Var name) (Call name) margs
+--   '(' -> Call,  '{' -> struct init,  otherwise a plain Var reference.
+-- Each branch's first token is a distinct symbol, so 'choice' picks without
+-- backtracking (symbol fails without consuming when the char doesn't match).
+identExprParser :: Parser Expr
+identExprParser = do
+  name <- lexeme identifier
+  choice
+    [ Call       name <$> (symbol "(" *> sepEndBy exprParser (symbol ",") <* symbol ")")
+    , StructInit name <$> (symbol "{" *> sepEndBy fieldInit  (symbol ",") <* symbol "}")
+    , pure (Var name)
+    ]
+
+
+-- one '.field = expr' entry inside a struct initializer (SPEC init_list)
+fieldInit :: Parser (String, Expr)
+fieldInit = do
+  _   <- symbol "."
+  fld <- lexeme identifier
+  _   <- symbol "="
+  val <- exprParser
+  return (fld, val)
 
 
 -- (type) expr : the cast operand is a full expression, per SPEC 6.
@@ -141,8 +172,18 @@ primaryParser = choice
   [ IntLit <$> intLiteralParser
   , StrLit <$> lexeme (char '"' *> manyTill L.charLiteral (char '"'))
   , try castParser <|> groupParser     -- both open with '('
-  , callOrVarParser                    -- identifier: Call if '(...)' follows, else Var
+  , identExprParser                    -- identifier: Call / struct-init / Var
   ]
+
+
+-- Postfix field access: a primary followed by zero or more '.field' (SPEC 6.4).
+-- Left-associative, so 'a.b.c' builds (a.b).c via foldl. This sits between the
+-- prefix-unary chain and primary, so '.' binds tighter than any prefix operator.
+postfixParser :: Parser Expr
+postfixParser = do
+  base <- primaryParser
+  flds <- many (symbol "." *> lexeme identifier)
+  return (foldl Field base flds)
 
 
 -- The prefix-unary chain: right-associative and self-recursive, so operators
@@ -159,7 +200,7 @@ unaryParser = choice
   , Unary AddressOf <$> (symbol "&"  *> unaryParser)
   , Deref           <$> (symbol "*"  *> unaryParser)
   , Deref           <$> (symbol "@"  *> unaryParser)
-  , primaryParser
+  , postfixParser                                      -- postfix (field access) then primary
   ]
 
 
@@ -309,7 +350,8 @@ forParser = do
 -- parse a single statement
 statementParser :: Parser Stmt
 statementParser = choice
-  [ LocVarDecl <$> varDeclParser <* symbol ";"
+  [ StructDeclStmt <$> structDeclParser
+  , LocVarDecl <$> varDeclParser <* symbol ";"
   , blockParser
   , returnParser
   , ifParser
@@ -327,7 +369,19 @@ baseTypeParser = choice   -- try each variant in order
   , U16  <$ keyword "u16"
   , I16  <$ keyword "i16"
   , Void <$ keyword "void"
+  , structTypeParser        -- an identifier naming a prescanned struct
   ]
+
+
+-- An identifier is a struct type iff it's in the prescanned name set (SPEC 6.6).
+-- 'try' so a non-struct identifier is left unconsumed, letting the caller fall
+-- through (e.g. `p.x = 5;` reads as an expr-statement, not a failed declaration).
+structTypeParser :: Parser BaseType
+structTypeParser = try $ do
+  name  <- lexeme identifier
+  known <- asks (Set.member name)
+  if known then return (StructName name)
+           else fail ("`" ++ name ++ "` is not a struct type")
 
 
 -- Parses <typename> <ptr-depth>
@@ -383,6 +437,24 @@ regDeclParser = do
   return (RegDecl ty name addr)
 
 
+-- struct_decl ::= "struct" IDENT "{" field_decl* "}" ";"?   (SPEC §2/§4)
+-- The name was already collected by the prescan; here we parse the real shape.
+structDeclParser :: Parser StructDecl
+structDeclParser = do
+  _      <- keyword "struct"
+  name   <- lexeme identifier
+  _      <- symbol "{"
+  fields <- many fieldDeclParser
+  _      <- symbol "}"
+  _      <- optional (symbol ";")               -- trailing ';' is optional
+  return (StructDecl name fields)
+
+
+-- field_decl ::= type IDENT ";"
+fieldDeclParser :: Parser NamedType
+fieldDeclParser = typeWithNameParser <* symbol ";"
+
+
 -- Parses 'fn NAME(PARAMS) -> RETURN_TYPE
 --                       Name    Params                     Ret Base  Ret ptr depth
 funcSigParser :: Parser (String, [NamedType], BaseType, Int, Bool)
@@ -430,7 +502,8 @@ fwdDeclParser = do
 -- Parse a single top level item
 topLevelParser :: Parser TopLevelDecl
 topLevelParser = choice
-  [ RegisterDecl  <$> regDeclParser
+  [ StructDef     <$> structDeclParser
+  , RegisterDecl  <$> regDeclParser
   , GlobalVarDecl <$> varDeclParser <* symbol ";"
   , FunctionDecl  <$> funcDeclParser
   , fwdDeclParser
@@ -446,10 +519,39 @@ programParser = do
   return (TopLevels decls)
 
 
+-- Whole-file, scope-blind prescan for struct type names (SPEC 6.6). Walks the
+-- token stream reusing 'sc', so a 'struct' inside a comment or string literal is
+-- ignored, and collects the NAME from every 'struct IDENT {'. Runs once before
+-- the real parse (structs are forward-reference-tolerant, so we need them all up
+-- front). Best-effort: on any parse hiccup we return what we have.
+prescanStructNames :: String -> Set String
+prescanStructNames src =
+  -- run with an empty env: the prescan never consults the set it helps build
+  Set.fromList (either (const []) id (parse (runReaderT (sc *> go) Set.empty) "" src))
+  where
+    go :: Parser [String]
+    go = choice
+      [ [] <$ eof
+      , (:) <$> try structHead <*> go     -- 'struct NAME {'  ->  record NAME
+      , anyToken *> go                     -- anything else    ->  skip one token, continue
+      ]
+    -- the pattern we care about; 'try' so a bare 'struct' that isn't a decl rolls back
+    structHead :: Parser String
+    structHead = keyword "struct" *> lexeme identifier <* symbol "{"
+    -- consume exactly one token then trailing layout. Strings and identifiers are
+    -- taken WHOLE so we never char-slide into a substring like the 'struct' in
+    -- 'astruct'; 'sc' at the end skips whitespace + comments to the next boundary.
+    anyToken :: Parser ()
+    anyToken = (void strLit <|> void identifier <|> void anySingle) *> sc
+    strLit :: Parser String
+    strLit = char '"' *> manyTill L.charLiteral (char '"')
+
+
 parseFile :: FilePath -> IO ()
 parseFile fileName = do
   input <- readFile fileName                        -- Read file
-  case parse programParser fileName input of        -- Run parser catching either success or print the error message
+  let structNames = prescanStructNames input        -- collect struct type names up front (SPEC 6.6)
+  case parse (runReaderT programParser structNames) fileName input of  -- run the parser with that env
     Left e        -> putStr $ errorBundlePretty e
     Right program -> print program
 
