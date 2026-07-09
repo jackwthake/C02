@@ -1,6 +1,8 @@
+{-# OPTIONS_GHC -Wno-unused-top-binds #-}
 import Text.Megaparsec
 import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
+import Control.Monad.Combinators.Expr
 import Data.Void
 
 type Parser = Parsec Void String
@@ -55,8 +57,148 @@ data FuncDecl = FuncDecl
   } deriving (Show, Eq)
 
 
+-- Binary operators
+data BinOp = Add | Sub | Mul | Div | Mod   -- +   -   *   /   %
+           | Shl | Shr                     -- <<  >>
+           | Lt  | Gt  | Le  | Ge          -- <   >   <=  >=
+           | Eq  | Ne                      -- ==  !=
+           | BitAnd | BitXor | BitOr       -- &   ^   |
+           | And | Or                      -- &&  ||
+           deriving (Show, Eq)
+
+-- Unary Operators
+data UnOp = Incr      | Decr              -- ++   -- 
+          | Bang      | Negate | BitNot   -- !    -   ~
+          | AddressOf                     -- &/@
+          deriving (Show, Eq)
+
+-- Assignment Operators
+data AssignmentOp = Equals     | PlusEquals | MinusEquals   -- =   +=  -=
+                  | MultEquals | DivEquals  | ModEquals     -- *=  /=  %=
+                  deriving (Show, Eq)
+
+-- An expression.
+-- TODO: field access, struct init.
+data Expr = IntLit     Int                   -- a NUMBER literal
+          | StrLit     String                -- a STRING literal
+          | Var        String                -- an IDENT reference
+          | Binary     BinOp    Expr Expr    -- left <op> right
+          | Unary      UnOp     Expr         -- <op> operand 
+          | Call       String   [Expr]       -- IDENT params
+          | Cast       BaseType Int  Expr    -- <type> ptrDepth operand
+          | Deref      Expr                  -- operand
+          deriving (Show, Eq)
+
+type Block = [Stmt] 
+data Stmt = LocVarDecl  VarDecl                                                -- Local variable
+          | Nested      Block                                                  -- block of statements                                         
+          | Assign      Expr AssignmentOp Expr                                 -- left <op> right
+          | Return      (Maybe Expr)                                           -- return expr?
+          | If          [(Maybe Expr, Block)]                                  -- <(if-else cond?, block)> last item is list is always else
+          | While       Expr (Maybe Block)                                     -- <cond> <block>?
+          | For         (Maybe Stmt) (Maybe Expr) (Maybe Stmt) (Maybe Block)   -- for (<init>?; <cond>?; <incr>?) <block>? 
+          | ExprStmt    Expr
+          deriving (Show, Eq)
+
+
 keyword :: String -> Parser String
 keyword keyw = lexeme (string keyw <* notFollowedBy alphaNumChar) 
+
+
+callParser :: Parser Expr
+callParser = do
+  name <- lexeme identifier
+  _    <- symbol "("
+  args <- sepBy exprParser $ symbol ","
+  _    <- symbol ")"
+  return (Call name args)
+
+
+varParser :: Parser Expr
+varParser = Var <$> lexeme identifier
+
+
+-- (type) expr : the cast operand is a full expression, per SPEC 6.
+castParser :: Parser Expr
+castParser = do
+  _           <- symbol "("
+  (ty, depth) <- typeParser
+  _           <- symbol ")"
+  operand     <- exprParser
+  return (Cast ty depth operand)
+
+
+groupParser :: Parser Expr
+groupParser = do
+  _       <- symbol "("
+  operand <- exprParser
+  _       <- symbol ")"
+  return operand
+
+
+primaryParser :: Parser Expr
+primaryParser = choice
+  [ IntLit <$> intLiteralParser
+  , StrLit <$> lexeme (char '"' *> manyTill L.charLiteral (char '"'))
+  , try castParser <|> groupParser     -- both open with '('
+  , try callParser <|> varParser       -- both open with an identifier
+  ]
+
+
+-- The prefix-unary chain: right-associative and self-recursive, so operators
+-- stack (--*p, &*p, !!x). '*' and '@' are interchangeable spellings of the same
+-- dereference (SPEC 6), so both map to Deref. This is the real base term fed to
+-- makeExprParser -- when no prefix operator is present it falls through to a primary.
+unaryParser :: Parser Expr
+unaryParser = choice
+  [ Unary Incr      <$> (symbol "++" *> unaryParser)   -- '++'/'--' listed before '-'
+  , Unary Decr      <$> (symbol "--" *> unaryParser)   -- so maximal munch picks them
+  , Unary Bang      <$> (symbol "!"  *> unaryParser)
+  , Unary BitNot    <$> (symbol "~"  *> unaryParser)
+  , Unary Negate    <$> (symbol "-"  *> unaryParser)
+  , Unary AddressOf <$> (symbol "&"  *> unaryParser)
+  , Deref           <$> (symbol "*"  *> unaryParser)
+  , Deref           <$> (symbol "@"  *> unaryParser)
+  , primaryParser
+  ]
+
+
+-- Match an operator token, enforcing maximal munch: the same trick 'keyword'
+-- uses, but guarding against operator chars instead of identifier chars. This is
+-- what stops operator "<" from matching the '<' in "<<" or "<=". The inner 'try'
+-- keeps a partial match (e.g. "<" of an expected "<=") non-consuming so
+-- makeExprParser can fall through to another operator.
+operator :: String -> Parser String
+operator name = lexeme (try (string name <* notFollowedBy (oneOf opChars)))
+  where opChars = "+-*/%<>=!&|^~" :: [Char]
+
+
+-- Build a left-associative binary operator for the precedence table:
+-- parse the operator token, and yield the constructor that combines both operands.
+binL :: String -> BinOp -> Operator Parser Expr
+binL name op = InfixL (Binary op <$ operator name)
+
+
+-- The precedence ladder, tightest-binding level FIRST (loosest last).
+operatorTable :: [[Operator Parser Expr]]
+operatorTable =
+  [ [ binL "*" Mul, binL "/" Div, binL "%" Mod ]         -- factor
+  , [ binL "+" Add, binL "-" Sub ]                       -- term
+  , [ binL "<<" Shl, binL ">>" Shr ]                     -- shift
+  , [ binL "<=" Le, binL ">=" Ge, binL "<" Lt, binL ">" Gt ]  -- comparison
+  , [ binL "==" Eq, binL "!=" Ne ]                       -- equality
+  , [ binL "&" BitAnd ]                                  -- bitwise and
+  , [ binL "^" BitXor ]                                  -- bitwise xor
+  , [ binL "|" BitOr ]                                   -- bitwise or
+  , [ binL "&&" And ]                                    -- logical and
+  , [ binL "||" Or ]                                     -- logical or
+  ]
+
+
+-- The full expression parser: unaryParser as the base term, with the binary
+-- operator table layered on top by makeExprParser.
+exprParser :: Parser Expr
+exprParser = makeExprParser unaryParser operatorTable
 
 
 -- Match text representation of datatypes to the actual haskell version

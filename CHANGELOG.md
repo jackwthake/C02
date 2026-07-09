@@ -9,6 +9,25 @@ releases are reserved for bug fixes only.
 
 ## [Unreleased]
 
+### Added
+
+- **`c02-frontend` — expression parser.** The frontend now parses full C02
+  expressions into an `Expr` AST, using `megaparsec`'s companion
+  `Control.Monad.Combinators.Expr`. `makeExprParser` drives the complete
+  `SPEC.md` §6 precedence ladder — all ten binary levels, from `*`/`/`/`%`
+  down to `||`, each left-associative — layered over a hand-rolled,
+  right-associative prefix-unary chain (`! - & ~ ++ -- * @`, with `*` and `@`
+  collapsed to a single `Deref` since the spec makes them interchangeable
+  spellings of dereference). Primaries cover integer and string literals,
+  variable references, function calls with expression arguments, C-style casts
+  (`(TYPE) expr`), and parenthesized grouping, with `try`-based disambiguation
+  for call-vs-variable and cast-vs-group. A maximal-munch operator matcher
+  keeps multi-character operators intact, so `<`, `<<`, and `<=` (likewise
+  `&`/`&&`, `|`/`||`) no longer steal one another's leading characters. AST
+  scaffolding for statements (`Stmt`/`Block`) and assignment operators is in
+  place; statement/block parsing — and wiring `exprParser` into variable
+  initializers and function bodies — are the next step;
+
 ## [1.0.1] 2026-07-08
 
 A ground-up re-architecture of the compiler: the monolithic `cc02` binary is
