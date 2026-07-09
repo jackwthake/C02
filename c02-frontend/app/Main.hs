@@ -5,7 +5,7 @@ import qualified Text.Megaparsec.Char.Lexer as L
 import Control.Monad.Combinators.Expr
 import Control.Monad
 import Data.Void
-import Data.Maybe (isNothing, maybeToList)
+import Data.Maybe (isNothing, maybeToList, isJust)
 
 type Parser = Parsec Void String
 
@@ -99,6 +99,7 @@ data FuncDecl = FuncDecl
   { funcName           :: String
   , funcReturnType     :: BaseType
   , funcReturnPtrDepth :: Int
+  , isInterrupt        :: Bool
   , params             :: [NamedType] -- Type, ptr depth, name
   , body               :: Maybe Stmt -- Nested variant
   } deriving (Show, Eq)
@@ -384,25 +385,27 @@ regDeclParser = do
 
 -- Parses 'fn NAME(PARAMS) -> RETURN_TYPE
 --                       Name    Params                     Ret Base  Ret ptr depth
-funcSigParser :: Parser (String, [NamedType], BaseType, Int)
+funcSigParser :: Parser (String, [NamedType], BaseType, Int, Bool)
 funcSigParser = do
-  _           <- keyword "fn"
-  name        <- lexeme identifier
-  _           <- symbol "("
-  p           <- sepEndBy typeWithNameParser (symbol ",")
-  _           <- symbol ")"
-  _           <- symbol "->"
-  (ty, depth) <- typeParser
-  return (name, p, ty, depth)
+  _            <- keyword "fn"
+  name         <- lexeme identifier
+  _            <- symbol "("
+  p            <- sepEndBy typeWithNameParser (symbol ",")
+  _            <- symbol ")"
+  mInterrupt   <- optional (keyword "interrupt")
+  let isInt     = isJust mInterrupt
+  _            <- symbol "->"
+  (ty, depth)  <- typeParser
+  return (name, p, ty, depth, isInt)
 
 
 -- parse function with body
 -- NOTE: so far this just parses functions an empty block
 funcDeclParser :: Parser FuncDecl
 funcDeclParser = do
-  (name, p, ty, depth) <- funcSigParser
+  (name, p, ty, depth, isInt) <- funcSigParser
   blk <- blockParser
-  return FuncDecl { funcName=name, funcReturnType=ty, funcReturnPtrDepth=depth, params=p, body= Just blk }
+  return FuncDecl { funcName=name, funcReturnType=ty, funcReturnPtrDepth=depth, isInterrupt = isInt, params=p, body= Just blk }
 
 
 -- Parses top level items starting with the keyword 'decl'
@@ -410,11 +413,11 @@ fwdDeclParser :: Parser TopLevelDecl
 fwdDeclParser = do
   _ <- keyword "decl"
   choice
-    [ do (name, p, ty, depth) <- funcSigParser
+    [ do (name, p, ty, depth, isInt) <- funcSigParser
          _                    <- symbol ";"
          return $ FwdFuncDecl FuncDecl
            { funcName = name, funcReturnType = ty, funcReturnPtrDepth = depth
-           , params = p, body = Nothing
+           , isInterrupt = isInt, params = p, body = Nothing
            }
     , do (ty, depth, name) <- typeWithNameParser
          _                 <- symbol ";"

@@ -7,6 +7,12 @@ u8 x;
 
 reg u8 PORTA @ 0x6000;
 
+fn irq() interrupt -> void {
+
+}
+
+decl fn nmi() interrupt -> void;
+
 fn main () -> void {
   u8 x = 10;
   x %= 5;
