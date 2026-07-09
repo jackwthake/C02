@@ -50,7 +50,7 @@ data BinOp = Add | Sub | Mul | Div | Mod   -- +   -   *   /   %
 -- Unary Operators
 data UnOp = Incr      | Decr              -- ++   --
           | Bang      | Negate | BitNot   -- !    -   ~
-          | AddressOf                     -- &/@
+          | AddressOf                     -- &
           deriving (Show, Eq)
 
 -- Assignment Operators
@@ -95,6 +95,7 @@ data VarDecl = VarDecl
 
 data RegDecl = RegDecl
   { regType     :: BaseType
+  , regPtrDepth :: Int
   , regName     :: String
   , declAddress :: Int
   } deriving (Show, Eq)

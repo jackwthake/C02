@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/) - while
 the project is in `0.x`, breaking changes may land in MINOR releases; PATCH
 releases are reserved for bug fixes only.
 
+## [Unreleased]
+
+### Changed
+
+- **Cast operands bind at `unary` precedence, not the whole expression.** A
+  cast now reaches only the next unary/postfix term, matching standard C:
+  `(u8)w / 2` parses as `((u8)w) / 2`, and `(u16)a * b` casts `a` alone so the
+  widened-multiply idiom holds. `SPEC.md` §6.6 is respecified accordingly, and
+  the previous whole-expression binding — the root cause of deviation P0-2,
+  where `(u8)w / 2` silently computed `(u8)(w / 2)` — no longer occurs in the
+  frontend. Parenthesize to cast a full expression: `(u8)(w / 2)`.
+- **`SPEC.md` §7.1 and §5.5 grammar updates** accompany the above and two
+  further decisions: statement/declaration disambiguation is now specified to
+  use the whole-file struct-name prescan uniformly (block, top-level, cast,
+  and `for`-init all share one mechanism — deviation G-4 reframed), and the
+  `for`-init clause grammar now permits assignment (`for (i = 0; ...)`),
+  matching what the frontend already accepts (deviation G-3).
+
+### Fixed
+
+- **Keywords and `true`/`false`/`null` are now reserved.** The lexer's
+  `identifier` rejects every reserved word from `SPEC.md` §1.1, so
+  `u8 return = 5;` no longer parses as a declaration named `return`. `true`,
+  `false`, and `null` lex to numeric literals `1`, `0`, `0` before identifier
+  scanning (as the spec requires) rather than becoming `Var` references — so
+  `while (true)` now yields `IntLit 1`, and they can't be used as identifiers.
+
+- **`keyword` respects maximal munch.** A keyword no longer matches a prefix of
+  a longer identifier: `return_value` is one identifier, not `return` followed
+  by a stray `_value`. The guard now rejects a trailing `_` (not just
+  alphanumerics), and backtracks cleanly so the identifier path can take over.
+
+- **Statements led by a struct name can be expressions.** A struct-name-led
+  statement that isn't a declaration — e.g. the struct literal
+  `Point { .x = 1 };` in statement position — now backtracks and re-parses as
+  an expression statement instead of failing at the `{` (`SPEC.md` §5.2).
+
+- **`reg` declarations accept pointer types.** `reg u8 *X @ 0x6000;` parses
+  (`SPEC.md` §4.3); `RegDecl` gained a `regPtrDepth` field to carry the depth.
+
+- **Radix prefixes don't span whitespace.** `0x`/`0X`/`0b`/`0B` are matched
+  without the trailing space consumer, so `0x FF` is a lexer error rather than
+  silently reading as `255`.
+
+- **String escapes follow `SPEC.md` §1.4, not Haskell's rules.** Only
+  `\n \t \r \0 \\ \" \'` are recognized; any other `\c` drops the backslash and
+  keeps `c` verbatim (no error), and a literal newline or EOF before the
+  closing `"` is an error. Replaces the previous `megaparsec` `charLiteral`
+  handling, which rejected unknown escapes and honored decimal `\065`-style
+  escapes the spec doesn't define.
+
 ## [1.1] 2026-07-09
 
 The `c02-frontend` Haskell parser reaches feature parity with `SPEC.md`: an

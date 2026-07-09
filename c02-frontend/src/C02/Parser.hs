@@ -10,8 +10,6 @@ module C02.Parser
   ) where
 
 import Text.Megaparsec
-import Text.Megaparsec.Char (char)
-import qualified Text.Megaparsec.Char.Lexer as L
 import Control.Monad.Combinators.Expr
 import Control.Monad (void, when)
 import Data.Maybe (isNothing, maybeToList, isJust)
@@ -47,13 +45,16 @@ fieldInit = do
   return (fld, val)
 
 
--- (type) expr : the cast operand is a full expression, per SPEC 6.
+-- (type) unary : the cast operand binds at 'unary' precedence (SPEC 6.6), so
+-- `(u8)w / 2` is `((u8)w) / 2`, not `(u8)(w / 2)`. 'unaryParser' also covers a
+-- nested cast (via primary), so `(u8)(u16)x` stacks right; wrap the operand in
+-- explicit parens to cast a whole binary expression.
 castParser :: Parser Expr
 castParser = do
   _           <- symbol "("
   (ty, depth) <- typeParser
   _           <- symbol ")"
-  operand     <- exprParser
+  operand     <- unaryParser
   return (Cast ty depth operand)
 
 
@@ -68,7 +69,7 @@ groupParser = do
 primaryParser :: Parser Expr
 primaryParser = choice
   [ IntLit <$> intLiteralParser
-  , StrLit <$> lexeme (char '"' *> manyTill L.charLiteral (char '"'))
+  , StrLit <$> stringLiteralParser
   , try castParser <|> groupParser     -- both open with '('
   , identExprParser                    -- identifier: Call / struct-init / Var
   ]
@@ -291,24 +292,30 @@ typeWithNameParser = do
   return (ty, depth, name )
 
 
--- the grammar: TYPE *<?>NAME (= NUMBER)? ;
+-- the grammar: TYPE *<?>NAME (= EXPR)? ;
+-- 'try' spans the whole type-then-name head: a struct name followed by
+-- something other than a name (e.g. the statement `Point{ .x = 1 };`) must
+-- backtrack fully so the caller can re-read it as an expression. Once the
+-- name is in hand we're committed — a bad initializer is a hard error.
 varDeclParser :: Parser VarDecl
-varDeclParser = do                                   -- execute impairatively
-  (ty, depth, name) <- typeWithNameParser            -- grab the base type, pointer depth, and name
-  val  <- optional (symbol "=" *> exprParser)  -- optionally consume '=' NUMBER together
+varDeclParser = do
+  (ty, depth, name) <- try typeWithNameParser        -- grab the base type, pointer depth, and name
+  val  <- optional (symbol "=" *> exprParser)        -- optionally consume '=' EXPR together
   return (VarDecl ty depth name val)
 
 
 -- the grammar: reg TYPE NAME @ ADDR;
+-- The type takes pointer stars like any other (SPEC 4.3: `reg u8 *X @ ...;`
+-- parses; the semantics are the analyzer's problem, not ours).
 regDeclParser :: Parser RegDecl
 regDeclParser = do
-  _    <- keyword "reg"
-  ty   <- baseTypeParser
-  name <- lexeme identifier
-  _    <- symbol "@"
-  addr <- intLiteralParser
-  _    <- symbol ";"
-  return (RegDecl ty name addr)
+  _           <- keyword "reg"
+  (ty, depth) <- typeParser
+  name        <- lexeme identifier
+  _           <- symbol "@"
+  addr        <- intLiteralParser
+  _           <- symbol ";"
+  return (RegDecl ty depth name addr)
 
 
 -- struct_decl ::= "struct" IDENT "{" field_decl* "}" ";"?   (SPEC §2/§4)
@@ -415,9 +422,7 @@ prescanStructNames src =
     -- taken WHOLE so we never char-slide into a substring like the 'struct' in
     -- 'astruct'; 'sc' at the end skips whitespace + comments to the next boundary.
     anyToken :: Parser ()
-    anyToken = (void strLit <|> void identifier <|> void anySingle) *> sc
-    strLit :: Parser String
-    strLit = char '"' *> manyTill L.charLiteral (char '"')
+    anyToken = (void stringLiteralParser <|> void identifier <|> void anySingle) *> sc
 
 
 -- | Parse a whole source file into a 'Program'. Runs the struct-name prescan
