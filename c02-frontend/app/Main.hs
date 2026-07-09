@@ -35,7 +35,7 @@ type NamedType = (BaseType, Int,        String)
 
 data VarDecl = VarDecl
   { varType  :: BaseType
-  , ptr_depth :: Int
+  , ptrDepth :: Int
   , declName  :: String
   , declInit  :: Maybe Int
   } deriving (Show, Eq)
@@ -108,7 +108,7 @@ varDeclParser :: Parser VarDecl
 varDeclParser = do                                   -- execute impairatively
   (ty, depth, name) <- typeWithNameParser            -- grab the base type, pointer depth, and name                          -- grab the identifier
   val  <- optional (symbol "=" *> intLiteralParser)  -- optionally consume '=' NUMBER together
-  _    <- lexeme $ symbol ";"                        -- consume the ';', unconditionally
+  _    <- symbol ";"                                 -- consume the ';', unconditionally
   return (VarDecl ty depth name val)
 
 
@@ -120,7 +120,7 @@ regDeclParser = do
   name <- lexeme identifier
   _    <- symbol "@"
   addr <- intLiteralParser
-  _    <- lexeme $ symbol ";"
+  _    <- symbol ";"
   return (RegDecl ty name addr)
 
 
@@ -153,15 +153,15 @@ fwdDeclParser = do
   _ <- keyword "decl"
   choice
     [ do (name, p, ty, depth) <- funcSigParser
-         _                    <- lexeme $ symbol ";"
+         _                    <- symbol ";"
          return $ FwdFuncDecl FuncDecl
            { funcName = name, funcReturnType = ty, funcReturnPtrDepth = depth
            , params = p, body = Nothing
            }
     , do (ty, depth, name) <- typeWithNameParser
-         _                 <- lexeme $ symbol ";"
+         _                 <- symbol ";"
          return $ FwdVarDecl VarDecl
-           { varType = ty, ptr_depth = depth, declName = name, declInit = Nothing
+           { varType = ty, ptrDepth = depth, declName = name, declInit = Nothing
            }
     ]
 

@@ -9,6 +9,8 @@ releases are reserved for bug fixes only.
 
 ## [Unreleased]
 
+## [1.0.1] 2026-07-08
+
 A ground-up re-architecture of the compiler: the monolithic `cc02` binary is
 being split into a multi-stage toolchain — a Haskell **frontend**
 (lexer/parser/analysis/IR generation), a planned OCaml **linker/optimizer**,
@@ -33,9 +35,28 @@ ROM output are unchanged; what changes is how the compiler is built and invoked.
   other. The sanitized build runs clean (ASan + UBSan, leak detection on) over
   the full example set;
 
-- **`c02-frontend` — Haskell frontend scaffold.** A `cabal` project that will
-  host the rewritten lexer, parser, semantic analysis, and IR generation.
-  Currently a stub that does not yet parse arguments or emit an object;
+- **`c02-frontend` — working top-level parser.** Built on `megaparsec`, the
+  frontend now parses an entire `.c02` source file into a `Program` AST:
+  register declarations (`reg TYPE NAME @ ADDR;`), global variables (`TYPE
+  NAME (= NUMBER)?;`), function signatures with parameter lists (`fn NAME(TYPE
+  NAME, ...) -> TYPE { ... }`; body parsing is still a stub), and forward
+  declarations (`decl fn ...;` / `decl TYPE NAME;`, per `SPEC.md` §4.6) — the
+  variable form correctly rejects an initializer as a parse error. Integer
+  literals support hex (`0x`/`0X`), binary (`0b`/`0B`), and decimal forms,
+  each requiring a word-boundary after the digits (`0y5` is now a parse error
+  instead of silently returning `0`). Keyword and identifier lexing is
+  boundary-aware the same way, so `u8x` can no longer be misparsed as the
+  keyword `u8` followed by identifier `x`; identifiers permit leading/embedded
+  underscores. `parseFile` wires the whole thing to `Text.Megaparsec.parse`,
+  printing either the parsed AST or an `errorBundlePretty` diagnostic.
+  Command-line argument handling and IR emission are still unimplemented;
+
+- **`SPEC.md` / `DEVIATIONS.md`** — the normative C02 language specification
+  and a catalog of known behavioral deviations in `cc02` (the pre-rewrite
+  reference implementation) versus that spec. `SPEC.md` is the source of
+  truth the Haskell frontend is being written against; `DEVIATIONS.md` tracks
+  where `cc02`'s actual behavior diverges from it, so the rewrite can decide
+  deliberately whether to match `cc02` or the spec on each point;
 
 - **`c02c` — compiler driver.** A script orchestrating the pipeline
   (frontend → link/optimize → codegen), installed into `bin/` alongside the
