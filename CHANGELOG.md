@@ -7,26 +7,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/) - while
 the project is in `0.x`, breaking changes may land in MINOR releases; PATCH
 releases are reserved for bug fixes only.
 
-## [Unreleased]
+## [1.1] 2026-07-09
+
+The `c02-frontend` Haskell parser reaches feature parity with `SPEC.md`: an
+entire `.c02` source file — top-level declarations, statements, control flow,
+expressions, and structs — now parses into a `Program`/`Stmt`/`Expr` AST. The
+only construct from the spec grammar still unparsed is the `asm { ... }` block.
 
 ### Added
 
-- **`c02-frontend` — expression parser.** The frontend now parses full C02
-  expressions into an `Expr` AST, using `megaparsec`'s companion
-  `Control.Monad.Combinators.Expr`. `makeExprParser` drives the complete
-  `SPEC.md` §6 precedence ladder — all ten binary levels, from `*`/`/`/`%`
-  down to `||`, each left-associative — layered over a hand-rolled,
-  right-associative prefix-unary chain (`! - & ~ ++ -- * @`, with `*` and `@`
-  collapsed to a single `Deref` since the spec makes them interchangeable
-  spellings of dereference). Primaries cover integer and string literals,
-  variable references, function calls with expression arguments, C-style casts
-  (`(TYPE) expr`), and parenthesized grouping, with `try`-based disambiguation
-  for call-vs-variable and cast-vs-group. A maximal-munch operator matcher
-  keeps multi-character operators intact, so `<`, `<<`, and `<=` (likewise
-  `&`/`&&`, `|`/`||`) no longer steal one another's leading characters. AST
-  scaffolding for statements (`Stmt`/`Block`) and assignment operators is in
-  place; statement/block parsing — and wiring `exprParser` into variable
-  initializers and function bodies — are the next step;
+- **Expression parser.** The frontend parses full C02 expressions into an
+  `Expr` AST, using `megaparsec`'s companion `Control.Monad.Combinators.Expr`.
+  `makeExprParser` drives the complete `SPEC.md` §6 precedence ladder — all ten
+  binary levels, from `*`/`/`/`%` down to `||`, each left-associative — layered
+  over a hand-rolled, right-associative prefix-unary chain (`! - & ~ ++ -- * @`,
+  with `*` and `@` collapsed to a single `Deref` since the spec makes them
+  interchangeable spellings of dereference). Primaries cover integer and string
+  literals, variable references, function calls, C-style casts (`(TYPE) expr`),
+  and parenthesized grouping. A maximal-munch operator matcher keeps
+  multi-character operators intact, so `<`, `<<`, and `<=` (likewise `&`/`&&`,
+  `|`/`||`) no longer steal one another's leading characters;
+
+- **Statement and control-flow parsing.** The full `SPEC.md` §5 statement
+  grammar now parses: local variable declarations, assignments and compound
+  assignments (`= += -= *= /= %=`) to any lvalue, bare expression statements,
+  `return`, `break`, `continue`, nested `{ }` blocks, `if`/`else if`/`else`
+  chains, and `while`/`for` loops — each loop with the spec's optional
+  body-or-bare-`;` form, and `for` with optional init/cond/increment clauses.
+  Function bodies are now real parsed blocks rather than the previous `{}`
+  stub. One design decision runs through it: the terminating `;` is owned by
+  the statement *sequence*, not the individual statement parsers — which is
+  what lets the `for` header reuse the ordinary clause parsers for its
+  un-terminated init/increment while the loop grammar owns its own `;`
+  separators. Shared-prefix ambiguities are left-factored rather than
+  back-tracked (assignment-vs-expression-statement parse one leading expression
+  and then branch on what follows), keeping error messages sharp and avoiding
+  reparses;
+
+- **Struct initialization and field access.** Postfix field access (`a.b.c`,
+  chaining left-associatively, valid on call results and as an assignment
+  target) and designated-initializer struct literals (`Point { .x = 1, .y = 2 }`,
+  trailing comma and empty `{}` accepted) parse into new `Field` and
+  `StructInit` `Expr` variants. Field access lives in its own postfix layer
+  between the unary chain and primaries, per `SPEC.md` §6.4;
+
+- **Struct types and declarations, via a whole-file name prescan.**
+  `struct Name { type field; ... }` declarations parse at top level and in
+  statement position, and struct names are now first-class types. Because
+  resolving an identifier as a type is context-sensitive — `(Point) x` is a
+  cast, `(a) - b` is a grouped subtraction — the frontend follows `SPEC.md`
+  §6.6: a one-time, whole-file **prescan** collects every `struct Name {` name
+  before parsing begins (making struct types forward-reference-tolerant), and
+  that immutable name set is threaded through the parser as a `ReaderT`
+  environment. `baseTypeParser` consults it to decide whether a bare identifier
+  names a struct type, which drives both the cast-vs-group and the
+  declaration-vs-expression-statement disambiguations. The prescan is
+  deliberately token-aware (a `struct` inside a comment or string literal is
+  ignored) and scope-blind, reproducing the intended `DEVIATIONS.md` G-5
+  shadowing behavior. Adds `containers` and `mtl` dependencies;
+
+- **Expression-valued variable initializers.** A variable initializer accepts a
+  full expression (`u8 y = sum(2, 3) * 4;`), not just an integer literal;
+  `VarDecl.declInit` is now `Maybe Expr`;
+
+- **Left-factored call/identifier parsing.** Call-vs-variable-vs-struct-init are
+  disambiguated by left-factoring on the shared leading identifier — parse the
+  name once, then branch on `(`, `{`, or neither — instead of `try`-based
+  backtracking, so a malformed call like `f(1 2)` reports an error at the
+  offending token rather than silently degrading to a variable reference.
+  Argument and parameter lists accept an optional trailing comma (`sepEndBy`),
+  per the spec grammar;
+
+### Known Limitations
+
+- **`asm` blocks are not parsed.** `asm { ... }` (`SPEC.md` §5) is the one
+  statement form the frontend does not yet accept; every other construct in the
+  spec grammar does. IR emission also remains unimplemented;
 
 ## [1.0.1] 2026-07-08
 

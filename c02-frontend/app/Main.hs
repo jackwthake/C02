@@ -9,6 +9,7 @@ import Data.Maybe (isNothing, maybeToList, isJust)
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Control.Monad.Reader (ReaderT, runReaderT, asks)
+import System.Environment (getArgs)
 
 -- The parser carries a read-only environment: the set of struct type names from
 -- the whole-file prescan (SPEC 6.6). Reader (not State) because it's fixed before
@@ -90,6 +91,8 @@ data Stmt = LocVarDecl  VarDecl                                                -
           | For         (Maybe Stmt) (Maybe Expr) (Maybe Stmt) (Maybe Block)   -- for (<init>?; <cond>?; <incr>?) <block>?
           | ExprStmt    Expr
           | StructDeclStmt StructDecl                                          -- struct decl in statement position (SPEC §5)
+          | Break                                                              -- break ;
+          | Continue                                                           -- continue ;
           deriving (Show, Eq)
 
 
@@ -354,6 +357,8 @@ statementParser = choice
   , LocVarDecl <$> varDeclParser <* symbol ";"
   , blockParser
   , returnParser
+  , Break    <$ (keyword "break"    *> symbol ";")
+  , Continue <$ (keyword "continue" *> symbol ";")
   , ifParser
   , whileParser
   , forParser
@@ -557,4 +562,8 @@ parseFile fileName = do
 
 
 main :: IO ()
-main = parseFile "./test.c02"
+main = do
+  args <- getArgs
+  case args of
+    [path] -> parseFile path
+    _      -> putStrLn "usage: c02-frontend <file.c02>"
