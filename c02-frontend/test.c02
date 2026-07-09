@@ -1,12 +1,13 @@
-reg u8 PORTB @ 0x6000;
-reg u8 PORTA @ 0x6001;
-reg u8 DDRB @ 0x6002;
-reg u8 DDRA @ 0x6003;
+fn sum(u8 x, u8 y) -> u8 {
+  return x + y;
+}
 
-u8 x = 69;
-u16 y = 0xFF;
-decl u8 z;
+fn main () -> void {
+  u8 x = 10;
+  x %= 5;
+  sum(10, 5);
 
-decl fn sum(u8 x, u8 y) -> u8;
+  {
 
-fn main (u8 x, u8 *y) -> void{}
+  }
+}

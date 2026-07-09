@@ -35,27 +35,6 @@ data Program = TopLevels [ TopLevelDecl ] deriving Show
 --                Type      Ptr Depth   Name
 type NamedType = (BaseType, Int,        String)
 
-data VarDecl = VarDecl
-  { varType  :: BaseType
-  , ptrDepth :: Int
-  , declName  :: String
-  , declInit  :: Maybe Int
-  } deriving (Show, Eq)
-
-data RegDecl = RegDecl
-  { regType     :: BaseType
-  , regName     :: String
-  , declAddress :: Int
-  } deriving (Show, Eq)
-
-data FuncDecl = FuncDecl
-  { funcName           :: String
-  , funcReturnType     :: BaseType
-  , funcReturnPtrDepth :: Int
-  , params             :: [NamedType] -- Type, ptr depth, name
-  , body               :: Maybe VarDecl -- Note this will change to whatever statement type gets implemented
-  } deriving (Show, Eq)
-
 
 -- Binary operators
 data BinOp = Add | Sub | Mul | Div | Mod   -- +   -   *   /   %
@@ -99,6 +78,28 @@ data Stmt = LocVarDecl  VarDecl                                                -
           | For         (Maybe Stmt) (Maybe Expr) (Maybe Stmt) (Maybe Block)   -- for (<init>?; <cond>?; <incr>?) <block>? 
           | ExprStmt    Expr
           deriving (Show, Eq)
+
+
+data VarDecl = VarDecl
+  { varType  :: BaseType
+  , ptrDepth :: Int
+  , declName  :: String
+  , declInit  :: Maybe Int
+  } deriving (Show, Eq)
+
+data RegDecl = RegDecl
+  { regType     :: BaseType
+  , regName     :: String
+  , declAddress :: Int
+  } deriving (Show, Eq)
+
+data FuncDecl = FuncDecl
+  { funcName           :: String
+  , funcReturnType     :: BaseType
+  , funcReturnPtrDepth :: Int
+  , params             :: [NamedType] -- Type, ptr depth, name
+  , body               :: Maybe Stmt -- Nested variant
+  } deriving (Show, Eq)
 
 
 keyword :: String -> Parser String
@@ -201,6 +202,59 @@ exprParser :: Parser Expr
 exprParser = makeExprParser unaryParser operatorTable
 
 
+-- parse a block
+blockParser :: Parser Stmt
+blockParser = do
+  _ <- symbol "{"
+  s <- many statementParser
+  _ <- symbol "}"
+  return (Nested s)
+
+
+-- parse an assignmnet operator
+assignmnetOperatorParser :: Parser AssignmentOp
+assignmnetOperatorParser = choice
+  [ Equals      <$ symbol "="
+  , PlusEquals  <$ symbol "+="
+  , MinusEquals <$ symbol "-="
+  , MultEquals  <$ symbol "*="
+  , DivEquals   <$ symbol "/="
+  , ModEquals   <$ symbol "%="
+  ]
+
+
+-- parse assignmnet statement or call site - they have ambiguous starts, both with an expression
+exprOrAssignParser :: Parser Stmt
+exprOrAssignParser = do
+  left <- exprParser                         -- both assignmnets and calls start with an expression
+  choice
+    [ do op    <- assignmnetOperatorParser   -- attempt to parse as assignmnet
+         right <- exprParser
+         _     <- symbol ";"
+         return (Assign left op right)
+    , ExprStmt left <$ symbol ";"            -- if assignmne tparsing fails, parse as expression statement
+    ]
+
+
+-- parse a return statement
+returnParser :: Parser Stmt
+returnParser = do
+  _    <- keyword "return"
+  expr <- optional exprParser
+  _    <- symbol ";"
+  return (Return expr)
+
+
+-- parse a single statement
+statementParser :: Parser Stmt
+statementParser = choice
+  [ LocVarDecl <$> varDeclParser
+  , blockParser
+  , returnParser
+  , exprOrAssignParser
+  ]
+
+
 -- Match text representation of datatypes to the actual haskell version
 baseTypeParser :: Parser BaseType
 baseTypeParser = choice   -- try each variant in order
@@ -285,8 +339,8 @@ funcSigParser = do
 funcDeclParser :: Parser FuncDecl
 funcDeclParser = do
   (name, p, ty, depth) <- funcSigParser
-  _                    <- symbol "{}"        -- TODO: parse body
-  return FuncDecl { funcName=name, funcReturnType=ty, funcReturnPtrDepth=depth, params=p, body=Nothing }
+  blk <- blockParser
+  return FuncDecl { funcName=name, funcReturnType=ty, funcReturnPtrDepth=depth, params=p, body= Just blk }
 
 
 -- Parses top level items starting with the keyword 'decl'
