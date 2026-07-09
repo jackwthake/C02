@@ -3,7 +3,9 @@ import Text.Megaparsec
 import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
 import Control.Monad.Combinators.Expr
+import Control.Monad
 import Data.Void
+import Data.Maybe (isNothing, maybeToList)
 
 type Parser = Parsec Void String
 
@@ -203,12 +205,11 @@ exprParser = makeExprParser unaryParser operatorTable
 
 
 -- parse a block
-blockParser :: Parser Stmt
-blockParser = do
-  _ <- symbol "{"
-  s <- many statementParser
-  _ <- symbol "}"
-  return (Nested s)
+braceBlock :: Parser Block                       -- just the list
+braceBlock = symbol "{" *> many statementParser <* symbol "}"
+
+blockParser :: Parser Stmt                       -- the statement form
+blockParser = Nested <$> braceBlock
 
 
 -- parse an assignmnet operator
@@ -230,9 +231,8 @@ exprOrAssignParser = do
   choice
     [ do op    <- assignmnetOperatorParser   -- attempt to parse as assignmnet
          right <- exprParser
-         _     <- symbol ";"
          return (Assign left op right)
-    , ExprStmt left <$ symbol ";"            -- if assignmne tparsing fails, parse as expression statement
+    , pure (ExprStmt left)                   -- if assignmnet parsing fails, parse as expression statement
     ]
 
 
@@ -245,13 +245,80 @@ returnParser = do
   return (Return expr)
 
 
+-- ( expr )
+parenExpr :: Parser Expr
+parenExpr = symbol "(" *> exprParser <* symbol ")"
+
+
+-- ( expr ) { block }  -- the part 'if' and 'else if' share
+condBlock :: Parser (Expr, Block)
+condBlock = (,) <$> parenExpr <*> braceBlock
+
+
+elseIf :: Parser (Maybe Expr, Block)
+elseIf = do
+  _        <- try (keyword "else" *> keyword "if")   -- see note on 'try'
+  (c, blk) <- condBlock
+  return (Just c, blk)
+
+
+elseBlock :: Parser (Maybe Expr, Block)
+elseBlock = do
+  _   <- keyword "else"
+  blk <- braceBlock
+  return (Nothing, blk)                             -- Nothing = the 'else' clause
+
+
+ifParser :: Parser Stmt
+ifParser = do
+  _         <- keyword "if"
+  (c, blk)  <- condBlock
+  elifs     <- many elseIf          -- :: [(Maybe Expr, Block)]  (0 or more)
+  els       <- optional elseBlock   -- :: Maybe (Maybe Expr, Block)  (0 or 1)
+  return (If ((Just c, blk) : elifs ++ maybeToList els))
+
+
+whileParser :: Parser Stmt
+whileParser = do
+  _ <- keyword "while"
+  cond <- parenExpr
+  blk <- optional braceBlock               -- while bodies not required - while(true); is valid
+  when (isNothing blk) $ void (symbol ";") -- require ; after while if theres no body
+  return (While cond blk)
+
+
+-- a single for-header clause: a statement WITHOUT its terminating ';'.
+-- the 'for' grammar owns the ';' separators, so the clause must not eat one.
+forClause :: Parser Stmt
+forClause = LocVarDecl <$> varDeclParser   -- e.g.  u8 i = 0
+        <|> exprOrAssignParser             -- e.g.  i = 0   or   ++i
+
+
+forParser :: Parser Stmt
+forParser = do
+  _ <- keyword "for"
+  _ <- symbol "("
+  initr <- optional forClause
+  _ <- symbol ";"
+  cond <- optional exprParser
+  _ <- symbol ";"
+  incr <- optional forClause
+  _ <- symbol ")"
+  blk <- optional braceBlock               -- for bodies not required - for(;;); is valid
+  when (isNothing blk) $ void (symbol ";") -- require ; after for if theres no body
+  return (For initr cond incr blk)
+
+
 -- parse a single statement
 statementParser :: Parser Stmt
 statementParser = choice
-  [ LocVarDecl <$> varDeclParser
+  [ LocVarDecl <$> varDeclParser <* symbol ";"
   , blockParser
   , returnParser
-  , exprOrAssignParser
+  , ifParser
+  , whileParser
+  , forParser
+  , exprOrAssignParser <* symbol ";"
   ]
 
 
@@ -304,7 +371,6 @@ varDeclParser :: Parser VarDecl
 varDeclParser = do                                   -- execute impairatively
   (ty, depth, name) <- typeWithNameParser            -- grab the base type, pointer depth, and name                          -- grab the identifier
   val  <- optional (symbol "=" *> intLiteralParser)  -- optionally consume '=' NUMBER together
-  _    <- symbol ";"                                 -- consume the ';', unconditionally
   return (VarDecl ty depth name val)
 
 
@@ -366,7 +432,7 @@ fwdDeclParser = do
 topLevelParser :: Parser TopLevelDecl
 topLevelParser = choice
   [ RegisterDecl  <$> regDeclParser
-  , GlobalVarDecl <$> varDeclParser
+  , GlobalVarDecl <$> varDeclParser <* symbol ";"
   , FunctionDecl  <$> funcDeclParser
   , fwdDeclParser
   ]

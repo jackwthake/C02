@@ -2,12 +2,38 @@ fn sum(u8 x, u8 y) -> u8 {
   return x + y;
 }
 
+u8 x =10;
+u8 x;
+
+reg u8 PORTA @ 0x6000;
+
 fn main () -> void {
   u8 x = 10;
   x %= 5;
   sum(10, 5);
 
-  {
+  while (x < 5);
+  sum(10, 5);
+
+  if (x == 5) {
+
+  } else if (x < 5) {
+
+  } else {
+    
+  }
+
+  for(;;);
+
+  for(u8 i = 0;;) {
+
+  }
+
+  for(u8 i = 0; i < 5;) {
+
+  }
+
+  for(u8 i = 0; i < 5; ++i) {
 
   }
 }
