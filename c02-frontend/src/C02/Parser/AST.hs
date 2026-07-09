@@ -2,7 +2,7 @@
 -- (parser -> semantic analysis -> lowering to TAC) speaks in. Deliberately
 -- dependency-free so it sits at the bottom of the module dependency graph and
 -- no stage's types can leak into it.
-module C02.AST
+module C02.Parser.AST
   ( BaseType(..)
   , TopLevelDecl(..)
   , Program(..)

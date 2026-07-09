@@ -3,7 +3,7 @@
 -- | The C02 grammar: turns source text into a "C02.AST" 'Program'. Built on the
 -- token helpers in "C02.Lexer" and megaparsec's expression-combinator support.
 -- 'parseProgram' is the stage entry point the driver (and later stages) call.
-module C02.Parser
+module C02.Parser.Parser
   ( parseProgram
   , programParser
   , prescanStructNames
@@ -18,8 +18,8 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import Control.Monad.Reader (runReaderT, asks)
 
-import C02.AST
-import C02.Lexer
+import C02.Parser.AST
+import C02.Parser.Lexer
 
 -- Left-factored: parse the identifier once, then decide on what follows.
 --   '(' -> Call,  '{' -> struct init,  otherwise a plain Var reference.

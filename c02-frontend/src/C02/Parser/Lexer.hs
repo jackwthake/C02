@@ -2,7 +2,7 @@
 -- token-level helpers (whitespace/comment skipping, symbols, keywords,
 -- identifiers, literals). Nothing here depends on "C02.AST" — these are the
 -- primitives the parser is built from.
-module C02.Lexer
+module C02.Parser.Lexer
   ( Parser
   , sc
   , lexeme

@@ -5,7 +5,7 @@ module Main (main) where
 
 import System.Environment (getArgs)
 import Text.Megaparsec (errorBundlePretty)
-import C02.Parser (parseProgram)
+import C02.Parser.Parser (parseProgram)
 
 main :: IO ()
 main = do

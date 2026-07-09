@@ -32,7 +32,7 @@ synopsis:           Frontend for the c02 language toolchain
 license:            BSD-3-Clause
 
 -- The file containing the license text.
-license-file:       LICENSE
+license-file:       ../LICENSE
 
 -- The package author(s).
 author:             Jack Thake
@@ -46,7 +46,7 @@ category:           Language
 build-type:         Simple
 
 -- Extra doc files to be distributed with the package, such as a CHANGELOG or a README.
-extra-doc-files:    CHANGELOG.md
+extra-doc-files:    ../CHANGELOG.md
 
 -- Extra source files to be distributed with the package, such as examples, or a tutorial module.
 -- extra-source-files:
@@ -59,9 +59,9 @@ common warnings
 library
     import:           warnings
     hs-source-dirs:   src
-    exposed-modules:  C02.AST
-                      C02.Lexer
-                      C02.Parser
+    exposed-modules:  C02.Parser.AST
+                      C02.Parser.Lexer
+                      C02.Parser.Parser
     build-depends:    base ^>=4.20.2.0,
                       megaparsec,
                       parser-combinators,
@@ -81,7 +81,8 @@ executable c02-frontend
                       megaparsec,
                       c02-frontend
 
-    -- Directories containing source files.
+    -- Driver lives in its own dir so it doesn't re-compile the library's
+    -- modules from src/ (which would bypass the library and its deps).
     hs-source-dirs:   app
 
     -- Base language which the package is written in.
