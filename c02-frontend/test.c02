@@ -7,4 +7,4 @@ u8 x = 69;
 u16 y = 0xFF;
 u8 z = 0b00001111;
 
-fn main () -> void{}
+fn main (u8 x, u8 *y) -> void{}

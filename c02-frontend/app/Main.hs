@@ -41,10 +41,17 @@ data RegDecl = RegDecl
   , declAddress :: Int
   } deriving (Show, Eq)
 
+data Param = Param
+  { paramtype     :: BaseType
+  , paramPtrDepth :: Int
+  , paramName     :: String
+  } deriving (Show, Eq)
+
 data FuncDecl = FuncDecl
   { funcName           :: String
   , funcReturnType     :: BaseType
   , funcReturnPtrDepth :: Int
+  , params        :: [Param]
   } deriving (Show, Eq)
 
 
@@ -108,17 +115,27 @@ regDeclParser = do
   return (RegDecl ty name addr)
 
 
+-- Parse a single parameter: <TYPE> *<?>NAME
+paramParser :: Parser Param
+paramParser = do
+  (ty, depth) <- typeParser
+  name <- lexeme identifier 
+  return Param { paramtype=ty, paramPtrDepth=depth, paramName=name }
+
+
 -- the grammar: fn NAME(ARGS) -> TYPE { BLOCK }
 -- NOTE: so far this just parses functions with no args and an empty block
 funcDeclParser :: Parser FuncDecl
 funcDeclParser = do
   _           <- keyword "fn"
   name        <- lexeme identifier
-  _           <- symbol "()"        -- TODO: parse params
+  _           <- symbol "("
+  p           <- sepBy paramParser (symbol ",")
+  _           <- symbol ")"
   _           <- symbol "->"
   (ty, depth) <- typeParser
   _           <- symbol "{}"        -- TODO: parse body
-  return (FuncDecl name ty depth)
+  return FuncDecl { funcName=name, funcReturnType=ty, funcReturnPtrDepth=depth, params=p }
 
 
 -- Parse a single top level item
