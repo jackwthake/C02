@@ -5,6 +5,8 @@ reg u8 DDRA @ 0x6003;
 
 u8 x = 69;
 u16 y = 0xFF;
-u8 z = 0b00001111;
+decl u8 z;
+
+decl fn sum(u8 x, u8 y) -> u8;
 
 fn main (u8 x, u8 *y) -> void{}

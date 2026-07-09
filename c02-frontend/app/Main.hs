@@ -22,11 +22,16 @@ data BaseType = U8 | I8 | U16 | I16 | Void deriving (Show, Eq)
 
 
 data TopLevelDecl = GlobalVarDecl VarDecl
-                  | RegisterDecl RegDecl
-                  | FunctionDecl FuncDecl
+                  | RegisterDecl  RegDecl
+                  | FunctionDecl  FuncDecl
+                  | FwdFuncDecl   FuncDecl
+                  | FwdVarDecl    VarDecl
                   deriving (Show, Eq)
 
 data Program = TopLevels [ TopLevelDecl ] deriving Show
+
+--                Type      Ptr Depth   Name
+type NamedType = (BaseType, Int,        String)
 
 data VarDecl = VarDecl
   { varType  :: BaseType
@@ -41,17 +46,12 @@ data RegDecl = RegDecl
   , declAddress :: Int
   } deriving (Show, Eq)
 
-data Param = Param
-  { paramtype     :: BaseType
-  , paramPtrDepth :: Int
-  , paramName     :: String
-  } deriving (Show, Eq)
-
 data FuncDecl = FuncDecl
   { funcName           :: String
   , funcReturnType     :: BaseType
   , funcReturnPtrDepth :: Int
-  , params        :: [Param]
+  , params             :: [NamedType] -- Type, ptr depth, name
+  , body               :: Maybe VarDecl -- Note this will change to whatever statement type gets implemented
   } deriving (Show, Eq)
 
 
@@ -68,6 +68,7 @@ baseTypeParser = choice   -- try each variant in order
   , I16  <$ keyword "i16"
   , Void <$ keyword "void"
   ]
+
 
 -- Parses <typename> <ptr-depth>
 typeParser :: Parser (BaseType, Int)
@@ -90,14 +91,22 @@ intLiteralParser = lexeme $ choice
 
 -- Parse an identifier
 identifier :: Parser String
-identifier = (:) <$> letterChar <*> many alphaNumChar -- collect all chars after an alpha char
+identifier = (:) <$> (letterChar <|> char '_') <*> many (alphaNumChar <|> char '_') -- collect all chars after an alpha char
+
+
+-- Parse a single type with name: <TYPE> *<?>NAME
+-- Used for params and vardecls / fwd var decls
+typeWithNameParser :: Parser NamedType
+typeWithNameParser = do
+  (ty, depth) <- typeParser
+  name <- lexeme identifier 
+  return (ty, depth, name )
 
 
 -- the grammar: TYPE *<?>NAME (= NUMBER)? ;
 varDeclParser :: Parser VarDecl
 varDeclParser = do                                   -- execute impairatively
-  (ty, depth) <- typeParser                          -- grab the base type and pointer depth
-  name <- lexeme identifier                          -- grab the identifier
+  (ty, depth, name) <- typeWithNameParser            -- grab the base type, pointer depth, and name                          -- grab the identifier
   val  <- optional (symbol "=" *> intLiteralParser)  -- optionally consume '=' NUMBER together
   _    <- lexeme $ symbol ";"                        -- consume the ';', unconditionally
   return (VarDecl ty depth name val)
@@ -115,27 +124,46 @@ regDeclParser = do
   return (RegDecl ty name addr)
 
 
--- Parse a single parameter: <TYPE> *<?>NAME
-paramParser :: Parser Param
-paramParser = do
-  (ty, depth) <- typeParser
-  name <- lexeme identifier 
-  return Param { paramtype=ty, paramPtrDepth=depth, paramName=name }
-
-
--- the grammar: fn NAME(ARGS) -> TYPE { BLOCK }
--- NOTE: so far this just parses functions with no args and an empty block
-funcDeclParser :: Parser FuncDecl
-funcDeclParser = do
+-- Parses 'fn NAME(PARAMS) -> RETURN_TYPE
+--                       Name    Params                     Ret Base  Ret ptr depth
+funcSigParser :: Parser (String, [NamedType], BaseType, Int)
+funcSigParser = do
   _           <- keyword "fn"
   name        <- lexeme identifier
   _           <- symbol "("
-  p           <- sepBy paramParser (symbol ",")
+  p           <- sepBy typeWithNameParser (symbol ",")
   _           <- symbol ")"
   _           <- symbol "->"
   (ty, depth) <- typeParser
-  _           <- symbol "{}"        -- TODO: parse body
-  return FuncDecl { funcName=name, funcReturnType=ty, funcReturnPtrDepth=depth, params=p }
+  return (name, p, ty, depth)
+
+
+-- parse function with body
+-- NOTE: so far this just parses functions an empty block
+funcDeclParser :: Parser FuncDecl
+funcDeclParser = do
+  (name, p, ty, depth) <- funcSigParser
+  _                    <- symbol "{}"        -- TODO: parse body
+  return FuncDecl { funcName=name, funcReturnType=ty, funcReturnPtrDepth=depth, params=p, body=Nothing }
+
+
+-- Parses top level items starting with the keyword 'decl'
+fwdDeclParser :: Parser TopLevelDecl
+fwdDeclParser = do
+  _ <- keyword "decl"
+  choice
+    [ do (name, p, ty, depth) <- funcSigParser
+         _                    <- lexeme $ symbol ";"
+         return $ FwdFuncDecl FuncDecl
+           { funcName = name, funcReturnType = ty, funcReturnPtrDepth = depth
+           , params = p, body = Nothing
+           }
+    , do (ty, depth, name) <- typeWithNameParser
+         _                 <- lexeme $ symbol ";"
+         return $ FwdVarDecl VarDecl
+           { varType = ty, ptr_depth = depth, declName = name, declInit = Nothing
+           }
+    ]
 
 
 -- Parse a single top level item
@@ -144,6 +172,7 @@ topLevelParser = choice
   [ RegisterDecl  <$> regDeclParser
   , GlobalVarDecl <$> varDeclParser
   , FunctionDecl  <$> funcDeclParser
+  , fwdDeclParser
   ]
 
 
