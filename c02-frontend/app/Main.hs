@@ -86,7 +86,7 @@ data VarDecl = VarDecl
   { varType  :: BaseType
   , ptrDepth :: Int
   , declName  :: String
-  , declInit  :: Maybe Int
+  , declInit  :: Maybe Expr
   } deriving (Show, Eq)
 
 data RegDecl = RegDecl
@@ -108,17 +108,13 @@ keyword :: String -> Parser String
 keyword keyw = lexeme (string keyw <* notFollowedBy alphaNumChar) 
 
 
-callParser :: Parser Expr
-callParser = do
-  name <- lexeme identifier
-  _    <- symbol "("
-  args <- sepBy exprParser $ symbol ","
-  _    <- symbol ")"
-  return (Call name args)
-
-
-varParser :: Parser Expr
-varParser = Var <$> lexeme identifier
+-- Left-factored: parse the identifier once, then decide on what follows.
+-- A Call if an arg list '(...)' follows, otherwise a plain Var reference.
+callOrVarParser :: Parser Expr
+callOrVarParser = do
+  name  <- lexeme identifier
+  margs <- optional (symbol "(" *> sepEndBy exprParser (symbol ",") <* symbol ")")
+  return $ maybe (Var name) (Call name) margs
 
 
 -- (type) expr : the cast operand is a full expression, per SPEC 6.
@@ -144,7 +140,7 @@ primaryParser = choice
   [ IntLit <$> intLiteralParser
   , StrLit <$> lexeme (char '"' *> manyTill L.charLiteral (char '"'))
   , try castParser <|> groupParser     -- both open with '('
-  , try callParser <|> varParser       -- both open with an identifier
+  , callOrVarParser                    -- identifier: Call if '(...)' follows, else Var
   ]
 
 
@@ -370,7 +366,7 @@ typeWithNameParser = do
 varDeclParser :: Parser VarDecl
 varDeclParser = do                                   -- execute impairatively
   (ty, depth, name) <- typeWithNameParser            -- grab the base type, pointer depth, and name                          -- grab the identifier
-  val  <- optional (symbol "=" *> intLiteralParser)  -- optionally consume '=' NUMBER together
+  val  <- optional (symbol "=" *> exprParser)  -- optionally consume '=' NUMBER together
   return (VarDecl ty depth name val)
 
 
@@ -393,7 +389,7 @@ funcSigParser = do
   _           <- keyword "fn"
   name        <- lexeme identifier
   _           <- symbol "("
-  p           <- sepBy typeWithNameParser (symbol ",")
+  p           <- sepEndBy typeWithNameParser (symbol ",")
   _           <- symbol ")"
   _           <- symbol "->"
   (ty, depth) <- typeParser
