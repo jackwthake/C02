@@ -33,3 +33,6 @@ jobs:
 
       - name: Build
         run: make
+      
+      - name: LOC Report
+        run: python3 scripts/loc.py
