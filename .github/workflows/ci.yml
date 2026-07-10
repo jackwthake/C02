@@ -18,6 +18,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gcc python3 python3-pip valgrind
           pip install py65
+      
+      - name: Set up Haskell and Cabal
+        uses: haskell-actions/setup@v2
+        with:
+          ghc-version: '9.10.3'
+          cabal-version: 'latest'
+
+      - name: Update Cabal cache
+        run: cabal update
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable

@@ -2,7 +2,7 @@
 
 BIN_DIR = bin
 
-all: c02-frontend c02-as c02-objdump $(BIN_DIR)/c02c
+all: $(BIN_DIR)/c02c c02-frontend c02-as c02-objdump
 
 # Install the driver script alongside the binaries it invokes.
 $(BIN_DIR)/c02c: c02c | $(BIN_DIR)
@@ -12,7 +12,7 @@ $(BIN_DIR)/c02c: c02c | $(BIN_DIR)
 $(BIN_DIR):
 	mkdir -p $@
 
-c02-frontend: c02-frontend
+c02-frontend: c02-frontend/
 	@printf '==> c02-frontend\n'
 	@$(MAKE) -C c02-frontend
 
