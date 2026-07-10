@@ -1,4 +1,4 @@
-/home/jwt/Code/c02-functional/test/parser/bad_missing_semicolon.c02:7:1:
+test/parser/bad_missing_semicolon.c02:7:1:
   |
 7 | fn main() -> void {
   | ^

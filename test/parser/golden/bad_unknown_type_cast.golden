@@ -1,4 +1,4 @@
-/home/jwt/Code/c02-functional/test/parser/bad_unknown_type_cast.c02:8:21:
+test/parser/bad_unknown_type_cast.c02:8:21:
   |
 8 |   Bogus *p = (Bogus*)0x2000;
   |                     ^^^^^

@@ -28,6 +28,7 @@ import difflib
 import os
 import subprocess
 import sys
+import tempfile
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 REPO_ROOT = os.path.dirname(SCRIPT_DIR)
@@ -73,8 +74,12 @@ class Result:
 
 def run_case(src_path, argv_for):
     """Compile one input, returning (stdout, stderr, returncode)."""
+    # Pass a repo-relative source path: the parser echoes it back in its error
+    # diagnostics, so an absolute path would bake this machine's checkout
+    # location into every negative golden and break on any other machine (CI).
+    rel_src = os.path.relpath(src_path, REPO_ROOT)
     proc = subprocess.run(
-        argv_for(src_path),
+        argv_for(rel_src),
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
@@ -186,6 +191,24 @@ def main():
     if not os.access(DRIVER, os.X_OK):
         print(red(f"driver not found or not executable: {DRIVER}"))
         print("  run `make` first, or drop --no-build")
+        return 2
+
+    # Toolchain sanity check: the driver must actually compile a trivial valid
+    # program. Without this, a driver-level failure (e.g. a missing frontend
+    # binary) exits nonzero and would be mistaken for an expected parse error -
+    # and --bless would enshrine that infra error as a negative golden.
+    with tempfile.NamedTemporaryFile("w", suffix=".c02", dir=TEST_ROOT, delete=False) as tf:
+        tf.write("fn main() -> void { return; }\n")
+        smoke_path = tf.name
+    try:
+        out, err, code = run_case(smoke_path, STAGES[list(STAGES)[0]])
+    finally:
+        os.unlink(smoke_path)
+    if code != 0 or err:
+        print(red("toolchain sanity check failed - the driver cannot compile a "
+                  "trivial valid program:"))
+        print((err or out).rstrip())
+        print("  the toolchain is broken; refusing to run (goldens would be garbage)")
         return 2
 
     stages = args.stages or list(STAGES)

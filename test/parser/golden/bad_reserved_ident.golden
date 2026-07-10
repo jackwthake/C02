@@ -1,4 +1,4 @@
-/home/jwt/Code/c02-functional/test/parser/bad_reserved_ident.c02:6:3:
+test/parser/bad_reserved_ident.c02:6:3:
   |
 6 |   u8 return = 5;
   |   ^

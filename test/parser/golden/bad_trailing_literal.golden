@@ -1,4 +1,4 @@
-/home/jwt/Code/c02-functional/test/parser/bad_trailing_literal.c02:7:12:
+test/parser/bad_trailing_literal.c02:7:12:
   |
 7 |   u8 x = 42abc;
   |            ^

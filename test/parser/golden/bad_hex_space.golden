@@ -1,4 +1,4 @@
-/home/jwt/Code/c02-functional/test/parser/bad_hex_space.c02:8:12:
+test/parser/bad_hex_space.c02:8:12:
   |
 8 |   u8 x = 0x FF;
   |            ^

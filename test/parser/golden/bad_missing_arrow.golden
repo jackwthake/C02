@@ -1,4 +1,4 @@
-/home/jwt/Code/c02-functional/test/parser/bad_missing_arrow.c02:5:11:
+test/parser/bad_missing_arrow.c02:5:11:
   |
 5 | fn main() void {
   |           ^^
