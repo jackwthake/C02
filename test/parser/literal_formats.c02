@@ -1,0 +1,28 @@
+// literal_formats.c02
+// Every integer literal radix and its boundaries: decimal, lower/upper hex
+// (0x/0X), lower/upper binary (0b/0B), zero in each radix, and the widest
+// values each type holds. true/false/null (which lex to 1/0/0) live in
+// literals.c02; this file is purely about numeric formats.
+
+u8  dec_small  = 7;
+u8  dec_max    = 255;
+u16 dec_wide   = 65535;
+
+u8  hex_lo     = 0xff;
+u8  hex_hi     = 0xFF;
+u8  hex_mixed  = 0xaB;
+u16 hex_wide   = 0xFFFF;
+u16 hex_addr   = 0X6000;    // uppercase X prefix
+
+u8  bin_lo     = 0b1010;
+u8  bin_hi     = 0B1010;    // uppercase B prefix
+u8  bin_byte   = 0b11111111;
+u16 bin_wide   = 0b1111111111111111;
+
+u8  zero_dec   = 0;
+u8  zero_hex   = 0x0;
+u8  zero_bin   = 0b0;
+
+fn main() -> void {
+  return;
+}

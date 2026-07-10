@@ -1,0 +1,6 @@
+/home/jwt/Code/c02-functional/test/parser/bad_unknown_type_cast.c02:8:21:
+  |
+8 |   Bogus *p = (Bogus*)0x2000;
+  |                     ^^^^^
+unexpected ")0x20"
+expecting "++", "--", "0B", "0X", "0b", "0x", "false", "null", "true", '!', '"', '&', '(', '*', '-', '@', '_', '~', integer, or letter

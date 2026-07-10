@@ -1,0 +1,9 @@
+// bad_trailing_literal.c02  (expected: parse error)
+// An integer literal may not be immediately followed by an alphanumeric
+// character (the numeral parser uses notFollowedBy alphaNumChar), so `42abc`
+// is neither a valid number nor a valid identifier.
+
+fn main() -> void {
+  u8 x = 42abc;
+  return;
+}

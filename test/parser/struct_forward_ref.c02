@@ -1,0 +1,33 @@
+// struct_forward_ref.c02
+// Structs are forward-reference tolerant (SPEC 6.6): the whole-file prescan
+// collects every struct name before the real parse, so a struct type may be
+// used (as a field type, a variable type, a cast, a return type) BEFORE its
+// own definition appears. Also covers struct-typed and pointer-to-struct
+// fields.
+
+// List is used here before it is defined further down.
+struct Registry {
+  List *head;      // pointer to a struct defined later
+  u8 count;
+}
+
+fn first(Registry *r) -> List* {
+  return r.head;
+}
+
+struct List {
+  Node *node;      // pointer to a struct defined even further down
+  List *next;      // self-referential pointer
+}
+
+struct Node {
+  u8 value;
+  Node *sibling;   // self-referential pointer
+}
+
+fn main() -> void {
+  Registry r = Registry{ .head = null, .count = 0 };
+  List *l = (List*)0x2000;
+  r.head = l;
+  return;
+}

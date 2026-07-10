@@ -1,0 +1,63 @@
+// parser_functions.c02
+// Exercises function declarations and call expressions:
+// no params, single param, multiple params, different return types,
+// calls as subexpressions, nested calls, calls in assignments.
+
+fn no_params() -> void {
+  return;
+}
+
+fn one_param(u8 x) -> u8 {
+  return x;
+}
+
+fn multi_params(u8 a, u16 b, i8 c, i16 d) -> u16 {
+  return b;
+}
+
+fn returns_u8() -> u8 {
+  return 42;
+}
+
+fn returns_ptr() -> u8* {
+  u8 x = 10;
+  return &x;
+}
+
+fn main() -> void {
+  // bare call
+  no_params();
+
+  // call result assigned to variable
+  u8 val = one_param(5);
+
+  // call with multiple args
+  u16 result = multi_params(1, 2, 3, 4);
+
+  // call as subexpression
+  u8 sum = one_param(1) + one_param(2);
+  u8 cmp = one_param(5) > 3;
+
+  // nested calls (call result passed as argument)
+  u8 nested = one_param(returns_u8());
+
+  // call in conditional
+  if (one_param(1) > 0) {
+    no_params();
+  }
+
+  // call in loop condition
+  while (one_param(val) > 0) {
+    val = val - 1;
+  }
+
+  // call in for loop clauses
+  for (u8 i = one_param(0); i < one_param(10); i = i + 1) {
+    no_params();
+  }
+
+  // pointer return
+  u8 *p = returns_ptr();
+
+  return;
+}

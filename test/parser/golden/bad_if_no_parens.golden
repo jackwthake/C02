@@ -1,0 +1,6 @@
+/home/jwt/Code/c02-functional/test/parser/bad_if_no_parens.c02:7:6:
+  |
+7 |   if x > 0 {
+  |      ^
+unexpected 'x'
+expecting '('

@@ -1,0 +1,4 @@
+decl fn send_byte(u8 b) -> void;
+decl u8 counter;
+
+fn main() -> void {}

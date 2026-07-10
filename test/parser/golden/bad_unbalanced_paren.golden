@@ -1,0 +1,6 @@
+/home/jwt/Code/c02-functional/test/parser/bad_unbalanced_paren.c02:6:16:
+  |
+6 |   u8 x = (1 + 2;
+  |                ^
+unexpected ';'
+expecting "!=", "&&", "<<", "<=", "==", ">=", ">>", "||", '%', '&', ')', '*', '+', '-', '.', '/', '<', '>', '^', '|', or digit

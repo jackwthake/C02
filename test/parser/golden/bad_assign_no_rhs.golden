@@ -1,0 +1,6 @@
+/home/jwt/Code/c02-functional/test/parser/bad_assign_no_rhs.c02:7:7:
+  |
+7 |   x = ;
+  |       ^^
+unexpected ";<newline>  r"
+expecting "++", "--", "0B", "0X", "0b", "0x", "false", "null", "true", '!', '"', '&', '(', '*', '-', '@', '_', '~', integer, or letter

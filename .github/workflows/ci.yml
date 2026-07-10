@@ -34,5 +34,8 @@ jobs:
       - name: Build
         run: make
       
+      - name: Test Suite
+        run: python3 scripts/test.py
+      
       - name: LOC Report
         run: python3 scripts/loc.py

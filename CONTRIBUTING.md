@@ -44,12 +44,37 @@ terms.
 3. **Commit as you go.** Work-in-progress commits on your branch don't need
    to be clean - history gets squashed on merge (see below).
 
-4. **Add tests.** New features should come with tests under `cc02/tests/`:
-   golden-file tests for frontend changes (`parser_*.c02`, `analyzer_*.c02`,
-   `ir_*.c02` with matching `.golden` files), emulator tests for codegen
-   changes (`emu_*.c02` + a test function in `emu_test.py`), and smoke
-   tests for internal API changes (`cc02/tests/smoke/`). Bug fixes should
-   add a regression case where practical.
+4. **Add tests.** New features should come with golden-file tests, run by
+   `scripts/test.py`. Tests are grouped by compiler stage:
+
+   ```
+   test/<stage>/*.c02             one program per file
+   test/<stage>/golden/*.golden   the expected output, one per input
+   ```
+
+   Today `test/parser/` is wired up (invoked through the `c02c` driver); a
+   `test/analyzer/` stage slots in the same way once the analyzer lands - add
+   an entry to the `STAGES` map in `scripts/test.py`.
+
+   - A **positive** case (any name) must parse: the frontend exits 0 and prints
+     the AST to stdout, which the `.golden` captures.
+   - A **negative** case must be named `bad_*.c02`: it must *fail* to parse, so
+     the frontend exits nonzero and writes a diagnostic to stderr, which the
+     `.golden` captures. Keep each `bad_` case down to a single parse error.
+
+   Workflow:
+
+   ```bash
+   scripts/test.py                 # build, then run every stage
+   scripts/test.py parser          # run one stage
+   scripts/test.py --bless         # (re)generate goldens after an intended change
+   scripts/test.py -v              # show a diff for every mismatch
+   ```
+
+   Always eyeball a `--bless` diff before committing - blessing enshrines
+   whatever the compiler currently prints. A nonzero exit on a positive case is
+   reported as a `CRASH` (never blessed); a `bad_` case that parses cleanly is
+   an `XPASS`. Bug fixes should add a regression case where practical.
 
 5. **Update the changelog.** Add a line under `[Unreleased]` in
    [CHANGELOG.md](./CHANGELOG.md) describing the change. This keeps the

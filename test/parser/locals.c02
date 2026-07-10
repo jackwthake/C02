@@ -1,0 +1,35 @@
+// locals.c02
+// Local variable declarations in every shape: uninitialised vs initialised,
+// each base type, pointer depth (including double pointers), and struct-typed
+// locals. Declarations are statements terminated by ';'.
+
+struct Thing {
+  u8 v;
+}
+
+fn main() -> void {
+  // uninitialised, one per base type
+  u8  a;
+  i8  b;
+  u16 c;
+  i16 d;
+
+  // initialised
+  u8  e = 1;
+  i8  f = -2;
+  u16 g = 300;
+  i16 h = -300;
+
+  // pointer depth
+  u8  *p;
+  u8  **pp;
+  u16 *q = null;
+  u8  ***ppp;
+
+  // struct-typed locals
+  Thing t;
+  Thing u = Thing{ .v = 5 };
+  Thing *tp = &t;
+
+  return;
+}

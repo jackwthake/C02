@@ -30,6 +30,18 @@ releases are reserved for bug fixes only.
   non-function call target is `ERR_NOT_A_FUNCTION`). Remaining expression forms
   (binary/unary operators, dereference, field access, struct literals) are
   stubbed pending §6.3.
+- **Golden-file test suite (`scripts/test.py`, `test/`).** A stage-keyed runner
+  that builds the toolchain, compiles each case through the `c02c` driver, and
+  diffs its output against a committed golden (`--bless` regenerates them).
+  Tests live under `test/<stage>/` with goldens in `test/<stage>/golden/`, so
+  new stages (e.g. `test/analyzer/`) slot in additively. The first stage,
+  `test/parser/`, ships 43 cases covering every grammar production and its edge
+  cases — the full precedence ladder and associativity, the prefix-unary chain
+  (`* @` deref aliases, `--x` vs `- -x`), cast binding, postfix field chains,
+  struct forward-references, literal formats and string escapes — plus `bad_*`
+  negatives that pin one parse error each. Positives assert a clean parse
+  (exit 0, AST on stdout); an unexpected nonzero exit is a `CRASH` and a `bad_`
+  case that parses is an `XPASS`. `CONTRIBUTING.md` documents the workflow.
 
 ### Changed
 
@@ -48,6 +60,12 @@ releases are reserved for bug fixes only.
   matching what the frontend already accepts (deviation G-3).
 
 ### Fixed
+
+- **The frontend now exits nonzero on a parse error.** A failed parse writes its
+  diagnostic to stderr and returns a failure exit code, instead of printing to
+  stdout and exiting 0. This lets the `c02c` driver abort the pipeline on a
+  parse error rather than handing a half-parsed program to later stages, and
+  keeps a clean parse's AST dump alone on stdout.
 
 - **Keywords and `true`/`false`/`null` are now reserved.** The lexer's
   `identifier` rejects every reserved word from `SPEC.md` §1.1, so

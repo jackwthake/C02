@@ -1,0 +1,10 @@
+// bad_hex_space.c02  (expected: parse error)
+// A radix prefix is matched with `string`, not `symbol`, so no whitespace is
+// allowed between the prefix and its digits: `0x FF` is rejected (the hex
+// digits parser fails on the space right after `0x`). This pins the
+// deliberate choice that "0x FF" does NOT lex as 255.
+
+fn main() -> void {
+  u8 x = 0x FF;
+  return;
+}

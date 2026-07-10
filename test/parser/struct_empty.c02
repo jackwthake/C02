@@ -1,0 +1,16 @@
+// struct_empty.c02
+// A struct body may hold zero fields: `many fieldDeclParser` accepts an empty
+// field list. With and without the optional trailing ';'. A variable of the
+// empty type still parses.
+
+struct Empty {
+}
+
+struct AlsoEmpty {
+};
+
+fn main() -> void {
+  Empty e;
+  Empty *p = &e;
+  return;
+}

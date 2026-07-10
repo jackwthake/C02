@@ -1,0 +1,36 @@
+// operators_assignment.c02
+// Every assignment operator (SPEC): = += -= *= /= %=. Assignment is a
+// statement, not an expression, so the RHS is a full expression but the whole
+// thing does not nest inside another expression. Also exercises assignment to
+// non-trivial lvalues (a dereference, a field) so the left side is a real
+// expression tree, not just a bare name.
+
+struct Cell {
+  u8 v;
+}
+
+fn main() -> void {
+  u8 x = 0;
+
+  x  = 1;
+  x += 2;
+  x -= 3;
+  x *= 4;
+  x /= 5;
+  x %= 6;
+
+  // RHS is a full expression
+  x += 1 + 2 * 3;
+
+  // assignment to a dereference
+  u8 *p = &x;
+  *p = 9;
+  *p += 1;
+
+  // assignment to a field
+  Cell c = Cell{ .v = 0 };
+  c.v = 7;
+  c.v *= 2;
+
+  return;
+}

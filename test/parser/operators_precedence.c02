@@ -1,0 +1,38 @@
+// operators_precedence.c02
+// The full binary precedence ladder, tightest to loosest:
+//   * / %  >  + -  >  << >>  >  < <= > >=  >  == !=  >  &  >  ^  >  |  >  &&  >  ||
+// Each case mixes two adjacent (and some non-adjacent) levels so the golden
+// AST pins exactly how the tree nests. Note two deliberate deviations from C:
+// the bitwise operators & ^ | bind LOOSER than == / != here, and all levels
+// are left-associative (see operators_assoc.c02).
+
+fn main() -> void {
+  // factor over term
+  u8 a = 1 + 2 * 3;          // 1 + (2*3)
+  u8 b = 2 * 3 + 1;          // (2*3) + 1
+  u8 c = 10 - 6 / 2 % 4;     // 10 - ((6/2)%4)
+
+  // term over shift
+  u8 d = 1 << 2 + 3;         // 1 << (2+3)
+  u8 e = 1 + 2 << 3;         // (1+2) << 3
+
+  // shift over comparison
+  u8 f = 1 << 2 < 8;         // (1<<2) < 8
+
+  // comparison over equality
+  u8 g = 1 < 2 == 1;         // (1<2) == 1
+
+  // equality over bitwise-and  (DEVIATION: & is looser than == here)
+  u8 h = 1 & 2 == 2;         // 1 & (2==2)
+
+  // bitwise ladder: & tighter than ^ tighter than |
+  u8 i = 1 | 2 ^ 3 & 4;      // 1 | (2 ^ (3&4))
+
+  // bitwise over logical-and over logical-or
+  u8 j = 1 | 0 && 2 & 3 || 0; // ((1|0) && (2&3)) || 0
+
+  // a deep mix spanning most of the ladder
+  u8 k = 1 + 2 * 3 < 4 << 1 == 0 & 5 | 6 && 7;
+
+  return;
+}

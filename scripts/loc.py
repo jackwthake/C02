@@ -100,7 +100,10 @@ def print_loc_table(sections):
 
     for s in sections:
         pct = s.total / grand_total * 100
-        print(f"{s.label:<{label_w}}  {s.total:>{lines_w},}  {s.code:>{code_w},}   {pct:5.1f}%")
+        if s.label == "---":
+          print(sep)
+        else:
+          print(f"{s.label:<{label_w}}  {s.total:>{lines_w},}  {s.code:>{code_w},}   {pct:5.1f}%")
 
     print(sep)
     print(f"{'Grand Total':<{label_w}}  {grand_total:>{lines_w},}  {grand_code:>{code_w},}   100.0%")
@@ -131,6 +134,11 @@ def count_lines():
         {".rs": C_STYLE},
         ["Makefile", os.path.join("c02-objdump", "Makefile")],
         os.path.join("c02-objdump", "src"))
+    
+    parser_tests_total, parser_test_code = count_dir(
+        {".c02": C_STYLE},
+        [],
+        os.path.join("test", "parser"))
 
     tooling_total, tooling_code = count_dir(
         {".py": HASH_STYLE},
@@ -142,6 +150,8 @@ def count_lines():
         Section("c02-frontend", frontend_total, frontend_code),
         Section("c02-as", compiler_total, compiler_code),
         Section("c02-objdump", objdump_total, objdump_code),
+        Section("---", 0, 0),
+        Section("Parser Tests", parser_tests_total, parser_test_code),
         Section("Internal Tooling", tooling_total, tooling_code),
     ]
 

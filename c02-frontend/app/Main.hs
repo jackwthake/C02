@@ -4,6 +4,8 @@
 module Main (main) where
 
 import System.Environment (getArgs)
+import System.Exit (exitFailure)
+import System.IO (hPutStr, hPutStrLn, stderr)
 import Text.Megaparsec (errorBundlePretty)
 import C02.Parser.Parser (parseProgram)
 
@@ -14,6 +16,9 @@ main = do
     [path] -> do
       src <- readFile path
       case parseProgram path src of
-        Left err   -> putStr (errorBundlePretty err)
+        -- Diagnostics go to stderr and set a failure exit code, so the driver
+        -- (c02c) aborts the pipeline instead of feeding a half-parsed program
+        -- to later stages. The AST dump stays on stdout for a clean parse.
+        Left err   -> hPutStr stderr (errorBundlePretty err) >> exitFailure
         Right prog -> print prog
-    _ -> putStrLn "usage: c02-frontend <file.c02>"
+    _ -> hPutStrLn stderr "usage: c02-frontend <file.c02>" >> exitFailure

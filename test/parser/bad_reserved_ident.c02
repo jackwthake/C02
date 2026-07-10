@@ -1,0 +1,8 @@
+// bad_reserved_ident.c02  (expected: parse error)
+// A reserved word cannot be used as an identifier (SPEC 1.1). `return` is a
+// keyword, so it may not name a variable.
+
+fn main() -> void {
+  u8 return = 5;
+  return;
+}

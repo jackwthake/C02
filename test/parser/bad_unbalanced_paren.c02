@@ -1,0 +1,8 @@
+// bad_unbalanced_paren.c02  (expected: parse error)
+// A parenthesised expression is opened but never closed; the parser expects a
+// ')' and finds ';'.
+
+fn main() -> void {
+  u8 x = (1 + 2;
+  return;
+}
