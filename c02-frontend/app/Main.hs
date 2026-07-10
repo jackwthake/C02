@@ -9,14 +9,20 @@
 -- (TAC lowering, codegen) and a @--emit symtab@ mode will be chained in here.
 module Main (main) where
 
-import Data.List (isPrefixOf, partition)
+import Data.List (isPrefixOf, partition, sortOn)
+import qualified Data.List.NonEmpty as NE
+import qualified Data.Set as Set
+import Data.Void (Void)
 import System.Environment (getArgs)
 import System.Exit (exitFailure)
 import System.IO (hPutStr, hPutStrLn, stderr)
-import Text.Megaparsec (errorBundlePretty)
+import Text.Megaparsec
+  ( errorBundlePretty
+  , ParseErrorBundle(..), ParseError(FancyError), ErrorFancy(ErrorFail)
+  , PosState(..), initialPos, defaultTabWidth )
 import C02.Parser.Parser (parseProgram)
 import C02.Analyzer.Analyze (analyze)
-import C02.Analyzer.Diagnostic (render)
+import C02.Analyzer.Diagnostic (Diag(..), Diagnostic, render)
 
 main :: IO ()
 main = do
@@ -32,10 +38,38 @@ main = do
           | parseOnly -> print prog
           | otherwise -> case analyze prog of
               []    -> print prog
-              diags -> do
-                mapM_ (hPutStrLn stderr . render) diags
-                hPutStrLn stderr ""
-                hPutStrLn stderr ("Semantic analysis failed with "
-                                  ++ show (length diags) ++ " errors.")
-                exitFailure
+              diags -> hPutStr stderr (renderDiags path src diags) >> exitFailure
     _ -> hPutStrLn stderr "usage: c02-frontend [--parse-only] <file.c02>" >> exitFailure
+
+
+-- | Render analyzer diagnostics in the frontend's parser-error style. Located
+-- diagnostics ('At') are collected into one megaparsec 'ParseErrorBundle', so
+-- 'errorBundlePretty' prints each with a @file:line:col@ header, the source line,
+-- and a caret — identical to a parse error. That renderer walks the input forward
+-- and can't rewind, so the located diagnostics MUST be sorted by ascending offset
+-- first. Free diagnostics (whole-unit, no span — 'MissingMain') print as plain
+-- lines, then a summary count closes the report.
+renderDiags :: FilePath -> String -> [Diag] -> String
+renderDiags path src diags =
+  bundleStr ++ freeStr ++ "\nSemantic analysis failed with " ++ show n ++ " errors.\n"
+  where
+    n         = length diags
+    located   = sortOn fst [ (off, d) | At off d <- diags ]
+    frees     = [ d | Free d <- diags ]
+    bundleStr = case NE.nonEmpty located of
+      Nothing -> ""
+      Just ne -> errorBundlePretty (mkBundle ne)
+    freeStr   = concat [ path ++ ": " ++ render d ++ "\n" | d <- frees ]
+
+    mkBundle :: NE.NonEmpty (Int, Diagnostic) -> ParseErrorBundle String Void
+    mkBundle ne = ParseErrorBundle
+      { bundleErrors   = NE.map toErr ne
+      , bundlePosState = PosState
+          { pstateInput      = src
+          , pstateOffset     = 0
+          , pstateSourcePos  = initialPos path
+          , pstateTabWidth   = defaultTabWidth
+          , pstateLinePrefix = ""
+          }
+      }
+    toErr (off, d) = FancyError off (Set.singleton (ErrorFail (render d)))

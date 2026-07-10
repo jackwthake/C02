@@ -1,4 +1,13 @@
+test/analyzer/bad_break_outside_loop.c02:2:3:
+  |
+2 |   break;
+  |   ^
 'break' statement not within a loop
+
+test/analyzer/bad_break_outside_loop.c02:3:3:
+  |
+3 |   continue;
+  |   ^
 'continue' statement not within a loop
 
 Semantic analysis failed with 2 errors.

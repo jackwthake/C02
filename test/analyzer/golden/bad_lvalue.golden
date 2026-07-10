@@ -1,3 +1,7 @@
+test/analyzer/bad_lvalue.c02:4:3:
+  |
+4 |   a + b = 3;
+  |   ^
 left-hand side of assignment is not assignable
 
 Semantic analysis failed with 1 errors.

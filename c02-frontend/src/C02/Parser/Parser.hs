@@ -21,6 +21,15 @@ import Control.Monad.Reader (runReaderT, asks)
 import C02.Parser.AST
 import C02.Parser.Lexer
 
+-- Tag a parse with the source byte offset of its first token. Because lexemes
+-- consume trailing whitespace/comments, the offset captured here (before the
+-- inner parser runs) sits on the next real token, not on leading layout — so a
+-- statement/decl's position lands on its first token. Used only at statement and
+-- top-level granularity (see 'Loc').
+located :: Parser a -> Parser (Loc a)
+located p = Loc <$> getOffset <*> p
+
+
 -- Left-factored: parse the identifier once, then decide on what follows.
 --   '(' -> Call,  '{' -> struct init,  otherwise a plain Var reference.
 -- Each branch's first token is a distinct symbol, so 'choice' picks without
@@ -133,7 +142,7 @@ exprParser = makeExprParser unaryParser operatorTable
 
 -- parse a block
 braceBlock :: Parser Block                       -- just the list
-braceBlock = symbol "{" *> many statementParser <* symbol "}"
+braceBlock = symbol "{" *> many (located statementParser) <* symbol "}"
 
 blockParser :: Parser Stmt                       -- the statement form
 blockParser = Nested <$> braceBlock
@@ -394,7 +403,7 @@ topLevelParser = choice
 programParser :: Parser Program
 programParser = do
   sc                            -- eat any leading whitespace/comments before the first token
-  decls <- many topLevelParser  -- iterate through the available tokens, parsing top level items
+  decls <- many (located topLevelParser)  -- each top-level decl tagged with its offset
   eof                           -- fail if anything is left unconsumed
   return (TopLevels decls)
 

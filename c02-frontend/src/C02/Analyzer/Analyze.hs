@@ -6,20 +6,25 @@
 --   * Pass 2 ('analyzeFunc') walks each function body, threading a scope stack,
 --     the enclosing return type, and a loop depth.
 --
--- Two Haskell idioms carry the design and are worth naming:
+-- Three Haskell idioms carry the design:
 --
 --   * __Accumulate, don't short-circuit.__ The pure layer returns
 --     @Either Diagnostic Ty@ (first error wins); the walk runs in
---     @ReaderT Ctx (Writer [Diagnostic])@ so a failed sub-check contributes a
+--     @ReaderT Ctx (Writer [Diag])@ so a failed sub-check contributes a
 --     diagnostic and the walk keeps going. 'infer' bridges the two, turning a
---     'Left' into an emitted diagnostic plus a 'Nothing' "poison" — the poison
---     is just 'Maybe', so downstream checks skip an already-broken operand
---     instead of re-reporting it.
+--     'Left' into an emitted diagnostic plus a 'Nothing' "poison" — poison is
+--     just 'Maybe', so downstream checks skip an already-broken operand.
 --
 --   * __Scope is 'local', not push/pop.__ Entering a block runs the rest of the
 --     walk under an extended 'Ctx'; returning from that sub-computation /is/ the
 --     pop. A local declaration's scope is literally the recursive
 --     @analyzeBlock rest@ it wraps, so nothing leaks past the block.
+--
+--   * __Location travels in the context, not the pure layer.__ Each statement
+--     and top-level declaration carries a source offset ('Loc'); the walk sets
+--     'ctxOffset' as it enters one, and 'emit' stamps every diagnostic with the
+--     current offset. So diagnostics get a @file:line:col@ position without the
+--     offset-blind 'inferType' ever having to know about it.
 module C02.Analyzer.Analyze
   ( analyze
   ) where
@@ -32,7 +37,7 @@ import qualified Data.Map as Map
 import qualified Data.Set as Set
 
 import           C02.Parser.AST
-import           C02.Analyzer.Diagnostic (Diagnostic(..))
+import           C02.Analyzer.Diagnostic (Diagnostic(..), Diag(..))
 import           C02.Analyzer.Types
                    ( Env(..), Symbol(..), Ty
                    , inferType, isTypeCompatible, isLvalue )
@@ -48,45 +53,58 @@ data Ctx = Ctx
   , ctxStructs   :: Map String [NamedType] -- registered struct definitions
   , ctxReturn    :: Ty                     -- enclosing function's return type
   , ctxLoopDepth :: Int                    -- break/continue legal iff > 0
+  , ctxOffset    :: Int                    -- source offset of the current stmt/decl
   }
 
-type Analyze = ReaderT Ctx (Writer [Diagnostic])
+type Analyze = ReaderT Ctx (Writer [Diag])
 
 
--- | Run both passes over a program and return every diagnostic, in the SPEC's
--- emission order: pass-1 redeclarations, then top-level type validation, then
--- the missing-main check, then pass 2 over the function bodies.
-analyze :: Program -> [Diagnostic]
+-- | Run both passes over a program and return every diagnostic. Ordering within
+-- the list is by pass (pass-1 redeclarations, then top-level validation, then
+-- missing-main, then pass 2); the renderer sorts the located ones by offset.
+analyze :: Program -> [Diag]
 analyze (TopLevels decls) = p1errs ++ execWriter (runReaderT walk ctx0)
   where
     (globalScope, structs, p1errs) = buildGlobals decls
     ctx0 = Ctx { ctxScopes    = [globalScope]
                , ctxStructs   = structs
                , ctxReturn    = (Void, 0)
-               , ctxLoopDepth = 0 }
+               , ctxLoopDepth = 0
+               , ctxOffset    = 0 }
     walk = do
       validateTopLevel decls
       checkMain decls
-      mapM_ analyzeFunc [ f | FunctionDecl f <- decls ]
+      analyzeFuncs decls
 
 
 -- ---------------------------------------------------------------------------
 -- Small monad helpers
 -- ---------------------------------------------------------------------------
 
+-- | Emit a diagnostic stamped with the current statement/declaration offset.
 emit :: Diagnostic -> Analyze ()
-emit d = tell [d]
+emit d = do
+  off <- asks ctxOffset
+  tell [At off d]
+
+-- | Emit a whole-translation-unit diagnostic with no meaningful span.
+emitFree :: Diagnostic -> Analyze ()
+emitFree d = tell [Free d]
+
+-- | Run a sub-walk with the current offset set to a statement/declaration's.
+withOffset :: Int -> Analyze a -> Analyze a
+withOffset off = local (\c -> c { ctxOffset = off })
 
 -- | Flatten the scope stack into the 'Env' the pure typer consumes. Shadowing is
 -- disallowed (see 'declLocal'), so the union is conflict-free; 'Map.unions' is
--- left-biased and the innermost frame is leftmost, which is the right tie-break
--- anyway.
+-- left-biased and the innermost frame is leftmost, the right tie-break anyway.
 envOf :: Ctx -> Env
 envOf c = Env (ctxStructs c) (Map.unions (ctxScopes c))
 
 -- | Resolve an expression's type in the current context, bridging the pure
--- @Either@ typer into the accumulating walk: on an error, emit it and yield
--- 'Nothing' (poison) so callers skip the broken operand.
+-- @Either@ typer into the accumulating walk: on an error, emit it (at the
+-- current offset) and yield 'Nothing' (poison) so callers skip the broken
+-- operand.
 infer :: Expr -> Analyze (Maybe Ty)
 infer e = do
   env <- asks envOf
@@ -145,21 +163,24 @@ checkShadowRedecl name = do
       | any (Map.member name) outer     -> emit (ShadowedDeclaration name)
     _                                   -> pure ()
 
--- | Declare a local variable, then run the continuation with it in scope. This
--- is the "scope is 'local'" idiom: the binding is visible for exactly @k@ (the
--- rest of the block) and vanishes when @k@ returns.
-declLocal :: VarDecl -> Analyze a -> Analyze a
-declLocal vd k = do
+-- | Declare a local variable at offset @off@, then run the continuation with it
+-- in scope. This is the "scope is 'local'" idiom: the binding is visible for
+-- exactly @k@ (the rest of the block) and vanishes when @k@ returns. The
+-- declaration's own checks run under @off@; @k@ sets its own statements' offsets.
+declLocal :: Int -> VarDecl -> Analyze a -> Analyze a
+declLocal off vd k = do
   let ty   = (varType vd, ptrDepth vd)
       name = declName vd
-  ok <- checkDeclType name ty
-  checkShadowRedecl name
-  forM_ (declInit vd) $ \e -> do
-    actual <- infer e
-    when ok (expectCompat ty actual name)   -- init context tag is the variable name
+  withOffset off $ do
+    ok <- checkDeclType name ty
+    checkShadowRedecl name
+    forM_ (declInit vd) $ \e -> do
+      actual <- infer e
+      when ok (expectCompat ty actual name)   -- init context tag is the variable name
   local (bindLocal name (VarSym ty)) k
 
--- | Declare a function parameter (like 'declLocal' but no initializer).
+-- | Declare a function parameter (like 'declLocal' but no initializer). Params
+-- share the function-body scope, so they carry the function's offset.
 declParam :: NamedType -> Analyze a -> Analyze a
 declParam (bt, depth, name) k = do
   _ <- checkDeclType name (bt, depth)
@@ -172,16 +193,17 @@ declParam (bt, depth, name) k = do
 -- ---------------------------------------------------------------------------
 
 -- | Fold the top-level declarations into the global scope and struct table,
--- reporting a redeclaration the second time any name appears. Structs, globals,
--- registers and functions share one namespace (SPEC §7.2), so a single "seen"
--- set guards them all — including a same-file @decl@ that duplicates a later
--- definition (SPEC S-7: @decl@ is cross-file only, never an in-file prototype).
-buildGlobals :: [TopLevelDecl] -> (Scope, Map String [NamedType], [Diagnostic])
+-- reporting a redeclaration (at the offending declaration's offset) the second
+-- time any name appears. Structs, globals, registers and functions share one
+-- namespace (SPEC §7.2), so a single "seen" set guards them all — including a
+-- same-file @decl@ that duplicates a later definition (SPEC S-7: @decl@ is
+-- cross-file only, never an in-file prototype).
+buildGlobals :: [Loc TopLevelDecl] -> (Scope, Map String [NamedType], [Diag])
 buildGlobals = go Map.empty Map.empty Set.empty []
   where
     go syms structs _    errs [] = (syms, structs, reverse errs)
-    go syms structs seen errs (d : ds)
-      | Set.member name seen = go syms structs seen (Redeclaration name : errs) ds
+    go syms structs seen errs (Loc off d : ds)
+      | Set.member name seen = go syms structs seen (At off (Redeclaration name) : errs) ds
       | otherwise =
           let syms'    = maybe syms    (\s  -> Map.insert name s  syms)    mSym
               structs' = maybe structs (\fs -> Map.insert name fs structs) mStruct
@@ -202,9 +224,10 @@ buildGlobals = go Map.empty Map.empty Set.empty []
 
 -- | After pass 1, validate the types written in top-level declarations (now that
 -- every struct name is registered, forward references resolve) and type-check
--- global initializers in the global scope.
-validateTopLevel :: [TopLevelDecl] -> Analyze ()
-validateTopLevel = mapM_ one
+-- global initializers in the global scope. Each declaration's checks run under
+-- its own offset.
+validateTopLevel :: [Loc TopLevelDecl] -> Analyze ()
+validateTopLevel = mapM_ (\(Loc off d) -> withOffset off (one d))
   where
     one (GlobalVarDecl v) = do
       ok <- checkDeclType (declName v) (varType v, ptrDepth v)
@@ -229,20 +252,29 @@ validateTopLevel = mapM_ one
       _ -> pure ()
 
 -- | SPEC §7.6: the program must define a function named @main@ (a @decl@ forward
--- declaration alone is not a definition).
-checkMain :: [TopLevelDecl] -> Analyze ()
+-- declaration alone is not a definition). This is a whole-unit diagnostic with
+-- no source span, so it is emitted free.
+checkMain :: [Loc TopLevelDecl] -> Analyze ()
 checkMain decls =
-  when (null [ () | FunctionDecl f <- decls, funcName f == "main" ]) (emit MissingMain)
+  when (null [ () | Loc _ (FunctionDecl f) <- decls, funcName f == "main" ])
+       (emitFree MissingMain)
 
 
 -- ---------------------------------------------------------------------------
 -- Pass 2: walk function bodies
 -- ---------------------------------------------------------------------------
 
+-- | Walk every function definition, each under its own offset.
+analyzeFuncs :: [Loc TopLevelDecl] -> Analyze ()
+analyzeFuncs = mapM_ go
+  where
+    go (Loc off (FunctionDecl f)) = withOffset off (analyzeFunc f)
+    go _                          = pure ()
+
 -- | Walk one function: its parameters and top-level body locals share a single
 -- scope (a body local reusing a parameter name is therefore a redeclaration).
 -- After the body, a non-void function whose last statement can't be seen to
--- return is flagged (§7.5, shallow).
+-- return is flagged (§7.5, shallow) at the function's offset.
 analyzeFunc :: FuncDecl -> Analyze ()
 analyzeFunc f =
   local (\c -> (pushScope c) { ctxReturn = (funcReturnType f, funcReturnPtrDepth f) }) $
@@ -259,24 +291,24 @@ bindParams (p : ps) k = declParam p (bindParams ps k)
 
 -- | A function body is stored as a @Just (Nested block)@; anything else has no
 -- statements to walk.
-funcBodyStmts :: FuncDecl -> [Stmt]
+funcBodyStmts :: FuncDecl -> [Loc Stmt]
 funcBodyStmts f = case body f of
   Just (Nested b) -> b
   _               -> []
 
--- | Walk a block, threading each local declaration into the tail via the
--- "scope is 'local'" idiom.
-analyzeBlock :: [Stmt] -> Analyze ()
-analyzeBlock []                     = pure ()
-analyzeBlock (LocVarDecl vd : rest) = declLocal vd (analyzeBlock rest)
-analyzeBlock (s : rest)             = analyzeStmt s >> analyzeBlock rest
+-- | Walk a block, setting each statement's offset and threading each local
+-- declaration into the tail via the "scope is 'local'" idiom.
+analyzeBlock :: [Loc Stmt] -> Analyze ()
+analyzeBlock []                            = pure ()
+analyzeBlock (Loc off (LocVarDecl vd) : rest) = declLocal off vd (analyzeBlock rest)
+analyzeBlock (Loc off s : rest)            = withOffset off (analyzeStmt s) >> analyzeBlock rest
 
--- | Semantic checks for a single statement (§7). 'LocVarDecl' is handled by
--- 'analyzeBlock' so its binding can scope the rest of the block; a stray one
--- here (shouldn't occur) is treated as a no-op declaration.
+-- | Semantic checks for a single statement (§7). Its offset is already set by
+-- 'analyzeBlock'. 'LocVarDecl' is handled by 'analyzeBlock' so its binding can
+-- scope the rest of the block; a stray one here (shouldn't occur) is a no-op.
 analyzeStmt :: Stmt -> Analyze ()
 analyzeStmt stmt = case stmt of
-  LocVarDecl vd -> declLocal vd (pure ())
+  LocVarDecl vd -> do off <- asks ctxOffset; declLocal off vd (pure ())
 
   Nested block  -> local pushScope (analyzeBlock block)
 
@@ -326,23 +358,24 @@ analyzeStmt stmt = case stmt of
       depth <- asks ctxLoopDepth
       when (depth == 0) (emit d)
 
--- | Run @k@ with a @for@ initializer's binding in scope, if it declares one.
+-- | Run @k@ with a @for@ initializer's binding in scope, if it declares one. A
+-- @for@-init has no 'Loc' of its own, so it borrows the enclosing @for@ offset.
 withForInit :: Maybe Stmt -> Analyze a -> Analyze a
-withForInit Nothing               k = k
-withForInit (Just (LocVarDecl vd)) k = declLocal vd k
-withForInit (Just s)              k = analyzeStmt s >> k
+withForInit Nothing                k = k
+withForInit (Just (LocVarDecl vd)) k = do off <- asks ctxOffset; declLocal off vd k
+withForInit (Just s)               k = analyzeStmt s >> k
 
 -- | SPEC §7.5 shallow missing-return check: only the last statement is
 -- inspected, and control-flow statements are conservatively assumed to return
 -- so a function ending in a returning @if/else@ isn't a false positive.
-checkMissingReturn :: FuncDecl -> [Stmt] -> Analyze ()
+checkMissingReturn :: FuncDecl -> [Loc Stmt] -> Analyze ()
 checkMissingReturn f stmts
   | (funcReturnType f, funcReturnPtrDepth f) == (Void, 0) = pure ()
   | mayReturn (lastMaybe stmts)                           = pure ()
   | otherwise                                             = emit (MissingReturn (funcName f))
   where
     lastMaybe [] = Nothing
-    lastMaybe xs = Just (last xs)
+    lastMaybe xs = Just (unLoc (last xs))
 
     mayReturn Nothing  = False
     mayReturn (Just s) = case s of

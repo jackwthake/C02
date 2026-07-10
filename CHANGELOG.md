@@ -9,6 +9,25 @@ releases are reserved for bug fixes only.
 
 ## [Unreleased]
 
+## [1.2.1] 2026-07-10
+
+### Added
+
+- **Semantic diagnostics now carry source locations.** Every analyzer diagnostic
+  is rendered like a parse error — a `file:line:col:` header, the offending
+  source line, and a caret — by collecting them into a single megaparsec
+  `ParseErrorBundle` and reusing `errorBundlePretty`, so the frontend has one
+  consistent diagnostic style. Positions are tracked at statement and
+  top-level-declaration granularity: the AST tags each with its first token's
+  offset through a `Loc` wrapper that is deliberately transparent in `Show`/`Eq`
+  (so the parser's AST-dump goldens are unchanged), and the analyzer threads the
+  offset through its context rather than through the offset-blind `inferType`.
+  The caret therefore lands on the statement's first token (right line,
+  approximate column); per-token carets would require annotating every
+  expression and are deferred. Whole-translation-unit diagnostics with no span
+  (`ERR_MISSING_MAIN`) print as a plain `file: <message>` line; located
+  diagnostics are sorted by offset before rendering.
+
 ## [1.2.0] 2026-07-10
 
 ### Added

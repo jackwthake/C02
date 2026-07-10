@@ -4,6 +4,7 @@
 -- body (no location yet — the span retrofit will prepend @file:line:col@).
 module C02.Analyzer.Diagnostic
   ( Diagnostic(..)
+  , Diag(..)
   , render
   ) where
 
@@ -31,6 +32,16 @@ data Diagnostic
   | VoidVariable String        -- ^ ERR_VOID_VARIABLE: non-pointer void as a variable/param/field/global
   | BreakOutsideLoop           -- ^ ERR_BREAK_OUTSIDE_LOOP
   | ContinueOutsideLoop        -- ^ ERR_CONTINUE_OUTSIDE_LOOP
+  deriving (Show, Eq)
+
+
+-- | A diagnostic paired with where (if anywhere) it points. 'At' carries the
+-- source byte offset of the statement/declaration it arose in, for a
+-- @file:line:col@ + caret render; 'Free' is a whole-translation-unit diagnostic
+-- with no meaningful span (only 'MissingMain' so far), rendered as a plain line.
+data Diag
+  = At !Int Diagnostic
+  | Free Diagnostic
   deriving (Show, Eq)
 
 

@@ -82,6 +82,7 @@ executable c02-frontend
     -- Other library packages from which modules are imported.
     build-depends:    base ^>=4.20.2.0,
                       megaparsec,
+                      containers,
                       c02-frontend
 
     -- Driver lives in its own dir so it doesn't re-compile the library's

@@ -1,3 +1,7 @@
+test/analyzer/bad_redecl.c02:2:1:
+  |
+2 | u8 g;
+  | ^
 redeclaration of 'g' in this scope
 
 Semantic analysis failed with 1 errors.

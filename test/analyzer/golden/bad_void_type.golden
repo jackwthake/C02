@@ -1,4 +1,13 @@
+test/analyzer/bad_void_type.c02:1:1:
+  |
+1 | void bad;
+  | ^
 'bad' declared with incomplete type 'void'
+
+test/analyzer/bad_void_type.c02:3:3:
+  |
+3 |   void local;
+  |   ^
 'local' declared with incomplete type 'void'
 
 Semantic analysis failed with 2 errors.

@@ -1,3 +1,7 @@
+test/analyzer/bad_shadow.c02:3:3:
+  |
+3 |   u8 x = 1;
+  |   ^
 declaration of 'x' shadows an outer-scope declaration (shadowing is not supported - rename one of them)
 
 Semantic analysis failed with 1 errors.
