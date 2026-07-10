@@ -9,6 +9,28 @@ releases are reserved for bug fixes only.
 
 ## [Unreleased]
 
+### Added
+
+- **Semantic analyzer scaffolding (`C02.Analyzer`).** The first type-checking
+  layer over the parsed AST, in two new modules. `C02.Analyzer.Types` provides
+  the `SPEC.md` §3.2 type-compatibility relation (`isTypeCompatible`, rules
+  2–8, strict — no S-18/S-19 laxity), §3.4 integer-literal typing
+  (`intLiteralType`, including the `0` null type and `ERR_LITERAL_OUT_OF_RANGE`
+  for out-of-band values), and the `width`/`signedness` scalar helpers.
+  `C02.Analyzer.Diagnostic` seeds the §8.1 error catalog as a sum type.
+- **Expression type inference (`inferType`).** Resolves the type of integer
+  literals, casts (§3.3: rejects casts to an unknown struct and to a struct by
+  value, and otherwise accepts with no source/destination relatedness check),
+  variable references, and function calls. Calls validate argument **count**
+  before any type (`ERR_WRONG_ARG_COUNT`) and then each argument against its
+  parameter (`ERR_TYPE_MISMATCH`, context `"function call"`), yielding the
+  callee's return type. Resolution carries an environment of the whole-file
+  struct-name set plus a symbol table that distinguishes variables from
+  functions (so a function used as a value is `ERR_NOT_ASSIGNABLE` and a
+  non-function call target is `ERR_NOT_A_FUNCTION`). Remaining expression forms
+  (binary/unary operators, dereference, field access, struct literals) are
+  stubbed pending §6.3.
+
 ### Changed
 
 - **Cast operands bind at `unary` precedence, not the whole expression.** A
