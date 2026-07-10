@@ -12,14 +12,16 @@ module C02.Analyzer.Types
   , checkCast
   , width
   , signedness
+  , isPtr
   ) where
 
-import C02.Parser.AST (BaseType(..), Expr(..))
+import C02.Parser.AST (BaseType(..), Expr(..), BinOp (And, Or, Sub, Add))
 import C02.Analyzer.Diagnostic (Diagnostic(..))
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.Maybe (isJust)
 
 -- | A fully-resolved type: a base kind paired with a pointer depth (0 means
 -- "not a pointer") — a struct's name already lives inside 'BaseType'\'s 
@@ -41,6 +43,35 @@ width U16 = Just 2
 width I16 = Just 2
 width _   = Nothing          -- Void, StructName: no width
 
+wider :: Ty -> Ty -> Ty
+wider (l_bt, l_d) (r_bt, r_d)
+  -- Every pointer is 2 bytes on the 65c02 regardless of pointee (codegen
+  -- never sizes by pointee kind), so "wider" is meaningless between two
+  -- pointers — comparing width l_bt/r_bt here would compare POINTEE widths
+  -- (e.g. u8* vs u16* -> 1 vs 2), which is a different, wrong question. This
+  -- branch exists only to dodge that comparison, not to answer it: when the
+  -- two pointers are the same type it's a don't-care (either side is right);
+  -- when they're merely compatible-but-different (e.g. void* meets u8* via
+  -- rule 2), picking @l@ is an arbitrary tie-break, not a spec-derived
+  -- answer — §6.3 doesn't say which pointee kind should win that case.
+  | l_d > 0 && r_d > 0 = (l_bt, l_d)
+  | l_w >= r_w         = (l_bt, l_d)
+  | l_w <= r_w         = (r_bt, r_d)
+  | otherwise          = (l_bt, l_d)
+  where 
+    l_w = width l_bt
+    r_w = width r_bt
+
+
+-- see width - only int types return a width, everything else just maybe
+isInt :: Ty -> Bool
+isInt (t, d) = d == 0 && isJust (width t)
+
+
+isPtr :: Ty -> Bool
+isPtr (_, d)
+  | d > 0    = True
+isPtr (_, _) = False
 
 -- | The type of an integer literal with NO surrounding context (§3.4): the
 -- value alone picks the narrowest fitting type. @0@ is the null type — void at
@@ -156,6 +187,12 @@ inferType env (Call name args)   = case symbolLookup env name of
   Left err                   -> Left err
   Right (VarSym _)           -> Left (NotAFunction name)   -- ERR_NOT_A_FUNCTION
   Right (FuncSym ret params) -> checkArgs env name args params ret
+-- Resolve left, then right (first error wins), then apply §6.3's rules.
+inferType env (Binary op l r)    = case inferType env l of
+  Left err -> Left err
+  Right lTy -> case inferType env r of
+    Left err -> Left err
+    Right rTy -> checkBinary op lTy rTy
 inferType _   _                  = Right (U8, 0)          -- STUB: unhandled exprs
 
 
@@ -205,3 +242,13 @@ checkCast env destBt destDepth src =
       , n `Set.notMember` structNames env   = Left (UnknownStruct n)   -- any depth
       | isStruct destBt && destDepth == 0   = Left StructCastByValue   -- by value
       | otherwise                           = Right (destBt, destDepth)
+
+
+checkBinary :: BinOp -> Ty -> Ty -> Either Diagnostic Ty
+checkBinary op l r
+  | op == Add && isInt l && isPtr r              = Right (r)
+  | op == Add && isPtr l && isInt r              = Right (l)
+  | op == Sub && isPtr l && isInt r              = Right (l)
+  | op `elem` [And, Or]                          = Right (U8, 0)
+  | isTypeCompatible l r || isTypeCompatible r l = Right (wider l r)
+  | otherwise = Left (TypeMismatch l r "binary operation")
