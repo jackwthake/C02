@@ -1,0 +1,3 @@
+type mismatch in return: expected u8, found void
+
+Semantic analysis failed with 1 errors.

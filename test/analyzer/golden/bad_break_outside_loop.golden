@@ -1,0 +1,4 @@
+'break' statement not within a loop
+'continue' statement not within a loop
+
+Semantic analysis failed with 2 errors.

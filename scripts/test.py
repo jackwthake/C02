@@ -34,13 +34,18 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 REPO_ROOT = os.path.dirname(SCRIPT_DIR)
 TEST_ROOT = os.path.join(REPO_ROOT, "test")
 DRIVER = os.path.join(REPO_ROOT, "bin", "c02c")
+FRONTEND = os.path.join(REPO_ROOT, "bin", "c02-frontend")
 
-# How each stage turns an input path into a c02c command line. c02c is the whole
-# pipeline driver; today `c02c foo.c02` stops after the parser (later stages
-# aren't wired in), so the parser stage needs no special flag. When the analyzer
-# lands, give it its own entry here rather than assuming c02c isolates a stage.
+# How each stage turns an input path into a command line. Frontend-only stages
+# invoke c02-frontend directly (bypassing c02c's codegen) and isolate a single
+# stage via a flag, so their goldens stay stage-specific:
+#   * parser   - `--parse-only` stops after parsing (its fixtures aren't all
+#                semantically valid whole programs, so analysis must not run).
+#   * analyzer - full parse + semantic analysis; positives dump the AST on a
+#                clean run, negatives (bad_*) print diagnostics to stderr.
 STAGES = {
-    "parser": lambda src: [DRIVER, src],
+    "parser":   lambda src: [FRONTEND, "--parse-only", src],
+    "analyzer": lambda src: [FRONTEND, src],
 }
 
 # --- terminal styling -------------------------------------------------------

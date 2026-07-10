@@ -1,0 +1,4 @@
+function 'takes_two' expects 2 argument(s), but 1 were provided
+function 'takes_two' expects 2 argument(s), but 3 were provided
+
+Semantic analysis failed with 2 errors.

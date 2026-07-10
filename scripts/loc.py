@@ -140,6 +140,11 @@ def count_lines():
         [],
         os.path.join("test", "parser"))
 
+    analyzer_tests_total, analyzer_test_code = count_dir(
+        {".c02": C_STYLE},
+        [],
+        os.path.join("test", "analyzer"))
+
     tooling_total, tooling_code = count_dir(
         {".py": HASH_STYLE},
         [], os.path.join("scripts", ""))
@@ -152,6 +157,7 @@ def count_lines():
         Section("c02-objdump", objdump_total, objdump_code),
         Section("---", 0, 0),
         Section("Parser Tests", parser_tests_total, parser_test_code),
+        Section("Analyzer Tests", analyzer_tests_total, analyzer_test_code),
         Section("Internal Tooling", tooling_total, tooling_code),
     ]
 

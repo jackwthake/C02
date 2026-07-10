@@ -10,15 +10,17 @@ module C02.Analyzer.Types
   , intLiteralType
   , inferType
   , checkCast
+  , isLvalue
   , width
   , signedness
   , isPtr
   ) where
 
-import C02.Parser.AST (BaseType(..), Expr(..), BinOp (And, Or, Sub, Add))
+import C02.Parser.AST
+  ( BaseType(..), Expr(..), NamedType
+  , BinOp (And, Or, Sub, Add)
+  , UnOp (AddressOf, Incr, Decr, Bang, BitNot, Negate) )
 import C02.Analyzer.Diagnostic (Diagnostic(..))
-import Data.Set (Set)
-import qualified Data.Set as Set
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (isJust)
@@ -108,15 +110,23 @@ isStruct (StructName _) = True
 isStruct _              = False
 
 
--- | SPEC §3.2 @is_types_compatible@, rules 2–8, in order — the ordering is
--- load-bearing (rule 2 before 6; rules 5 < 6 < 7). Rule 1 (bare literal @0@
--- compatible with any pointer target) is /not/ here: it depends on the
--- literal's value, not on two types, so it belongs at literal-typing time.
+-- | SPEC §3.2 @is_types_compatible@, rules 1–8, in order — the ordering is
+-- load-bearing (rule 1 before all; rule 2 before 6; rules 5 < 6 < 7). Each guard
+-- below is one rule, the direct analog of the reference's sequential
+-- @if (...) return ...@ — the first one whose condition holds wins.
 --
--- Each guard below is one rule; a guard is the direct analog of the reference's
--- sequential @if (...) return ...@ — the first one whose condition holds wins.
+-- Rule 1 note: SPEC's intended scope is pointer-only (the null literal @0@,
+-- typed @void@ at ptr_depth 1, satisfies only a pointer destination). But the
+-- type system can't tell the literal @0@/@null@ from a genuine @void*@ value —
+-- both are @(Void, 1)@ — so we take cc02's relaxed reading (S-1/S-17): a
+-- null-shaped /actual/ satisfies /any/ destination. This is what makes
+-- @u8 x = 0;@ and @u8 x = null;@ well-formed (deliberately relaxed from spec).
 isTypeCompatible :: Ty -> Ty -> Bool
 isTypeCompatible (expKind, expDepth) (actKind, actDepth)
+  -- Rule 1 (relaxed): a null-shaped actual (0/null, void at depth 1) is
+  -- compatible with anything — pointer or scalar destination alike.
+  | actKind == Void && actDepth == 1                  = True
+
   -- Rule 2: void* accepts any pointee kind, but only at matching depth 1 (S-18).
   | expKind == Void && expDepth == 1 && actDepth == 1 = True
 
@@ -164,8 +174,10 @@ data Symbol
   deriving (Show, Eq)
 
 data Env = Env
-  { structNames :: Set String         -- checkCast's unknown-struct check
-  , symbols     :: Map String Symbol  -- Var / Call lookups
+  { structDefs :: Map String [NamedType]  -- struct name -> fields; membership is
+                                          -- the unknown-struct check, fields feed
+                                          -- (later) Field / StructInit typing
+  , symbols    :: Map String Symbol       -- Var / Call lookups
   }
 
 
@@ -193,7 +205,55 @@ inferType env (Binary op l r)    = case inferType env l of
   Right lTy -> case inferType env r of
     Left err -> Left err
     Right rTy -> checkBinary op lTy rTy
-inferType _   _                  = Right (U8, 0)          -- STUB: unhandled exprs
+-- A string literal is a char pointer (§3): u8 at pointer depth 1.
+inferType _   (StrLit _)         = Right (U8, 1)
+-- Unary. §3.4: a NEGATED integer literal is typed from its negative value
+-- (so -5 is i8, not u8) — this is the only place a negative literal's type is
+-- decided, since the lexer emits only non-negative literals. Must precede the
+-- general Negate case.
+inferType _   (Unary Negate (IntLit n)) = intLiteralType (negate n)
+inferType env (Unary Negate e)   = inferType env e
+inferType env (Unary BitNot e)   = inferType env e
+inferType env (Unary Bang e)     = inferType env e >> Right (U8, 0)   -- boolean result
+-- &e requires an lvalue; the result is one pointer level deeper. Resolve the
+-- operand first (so an error inside it wins over the lvalue complaint, matching
+-- resolve order), then apply the lvalue rule (§7.3).
+inferType env (Unary AddressOf e) = case inferType env e of
+  Left err          -> Left err
+  Right (bt, d)
+    | isLvalue e    -> Right (bt, d + 1)
+    | otherwise     -> Left (NotLvalue "cannot take the address of a non-lvalue")
+-- ++e / --e keep the operand's type but require an lvalue (§7.3).
+inferType env (Unary Incr e)     = incrDecr env "increment" e
+inferType env (Unary Decr e)     = incrDecr env "decrement" e
+-- *e peels one pointer level; dereferencing a non-pointer is ERR_TYPE_MISMATCH
+-- with context "dereference" (expected shows the pointer it should have been).
+inferType env (Deref e)          = case inferType env e of
+  Left err       -> Left err
+  Right (bt, d)
+    | d > 0      -> Right (bt, d - 1)
+    | otherwise  -> Left (TypeMismatch (bt, 1) (bt, d) "dereference")
+inferType _   _                  = Right (U8, 0)          -- STUB: Field/StructInit (struct phase)
+
+
+-- | Shared body for ++e / --e: resolve the operand, then demand it be an lvalue.
+incrDecr :: Env -> String -> Expr -> Either Diagnostic Ty
+incrDecr env verb e = case inferType env e of
+  Left err            -> Left err
+  Right ty
+    | isLvalue e      -> Right ty
+    | otherwise       -> Left (NotLvalue ("cannot " ++ verb ++ " a non-lvalue"))
+
+
+-- | An lvalue (assignable / addressable, §7.3) is a named variable, a struct
+-- field, or a pointer dereference — never a literal, call result, or computed
+-- value. Used both by expression typing (&, ++, --) and by the assignment
+-- statement check.
+isLvalue :: Expr -> Bool
+isLvalue (Var _)     = True
+isLvalue (Field _ _) = True
+isLvalue (Deref _)   = True
+isLvalue _           = False
 
 
 -- | Validate a call's arguments (SPEC §6/§8.1). Arg COUNT is checked before any
@@ -239,8 +299,8 @@ checkCast env destBt destDepth src =
   where
     checkDest
       | StructName n <- destBt
-      , n `Set.notMember` structNames env   = Left (UnknownStruct n)   -- any depth
-      | isStruct destBt && destDepth == 0   = Left StructCastByValue   -- by value
+      , n `Map.notMember` structDefs env    = Left (UnknownStruct n)   -- any depth
+      | StructName n <- destBt, destDepth == 0 = Left (StructCastByValue n)  -- by value
       | otherwise                           = Right (destBt, destDepth)
 
 

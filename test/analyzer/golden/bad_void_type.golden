@@ -1,0 +1,4 @@
+'bad' declared with incomplete type 'void'
+'local' declared with incomplete type 'void'
+
+Semantic analysis failed with 2 errors.

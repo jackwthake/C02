@@ -9,12 +9,16 @@ releases are reserved for bug fixes only.
 
 ## [Unreleased]
 
+## [1.2.0] 2026-07-10
+
 ### Added
 
 - **Semantic analyzer scaffolding (`C02.Analyzer`).** The first type-checking
   layer over the parsed AST, in two new modules. `C02.Analyzer.Types` provides
   the `SPEC.md` §3.2 type-compatibility relation (`isTypeCompatible`, rules
-  2–8, strict — no S-18/S-19 laxity), §3.4 integer-literal typing
+  1–8, strict on pointer depth and pointee — no S-18/S-19 laxity; rule 1, the
+  null-literal carve-out, is deliberately relaxed, see Changed), §3.4
+  integer-literal typing
   (`intLiteralType`, including the `0` null type and `ERR_LITERAL_OUT_OF_RANGE`
   for out-of-band values), and the `width`/`signedness` scalar helpers.
   `C02.Analyzer.Diagnostic` seeds the §8.1 error catalog as a sum type.
@@ -27,12 +31,41 @@ releases are reserved for bug fixes only.
   callee's return type. Resolution carries an environment of the whole-file
   struct-name set plus a symbol table that distinguishes variables from
   functions (so a function used as a value is `ERR_NOT_ASSIGNABLE` and a
-  non-function call target is `ERR_NOT_A_FUNCTION`). Remaining expression forms
-  (binary/unary operators, dereference, field access, struct literals) are
-  stubbed pending §6.3.
+  non-function call target is `ERR_NOT_A_FUNCTION`). Binary operators (§6.3,
+  including pointer arithmetic and `&&`/`||`), unary operators (the address-of/
+  increment/decrement lvalue rules and the §3.4 negated-literal typing), string
+  literals, and pointer dereference are all typed; only struct field access and
+  struct literals remain stubbed, pending struct-field typing.
+- **Semantic analysis driver (`C02.Analyzer.Analyze`).** Ties the type
+  relations to a whole `Program` and runs from the frontend `Main`. Two passes
+  over the top-level declarations: pass 1 registers every global (variables,
+  registers, functions, `decl` forward declarations, and structs) into one
+  namespace — a repeated name is `ERR_REDECLARATION` (SPEC S-7: a same-file
+  `decl` never prototypes a definition) — followed by a top-level
+  type-validation sweep and a `main`-definition check (`ERR_MISSING_MAIN`);
+  pass 2 walks each function body. Unlike the pure typer's first-error
+  `Either`, the walk runs in `ReaderT Ctx (Writer [Diagnostic])` and
+  **accumulates every diagnostic**, closing with a
+  `Semantic analysis failed with N errors.` summary. Scoping is lexical via
+  Reader `local` — a declaration's binding scopes exactly the rest of its
+  block, and returning from a block is the pop — and shadowing an enclosing
+  binding is rejected outright (`ERR_SHADOWED_DECLARATION`, SPEC §7.2).
+  Per-statement checks cover local declarations (non-pointer `void` and
+  unknown-struct types, initializer compatibility), assignment lvalue-ness
+  (`ERR_NOT_LVALUE`) and type, `return` against the enclosing return type,
+  `break`/`continue` loop nesting, and a shallow last-statement missing-return
+  check (`ERR_MISSING_RETURN`). `C02.Analyzer.Diagnostic` now carries the full
+  §8 error catalog plus a `render` that prints each diagnostic in its
+  `SPEC.md`-worded form.
+- **`analyzer` test stage (`test/analyzer/`).** Eleven golden cases exercising
+  the driver: a clean positive (`basic`) plus `bad_*` negatives pinning
+  undeclared identifiers, argument-count errors, redeclaration, shadowing,
+  missing return, missing `main`, `break`/`continue` outside a loop, a
+  non-lvalue assignment target, a `void` variable, and a bad `return` value.
 - **Golden-file test suite (`scripts/test.py`, `test/`).** A stage-keyed runner
-  that builds the toolchain, compiles each case through the `c02c` driver, and
-  diffs its output against a committed golden (`--bless` regenerates them).
+  that builds the toolchain, compiles each case through a stage-specific
+  frontend invocation, and diffs its output against a committed golden
+  (`--bless` regenerates them).
   Tests live under `test/<stage>/` with goldens in `test/<stage>/golden/`, so
   new stages (e.g. `test/analyzer/`) slot in additively. The first stage,
   `test/parser/`, ships 43 cases covering every grammar production and its edge
@@ -45,6 +78,19 @@ releases are reserved for bug fixes only.
 
 ### Changed
 
+- **The bare literal `0` / `null` is compatible with any destination, not just
+  pointers.** `SPEC.md` §3.2 rule 1 scopes the null-literal carve-out to
+  pointer targets, so `u8 x = 0;` would strictly be a type mismatch. Because
+  the type system can't distinguish the literal `0` from a genuine `void*`
+  value (both are `void` at pointer depth 1), the analyzer takes the relaxed
+  reading (deviations S-1/S-17): a null-shaped value satisfies any destination.
+  This keeps `u8 x = 0;` and `u8 x = null;` well-formed.
+- **The frontend accepts a `--parse-only` flag.** It stops after parsing and
+  dumps the AST, skipping semantic analysis. The `parser` test stage uses it so
+  its fixtures — which exercise parsing constructs but aren't all semantically
+  valid whole programs — aren't rejected by the analyzer; the `analyzer` stage
+  runs the full frontend. Both stages now invoke `c02-frontend` directly rather
+  than assuming the `c02c` pipeline driver isolates a stage.
 - **Cast operands bind at `unary` precedence, not the whole expression.** A
   cast now reaches only the next unary/postfix term, matching standard C:
   `(u8)w / 2` parses as `((u8)w) / 2`, and `(u16)a * b` casts `a` alone so the

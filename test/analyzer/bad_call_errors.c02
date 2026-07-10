@@ -1,0 +1,6 @@
+fn takes_two(u8 a, u8 b) -> void { return; }
+fn main() -> void {
+  takes_two(1);
+  takes_two(1, 2, 3);
+  return;
+}

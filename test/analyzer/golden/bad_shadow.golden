@@ -1,0 +1,3 @@
+declaration of 'x' shadows an outer-scope declaration (shadowing is not supported - rename one of them)
+
+Semantic analysis failed with 1 errors.

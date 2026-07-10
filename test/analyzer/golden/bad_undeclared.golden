@@ -1,0 +1,4 @@
+undeclared identifier 'y'
+undeclared identifier 'foo'
+
+Semantic analysis failed with 2 errors.

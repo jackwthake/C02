@@ -1,0 +1,3 @@
+non-void function 'f' may reach its end without returning a value
+
+Semantic analysis failed with 1 errors.

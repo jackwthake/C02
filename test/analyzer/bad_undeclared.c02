@@ -1,0 +1,5 @@
+fn main() -> void {
+  u8 x = y;
+  foo();
+  return;
+}

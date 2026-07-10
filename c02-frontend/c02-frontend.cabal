@@ -64,6 +64,7 @@ library
                       C02.Parser.Parser
                       C02.Analyzer.Diagnostic
                       C02.Analyzer.Types
+                      C02.Analyzer.Analyze
     build-depends:    base ^>=4.20.2.0,
                       megaparsec,
                       parser-combinators,

@@ -1,0 +1,24 @@
+u8 counter;
+reg u8 PORTB @ 0x6000;
+
+fn add(u8 a, u8 b) -> u8 {
+  u8 s = a;
+  s = s + b;
+  return s;
+}
+
+fn main() -> void {
+  u8 x = counter;
+  u8 y = add(1, 2);
+  u8 *p = 0;
+  if (x > 0) {
+    y = 0;
+  }
+  while (y > 0) {
+    y = y - 1;
+  }
+  for (u8 i = 0; i < 10; i = i + 1) {
+    x = x + i;
+  }
+  return;
+}
