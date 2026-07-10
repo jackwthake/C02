@@ -1,0 +1,7 @@
+test/analyzer/bad_struct_forward_ref.c02:1:1:
+  |
+1 | struct A {
+  | ^
+struct 'A' has field of incomplete type 'B' (not yet declared)
+
+Semantic analysis failed with 1 errors.

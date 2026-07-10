@@ -181,11 +181,7 @@ data Env = Env
   }
 
 
--- | Resolve an expression's type (SPEC §3/§6.3). STUB for now: only the two
--- constructors 'checkCast' actually needs are real. Every other expression
--- returns a placeholder @(U8,0)@ so the module compiles and casts are testable;
--- fill these in one constructor at a time ('Var' next → the symbol table). The
--- placeholder never escapes a cast, since a cast discards its source type.
+-- | Resolve an expression's type (SPEC §3/§6.3/§6.4/§5.2).
 inferType :: Env -> Expr -> Either Diagnostic Ty
 inferType _   (IntLit n)         = intLiteralType n
 inferType env (Cast bt d e)      = checkCast env bt d e
@@ -233,7 +229,44 @@ inferType env (Deref e)          = case inferType env e of
   Right (bt, d)
     | d > 0      -> Right (bt, d - 1)
     | otherwise  -> Left (TypeMismatch (bt, 1) (bt, d) "dereference")
-inferType _   _                  = Right (U8, 0)          -- STUB: Field/StructInit (struct phase)
+-- a.b (§6.4): resolve the base, auto-deref exactly one level if it's a
+-- Struct* (a Struct** base is untouched, so the next check rejects it), then
+-- the (possibly-adjusted) type must be a bare struct, registered, with the
+-- named field.
+inferType env (Field baseExpr fname) = case inferType env baseExpr of
+  Left err     -> Left err
+  Right baseTy0 -> case autoDerefStruct baseTy0 of
+    (StructName sn, 0) -> case Map.lookup sn (structDefs env) of
+      Nothing     -> Left (UnknownStruct sn)
+      Just fields -> case [ (bt, d) | (bt, d, n) <- fields, n == fname ] of
+        (fty : _) -> Right fty
+        []        -> Left (UnknownField sn fname)
+    baseTy -> Left (NotAStruct fname baseTy)
+-- Name{ .f = e, ... } (§5.2): the target struct must be registered; each
+-- given field must exist on it and its value compatible with the field's
+-- type (S-6: omitted fields and duplicate entries are not diagnosed). The
+-- result is the struct type itself, at depth 0.
+inferType env (StructInit sname inits)
+  | sname `Map.notMember` structDefs env = Left (UnknownStruct sname)
+  | otherwise = checkInits (structDefs env Map.! sname) inits >> Right (StructName sname, 0)
+  where
+    checkInits _      []                     = Right ()
+    checkInits fields ((fname, val) : rest)  =
+      case [ (bt, d) | (bt, d, n) <- fields, n == fname ] of
+        [] -> Left (UnknownField sname fname)
+        (fty : _) -> case inferType env val of
+          Left err  -> Left err
+          Right vty
+            | isTypeCompatible fty vty -> checkInits fields rest
+            | otherwise -> Left (TypeMismatch fty vty fname)
+
+-- | Peel exactly one pointer level off a @Struct*@ type (§6.4's auto-deref);
+-- any other type (already a bare struct, a scalar, or @Struct**@+) passes
+-- through unchanged so the caller's "is this now a bare struct?" check
+-- rejects it uniformly.
+autoDerefStruct :: Ty -> Ty
+autoDerefStruct (StructName sn, 1) = (StructName sn, 0)
+autoDerefStruct ty                 = ty
 
 
 -- | Shared body for ++e / --e: resolve the operand, then demand it be an lvalue.

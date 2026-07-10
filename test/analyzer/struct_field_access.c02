@@ -1,0 +1,15 @@
+struct Inner { u8 v; }
+struct Outer { Inner in; u8 z; }
+
+fn main() -> void {
+  Outer o;
+  o.in.v = 1;              // chained field access
+  u8 a = o.z;
+
+  Outer *op = &o;
+  op.z = 2;                 // auto-deref through Struct*
+
+  Outer q = Outer{ .z = 3 };   // S-6: omitted field 'in' is not diagnosed
+
+  return;
+}

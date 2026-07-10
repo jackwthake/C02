@@ -1,0 +1,7 @@
+test/analyzer/bad_struct_field_width.c02:5:3:
+  |
+5 |   u8 x = s.w;   // narrowing: field access must yield the FIELD's declared
+  |   ^
+type mismatch in x: expected u8, found u16
+
+Semantic analysis failed with 1 errors.

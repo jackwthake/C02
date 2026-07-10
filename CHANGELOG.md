@@ -9,6 +9,44 @@ releases are reserved for bug fixes only.
 
 ## [Unreleased]
 
+## [1.2.2] 2026-07-10
+
+### Added
+
+- **Struct field-offset computation** (`C02.Analyzer.Layout`, new module).
+  Sequential, unpadded byte offsets for every struct's fields (no alignment
+  on this target; every pointer is 2 bytes regardless of depth) — the piece
+  IR lowering will need to talk to `c02-as`'s wire format. Computed by
+  walking the whole program in source order, top-level `struct` declarations
+  interleaved with any declared inside a function body, so a by-value
+  field's pointee is always looked up in what's already been laid out.
+- **`ERR_INCOMPLETE_STRUCT_FIELD`** (§4.4): a by-value struct field that's
+  self-referential (`struct S { S s; }`) or names a struct not declared
+  earlier in the file. Scoped to **top-level** struct declarations only,
+  matching the spec's literal "position scan over top-level items" wording;
+  a locally-declared struct still gets an offset layout but not this check.
+- **Struct field access and initializer typing.** `inferType` no longer
+  stubs `a.b` / `Name{ .f = e, ... }` to a placeholder type: field access
+  auto-derefs exactly one pointer level (`Struct*`, not `Struct**`, per
+  §6.4) and resolves to the named field's actual declared type; a struct
+  initializer checks each given field exists and its value is compatible
+  with the field's type (omitted/duplicate fields are still undiagnosed,
+  S-6). Two new diagnostics back this: `ERR_UNKNOWN_FIELD` and
+  `ERR_NOT_A_STRUCT`.
+
+### Fixed
+
+- A struct declared inside a function body (statement position, §5) was
+  invisible to the rest of its own block — even to itself as a variable
+  type — because its registration was discarded instead of threaded into
+  the following statements. Locally-declared structs are now usable exactly
+  like their top-level counterparts.
+- A locally-declared struct's field types are now validated the same way a
+  top-level struct's are (rejecting an unknown struct or non-pointer `void`
+  field), without breaking a forward pointer reference to another struct
+  declared later in the same block — matching the forward-reference
+  tolerance top-level struct fields already had.
+
 ## [1.2.1] 2026-07-10
 
 ### Added

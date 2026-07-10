@@ -1,0 +1,13 @@
+test/analyzer/bad_struct_init.c02:6:3:
+  |
+6 |   Point a = Point{ .x = 1, .w = 2 };   // no field 'w' on Point
+  |   ^
+struct 'Point' has no field 'w'
+
+test/analyzer/bad_struct_init.c02:7:3:
+  |
+7 |   Point b = Point{ .x = o, .y = 2 };   // Other is not compatible with Point.x's u8
+  |   ^
+type mismatch in x: expected u8, found Other
+
+Semantic analysis failed with 2 errors.

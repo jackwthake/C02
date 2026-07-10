@@ -38,6 +38,7 @@ import qualified Data.Set as Set
 
 import           C02.Parser.AST
 import           C02.Analyzer.Diagnostic (Diagnostic(..), Diag(..))
+import           C02.Analyzer.Layout (computeStructLayouts)
 import           C02.Analyzer.Types
                    ( Env(..), Symbol(..), Ty
                    , inferType, isTypeCompatible, isLvalue )
@@ -49,11 +50,16 @@ type Scope = Map String Symbol
 -- | Everything pass 2 threads through the walk. The scope list has the innermost
 -- frame at its head and the global frame at its tail (never empty).
 data Ctx = Ctx
-  { ctxScopes    :: [Scope]                -- innermost first, global last
-  , ctxStructs   :: Map String [NamedType] -- registered struct definitions
-  , ctxReturn    :: Ty                     -- enclosing function's return type
-  , ctxLoopDepth :: Int                    -- break/continue legal iff > 0
-  , ctxOffset    :: Int                    -- source offset of the current stmt/decl
+  { ctxScopes     :: [Scope]                -- innermost first, global last
+  , ctxStructs    :: Map String [NamedType] -- struct definitions visible at this scope (order-sensitive for locals)
+  , ctxAllStructs :: Set.Set String         -- every struct name declared anywhere in the program, any order/scope
+                                            -- (SPEC's "otherwise fully forward-reference-tolerant symbol table") —
+                                            -- static for the whole walk, only used to validate a LOCAL struct's own
+                                            -- field types (see 'declLocalStruct'): declaring a variable of a struct
+                                            -- type still goes through 'ctxStructs' and stays order-sensitive
+  , ctxReturn     :: Ty                     -- enclosing function's return type
+  , ctxLoopDepth  :: Int                    -- break/continue legal iff > 0
+  , ctxOffset     :: Int                    -- source offset of the current stmt/decl
   }
 
 type Analyze = ReaderT Ctx (Writer [Diag])
@@ -63,14 +69,21 @@ type Analyze = ReaderT Ctx (Writer [Diag])
 -- the list is by pass (pass-1 redeclarations, then top-level validation, then
 -- missing-main, then pass 2); the renderer sorts the located ones by offset.
 analyze :: Program -> [Diag]
-analyze (TopLevels decls) = p1errs ++ execWriter (runReaderT walk ctx0)
+analyze prog@(TopLevels decls) = p1errs ++ layoutErrs ++ execWriter (runReaderT walk ctx0)
   where
     (globalScope, structs, p1errs) = buildGlobals decls
-    ctx0 = Ctx { ctxScopes    = [globalScope]
-               , ctxStructs   = structs
-               , ctxReturn    = (Void, 0)
-               , ctxLoopDepth = 0
-               , ctxOffset    = 0 }
+    -- The offsets/sizes in the layout map aren't needed here — its
+    -- diagnostics, and the set of every struct name it saw (regardless of
+    -- scope or order), are. IR lowering will call 'computeStructLayouts'
+    -- again once it needs the offsets; the recompute is pure and cheap, and
+    -- keeps 'analyze's diagnostics-only contract.
+    (allLayouts, layoutErrs) = computeStructLayouts prog
+    ctx0 = Ctx { ctxScopes     = [globalScope]
+               , ctxStructs    = structs
+               , ctxAllStructs = Map.keysSet allLayouts
+               , ctxReturn     = (Void, 0)
+               , ctxLoopDepth  = 0
+               , ctxOffset     = 0 }
     walk = do
       validateTopLevel decls
       checkMain decls
@@ -141,16 +154,23 @@ bindLocal n s c = case ctxScopes c of
 -- ---------------------------------------------------------------------------
 
 -- | Validate a type appearing in a variable/parameter/field/global declaration:
--- non-pointer @void@ is rejected (§7.4), and a struct type must name a
--- registered struct. Returns whether the type is legal; on a bad type the caller
--- still binds the name (so later uses don't re-report) but skips the init check.
-checkDeclType :: String -> Ty -> Analyze Bool
-checkDeclType name (bt, depth)
+-- non-pointer @void@ is rejected (§7.4), and a struct type must satisfy the
+-- given "is this struct known" predicate. Returns whether the type is legal;
+-- on a bad type the caller still binds the name (so later uses don't
+-- re-report) but skips the init check.
+checkDeclTypeWith :: (String -> Analyze Bool) -> String -> Ty -> Analyze Bool
+checkDeclTypeWith isKnownStruct name (bt, depth)
   | bt == Void && depth == 0 = emit (VoidVariable name) >> pure False
   | StructName sn <- bt = do
-      known <- asks (Map.member sn . ctxStructs)
+      known <- isKnownStruct sn
       if known then pure True else emit (UnknownStruct sn) >> pure False
   | otherwise = pure True
+
+-- | 'checkDeclTypeWith' against the current scope's visible structs
+-- ('ctxStructs') — order-sensitive for a local struct declared earlier in the
+-- same block, same as any other local declaration.
+checkDeclType :: String -> Ty -> Analyze Bool
+checkDeclType = checkDeclTypeWith (\sn -> asks (Map.member sn . ctxStructs))
 
 -- | Reject a declaration that reuses a name (§7.2): same frame → redeclaration,
 -- an outer live frame → shadowing (disallowed, unlike C).
@@ -299,13 +319,38 @@ funcBodyStmts f = case body f of
 -- | Walk a block, setting each statement's offset and threading each local
 -- declaration into the tail via the "scope is 'local'" idiom.
 analyzeBlock :: [Loc Stmt] -> Analyze ()
-analyzeBlock []                            = pure ()
-analyzeBlock (Loc off (LocVarDecl vd) : rest) = declLocal off vd (analyzeBlock rest)
-analyzeBlock (Loc off s : rest)            = withOffset off (analyzeStmt s) >> analyzeBlock rest
+analyzeBlock []                                   = pure ()
+analyzeBlock (Loc off (LocVarDecl vd) : rest)      = declLocal off vd (analyzeBlock rest)
+analyzeBlock (Loc off (StructDeclStmt sd) : rest)  = declLocalStruct off sd (analyzeBlock rest)
+analyzeBlock (Loc off s : rest)                   = withOffset off (analyzeStmt s) >> analyzeBlock rest
+
+-- | Declare a statement-position struct (§4.4/§5): validate its field types
+-- under its own offset (the same check top-level struct fields get, via
+-- 'validateTopLevel'), then run @k@ with it visible in 'ctxStructs'. Same
+-- "scope is 'local'" idiom as 'declLocal' — visible for exactly the rest of
+-- this block, gone once @k@ returns. No redeclaration/shadow check: a struct
+-- name shares cc02's separate struct namespace, not the variable scope
+-- 'checkShadowRedecl' guards.
+--
+-- Field validation checks a struct NAME against 'ctxAllStructs' (whole
+-- program, any order/scope), not the order-sensitive 'ctxStructs' — a local
+-- struct field naming another struct declared later in the same block (by
+-- pointer, or below in source order) is exactly as forward-reference-tolerant
+-- as a top-level struct field is, per SPEC §4.4's "otherwise fully
+-- forward-reference-tolerant symbol table". Only by-value CONTAINMENT
+-- ordering is checked (top-level only, ERR_INCOMPLETE_STRUCT_FIELD via
+-- 'C02.Analyzer.Layout') — this is a plain "does the name exist" check.
+declLocalStruct :: Int -> StructDecl -> Analyze a -> Analyze a
+declLocalStruct off sd k = do
+  let checkFieldType = checkDeclTypeWith (\sn -> asks (Set.member sn . ctxAllStructs))
+  withOffset off $ forM_ (structFields sd) $ \(bt, d, nm) -> void $ checkFieldType nm (bt, d)
+  local (\c -> c { ctxStructs = Map.insert (structName sd) (structFields sd) (ctxStructs c) }) k
 
 -- | Semantic checks for a single statement (§7). Its offset is already set by
--- 'analyzeBlock'. 'LocVarDecl' is handled by 'analyzeBlock' so its binding can
--- scope the rest of the block; a stray one here (shouldn't occur) is a no-op.
+-- 'analyzeBlock'. 'LocVarDecl' and 'StructDeclStmt' are handled by
+-- 'analyzeBlock' so their bindings can scope the rest of the block; a stray
+-- one here (shouldn't occur — neither is a legal @for@ init/incr clause) is a
+-- no-op.
 analyzeStmt :: Stmt -> Analyze ()
 analyzeStmt stmt = case stmt of
   LocVarDecl vd -> do off <- asks ctxOffset; declLocal off vd (pure ())
@@ -349,10 +394,7 @@ analyzeStmt stmt = case stmt of
   Break    -> whenNotInLoop BreakOutsideLoop
   Continue -> whenNotInLoop ContinueOutsideLoop
 
-  -- Struct declaration in statement position (§5): register its fields locally.
-  StructDeclStmt sd ->
-    local (\c -> c { ctxStructs = Map.insert (structName sd) (structFields sd) (ctxStructs c) })
-          (pure ())
+  StructDeclStmt _ -> pure ()
   where
     whenNotInLoop d = do
       depth <- asks ctxLoopDepth

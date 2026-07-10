@@ -1,0 +1,50 @@
+struct Inner {
+  u8 x;
+  u8 y;
+}
+
+struct Outer {
+  Inner in;
+  u8 z;
+  Inner *ptr;
+}
+
+struct Node {
+  u8 val;
+  Node *next;
+}
+
+fn main() -> void {
+  Outer o;
+  Node n;
+
+  // Locally-declared structs referencing each other out of source order are
+  // not covered by SPEC §4.4's ordering check (top-level items only) - this
+  // must still analyze cleanly.
+  struct A {
+    B b;
+  }
+  struct B {
+    u8 x;
+  }
+
+  // A local struct is visible to the rest of its own block (not just itself)
+  // and its field is usable like any other.
+  struct P {
+    u8 v;
+  }
+  P p;
+  p.v = 1;
+
+  // A local struct's pointer field may forward-reference another local
+  // struct declared later in the same block - only by-value containment is
+  // order-sensitive, plain name lookup isn't (SPEC §4.4).
+  struct Fwd {
+    Later *l;
+  }
+  struct Later {
+    u8 w;
+  }
+
+  return;
+}

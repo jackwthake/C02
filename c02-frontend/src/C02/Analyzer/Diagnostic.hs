@@ -32,6 +32,9 @@ data Diagnostic
   | VoidVariable String        -- ^ ERR_VOID_VARIABLE: non-pointer void as a variable/param/field/global
   | BreakOutsideLoop           -- ^ ERR_BREAK_OUTSIDE_LOOP
   | ContinueOutsideLoop        -- ^ ERR_CONTINUE_OUTSIDE_LOOP
+  | IncompleteStructField String String -- ^ ERR_INCOMPLETE_STRUCT_FIELD (§4.4): struct name, referenced (incomplete) struct name — equal when self-referential
+  | UnknownField String String -- ^ ERR_UNKNOWN_FIELD (§6.4/§5.2): struct name, field name not found on it
+  | NotAStruct String TyPair   -- ^ ERR_NOT_A_STRUCT (§6.4): field name, actual (post-auto-deref) type of the base
   deriving (Show, Eq)
 
 
@@ -70,6 +73,13 @@ render d = case d of
   VoidVariable n          -> "'" ++ n ++ "' declared with incomplete type 'void'"
   BreakOutsideLoop        -> "'break' statement not within a loop"
   ContinueOutsideLoop     -> "'continue' statement not within a loop"
+  IncompleteStructField s f
+    | s == f              -> "struct '" ++ s ++ "' cannot contain itself by value; use a pointer"
+    | otherwise            -> "struct '" ++ s ++ "' has field of incomplete type '" ++ f
+                               ++ "' (not yet declared)"
+  UnknownField s f        -> "struct '" ++ s ++ "' has no field '" ++ f ++ "'"
+  NotAStruct f actual     -> "request for field '" ++ f ++ "' in '" ++ renderTy actual
+                             ++ "', which is not a struct"
 
 
 -- | Render a type the way §8 diagnostics spell it: base kind plus one @*@ per

@@ -1,0 +1,7 @@
+struct S {
+  S s;
+}
+
+fn main() -> void {
+  return;
+}

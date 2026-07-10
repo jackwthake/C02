@@ -1,0 +1,7 @@
+test/analyzer/bad_struct_self_ref.c02:1:1:
+  |
+1 | struct S {
+  | ^
+struct 'S' cannot contain itself by value; use a pointer
+
+Semantic analysis failed with 1 errors.

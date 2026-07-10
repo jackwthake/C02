@@ -1,0 +1,15 @@
+struct Point { u8 x; u8 y; }
+
+fn main() -> void {
+  u8 scalar = 1;
+  u8 a = scalar.y;             // not a struct at all
+
+  Point p;
+  Point *pp = &p;
+  Point **ppp = &pp;
+  u8 b = ppp.x;                 // Struct** is not auto-deref'd (only one level)
+
+  u8 c = p.z;                   // no such field on Point
+
+  return;
+}

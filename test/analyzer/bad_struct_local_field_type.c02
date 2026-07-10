@@ -1,0 +1,6 @@
+fn main() -> void {
+  struct P {
+    void v;    // non-pointer void field is illegal, same as a top-level struct
+  }
+  return;
+}
