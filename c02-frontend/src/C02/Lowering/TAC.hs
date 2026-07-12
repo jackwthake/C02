@@ -16,10 +16,11 @@ module C02.Lowering.TAC (
   tacOpTag,
   operandTag,
   operandType,
-  irInitKindTag
+  irInitKindTag,
+  binOpToTac
   ) where
 
-import C02.Parser.AST (BaseType(..), NamedType )
+import C02.Parser.AST (BaseType(..), NamedType, BinOp (..) )
 import C02.Analyzer.Types
 import Data.Word (Word32)
 
@@ -66,11 +67,11 @@ data Instr = Instr
   , instrDst       :: Operand
   , instrSrc1      :: Operand
   , instrSrc2      :: Operand
-  , instrLabel     :: Word32
+  , instrLabel     :: Maybe Word32
   , instrCallName  :: Maybe String
-  , instrCallArgs  :: [Operand]
+  , instrCallArgs  :: Maybe [Operand]
   , instrFieldName :: Maybe String
-  , instrCastType  :: Ty
+  , instrCastType  :: Maybe Ty
   }
 
 
@@ -201,3 +202,25 @@ irInitKindTag :: IRInitKind -> Word32
 irInitKindTag IRInitNone = 0 -- IR_INIT_NONE
 irInitKindTag IRInitInt  = 1 -- IR_INIT_INT
 irInitKindTag IRInitStr  = 2 -- IR_INIT_STR
+
+
+binOpToTac :: BinOp -> TacOp
+binOpToTac Add    = TacAdd
+binOpToTac Sub    = TacSub
+binOpToTac Mul    = TacMul
+binOpToTac Div    = TacDiv
+binOpToTac Mod    = TacMod
+binOpToTac Shl    = TacShl
+binOpToTac Shr    = TacShr
+binOpToTac Lt     = TacLt
+binOpToTac Gt     = TacGt
+binOpToTac Le     = TacLte
+binOpToTac Ge     = TacGte
+binOpToTac Eq     = TacEq
+binOpToTac Ne     = TacNeq
+binOpToTac BitAnd = TacBand
+binOpToTac BitXor = TacBxor
+binOpToTac BitOr  = TacBor
+binOpToTac And    = TacAnd
+binOpToTac Or     = TacOr
+
