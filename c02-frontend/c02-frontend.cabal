@@ -66,6 +66,7 @@ library
                       C02.Analyzer.Types
                       C02.Analyzer.Layout
                       C02.Analyzer.Analyze
+                      C02.Lowering.TAC
     build-depends:    base ^>=4.20.2.0,
                       megaparsec,
                       parser-combinators,
