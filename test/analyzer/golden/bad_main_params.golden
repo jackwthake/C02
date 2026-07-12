@@ -1,0 +1,7 @@
+test/analyzer/bad_main_params.c02:1:1:
+  |
+1 | fn main(u8 a) -> void { return; }
+  | ^
+'main' must be defined as 'void main()' (no parameters, void return type)
+
+Semantic analysis failed with 1 errors.

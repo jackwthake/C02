@@ -47,8 +47,8 @@ main = do
 -- 'errorBundlePretty' prints each with a @file:line:col@ header, the source line,
 -- and a caret — identical to a parse error. That renderer walks the input forward
 -- and can't rewind, so the located diagnostics MUST be sorted by ascending offset
--- first. Free diagnostics (whole-unit, no span — 'MissingMain') print as plain
--- lines, then a summary count closes the report.
+-- first. Free diagnostics (whole-unit, no span) print as plain lines, then a
+-- summary count closes the report.
 renderDiags :: FilePath -> String -> [Diag] -> String
 renderDiags path src diags =
   bundleStr ++ freeStr ++ "\nSemantic analysis failed with " ++ show n ++ " errors.\n"

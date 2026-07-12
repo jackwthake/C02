@@ -1,0 +1,3 @@
+fn add(u8 x, u8 y) -> u16 {
+  return (u16)(x + y);
+}

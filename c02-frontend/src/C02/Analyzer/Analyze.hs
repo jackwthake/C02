@@ -100,10 +100,6 @@ emit d = do
   off <- asks ctxOffset
   tell [At off d]
 
--- | Emit a whole-translation-unit diagnostic with no meaningful span.
-emitFree :: Diagnostic -> Analyze ()
-emitFree d = tell [Free d]
-
 -- | Run a sub-walk with the current offset set to a statement/declaration's.
 withOffset :: Int -> Analyze a -> Analyze a
 withOffset off = local (\c -> c { ctxOffset = off })
@@ -271,13 +267,22 @@ validateTopLevel = mapM_ (\(Loc off d) -> withOffset off (one d))
         unless known (emit (UnknownStruct sn))
       _ -> pure ()
 
--- | SPEC §7.6: the program must define a function named @main@ (a @decl@ forward
--- declaration alone is not a definition). This is a whole-unit diagnostic with
--- no source span, so it is emitted free.
+
 checkMain :: [Loc TopLevelDecl] -> Analyze ()
-checkMain decls =
-  when (null [ () | Loc _ (FunctionDecl f) <- decls, funcName f == "main" ])
-       (emitFree MissingMain)
+checkMain decls = forM_ mains checkOne
+  where
+    -- step 1: collect every top-level function named "main", with its offset
+    mains = [ (off, f) | Loc off (FunctionDecl f) <- decls, funcName f == "main" ]
+
+    -- step 2: check one of them
+    checkOne (off, f) =
+      withOffset off $
+        unless (validMainSig f) $
+          emit (BadMainSignature (funcName f))
+
+    -- the actual rule: void return, no params
+    validMainSig f = (funcReturnType f, funcReturnPtrDepth f) == (Void, 0)
+                  && null (params f)
 
 
 -- ---------------------------------------------------------------------------

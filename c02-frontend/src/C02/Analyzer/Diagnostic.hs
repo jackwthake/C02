@@ -26,7 +26,7 @@ data Diagnostic
   | TypeMismatch TyPair TyPair String -- ^ ERR_TYPE_MISMATCH: expected, actual, context tag
   | Redeclaration String       -- ^ ERR_REDECLARATION: name inserted twice into one scope frame (§7.2)
   | ShadowedDeclaration String -- ^ ERR_SHADOWED_DECLARATION: local/param reuses an enclosing name (§7.2)
-  | MissingMain                -- ^ ERR_MISSING_MAIN: no function definition named @main@
+  | BadMainSignature String    -- ^ ERR_BAD_MAIN_SIGNATURE: a defined @main@ isn't @void main()@ — non-void return or has parameters (name carried for the message)
   | MissingReturn String       -- ^ ERR_MISSING_RETURN: non-void fn whose last stmt can't be seen to return
   | NotLvalue String           -- ^ ERR_NOT_LVALUE: carries the full message (varies by &/++/--/assign)
   | VoidVariable String        -- ^ ERR_VOID_VARIABLE: non-pointer void as a variable/param/field/global
@@ -41,7 +41,8 @@ data Diagnostic
 -- | A diagnostic paired with where (if anywhere) it points. 'At' carries the
 -- source byte offset of the statement/declaration it arose in, for a
 -- @file:line:col@ + caret render; 'Free' is a whole-translation-unit diagnostic
--- with no meaningful span (only 'MissingMain' so far), rendered as a plain line.
+-- with no meaningful span, rendered as a plain line. No diagnostic currently
+-- produces one (kept for future whole-translation-unit diagnostics).
 data Diag
   = At !Int Diagnostic
   | Free Diagnostic
@@ -66,7 +67,8 @@ render d = case d of
   ShadowedDeclaration n   -> "declaration of '" ++ n
                              ++ "' shadows an outer-scope declaration "
                              ++ "(shadowing is not supported - rename one of them)"
-  MissingMain             -> "missing or improperly defined main function"
+  BadMainSignature n      -> "'" ++ n ++ "' must be defined as 'void " ++ n
+                             ++ "()' (no parameters, void return type)"
   MissingReturn n         -> "non-void function '" ++ n
                              ++ "' may reach its end without returning a value"
   NotLvalue msg           -> msg

@@ -903,11 +903,21 @@ field-access/deref chain is itself addressable storage.
 ### 7.4 `main`
 
 Exactly one **function definition** (not a `decl` forward declaration —
-§4.6) named exactly `main` is required, with the signature
-`fn main() -> void { ... }` — zero parameters, return type exactly `void`.
-No other shape satisfies this: a different parameter list, a different
-return type, or `main` introduced only via `decl` with no matching same-file
-definition all fail to satisfy the requirement.
+§4.6) named exactly `main` is required in the linked program, with the
+signature `fn main() -> void { ... }` — zero parameters, return type exactly
+`void`.
+
+Responsibility for this splits by compilation stage, because the toolchain
+supports multi-file linking and incremental compilation:
+
+- **Existence** — that some translation unit defines `main` — is a
+  whole-program property, enforced by the linker/driver, **not** the per-TU
+  analyzer. A single translation unit cannot know whether `main` is defined
+  in another unit, so the analyzer never reports a missing `main`.
+- **Signature** is checked by the analyzer for any `main` it *does* see
+  defined: a non-`void` return type or a non-empty parameter list is
+  `ERR_BAD_MAIN_SIGNATURE`. A `main` introduced only via `decl` is a forward
+  declaration, not a definition, so it is not signature-checked here.
 
 > ⚠ [S-9](DEVIATIONS.md#s-9-mains-signature-is-unchecked): `cc02` only
 > verifies that a symbol named `main` exists and is a function — any return
@@ -966,7 +976,7 @@ unlike the parser — §8.3).
 | `ERR_WRONG_ARG_COUNT` | Call argument count ≠ declared parameter count. |
 | `ERR_UNKNOWN_FIELD` | Named field doesn't exist on the target struct (`.field` access or struct-init). |
 | `ERR_NOT_ASSIGNABLE` | A function or struct name used where a value was expected. |
-| `ERR_MISSING_MAIN` | No function symbol named `main`. |
+| `ERR_BAD_MAIN_SIGNATURE` | A defined `main` isn't `void main()` — non-`void` return type or a non-empty parameter list (§7.4). Existence of `main` is a link-time check, not the analyzer's. |
 | `ERR_LITERAL_OUT_OF_RANGE` | Integer literal outside `-32768..65535` (or its type-specific band). |
 | `ERR_NOT_LVALUE` | `&`, `++`, `--`, or assignment LHS on a non-lvalue-shaped node (§7.3). |
 | `ERR_VOID_VARIABLE` | Non-pointer `void` used as a variable/param/field/global type. |

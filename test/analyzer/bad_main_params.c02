@@ -1,0 +1,1 @@
+fn main(u8 a) -> void { return; }

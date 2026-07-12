@@ -1,3 +1,0 @@
-test/analyzer/bad_no_main.c02: missing or improperly defined main function
-
-Semantic analysis failed with 1 errors.
