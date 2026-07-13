@@ -68,6 +68,7 @@ library
                       C02.Analyzer.Analyze
                       C02.Lowering.TAC
                       C02.Lowering.Lower
+                      C02.Lowering.Module
     build-depends:    base ^>=4.20.2.0,
                       megaparsec,
                       parser-combinators,

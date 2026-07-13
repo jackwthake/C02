@@ -3,10 +3,11 @@ module C02.Lowering.Lower
   , lowerExpr
   , lowerStmt
   , lowerBlock
+  , emptyInstr
   ) where
 import C02.Analyzer.Types (Env (..), Ty, inferType, Symbol (VarSym))
-import C02.Lowering.TAC (Instr(..), Operand(..), TacOp(..), binOpToTac)
-import C02.Parser.AST (Expr(..), UnOp(..), BinOp(Add, Sub, Mul, Div, Mod), BaseType (Void, U8), Stmt (..), Loc (Loc), VarDecl (declName, varType, ptrDepth, declInit), AssignmentOp (..), StructDecl (structName, structFields), Block)
+import C02.Lowering.TAC (Instr(..), Operand(..), TacOp(..), binOpToTac, operandType)
+import C02.Parser.AST (Expr(..), UnOp(..), BinOp(..), BaseType (..), Stmt (..), Loc (Loc), VarDecl (declName, varType, ptrDepth, declInit), AssignmentOp (..), StructDecl (structName, structFields), Block)
 import qualified Data.Map as Map
 
 data LowerState = LowerState
@@ -74,6 +75,43 @@ condJumpUnless env st cond target =
   in (condInstrs ++ [notI, jmpI], st2)
 
 
+-- | Byte width of a value: pointers and 16-bit types are 2, everything else 1.
+tyWidth :: Ty -> Int
+tyWidth (bt, depth)
+  | depth > 0              = 2
+  | bt == U16 || bt == I16 = 2
+  | otherwise              = 1
+
+-- | Whether a type is signed (by its base kind, ignoring pointer-ness), matching
+-- cc02's @ir_is_signed@.
+tySigned :: Ty -> Bool
+tySigned (bt, _) = bt == I8 || bt == I16
+
+-- | The type both operands of a (non-shift, non-pointer) binary op widen to: the
+-- wider operand's type, made unsigned if either operand is unsigned (cc02's
+-- @binop_common_type@ — mirrors C's usual arithmetic conversions for
+-- comparisons, avoiding order-dependent signed/unsigned mismatch).
+binopCommonType :: Ty -> Ty -> Ty
+binopCommonType left right =
+  let wider = if tyWidth left >= tyWidth right then left else right
+  in if not (tySigned left) || not (tySigned right)
+       then (if tyWidth wider == 2 then U16 else U8, snd wider)
+       else wider
+
+-- | Widen @op@ to @target@, emitting a 'TacCast' only if the types actually
+-- differ. A constant is re-typed in place (no instruction); anything else casts
+-- into a fresh temp.
+widenIfNeeded :: LowerState -> Operand -> Ty -> (Operand, [Instr], LowerState)
+widenIfNeeded st op target
+  | operandType op == target      = (op, [], st)
+  | OperandConstInt _ n <- op     = (OperandConstInt target n, [], st)
+  | otherwise =
+      let (t, st1) = freshTemp st
+          dst  = OperandTemp target t
+          cast = (emptyInstr TacCast) { instrDst = dst, instrSrc1 = op, instrCastType = Just target }
+      in (dst, [cast], st1)
+
+
 lowerArgs :: Env -> LowerState -> [Expr] -> ([Operand], [Instr], LowerState)
 lowerArgs _   st []     = ([], [], st)                    -- no args: nothing lowered, state untouched
 lowerArgs env st (e:es) =
@@ -95,13 +133,29 @@ lowerExpr :: Env -> LowerState -> Expr -> (Operand, [Instr], LowerState)
 lowerExpr env st e@(IntLit n) = (OperandConstInt (typeOf env e) n, [], st)
 lowerExpr env st e@(StrLit s) = (OperandConstStr (typeOf env e) s, [], st)
 lowerExpr env st e@(Var name) = (OperandVar      (typeOf env e) name, [], st)
-lowerExpr env st e@(Binary op a b) =
+lowerExpr env st (Binary op a b) =
   let (opA, instrA, st1) = lowerExpr env st a     -- lower left, using starting state
       (opB, instrB, st2) = lowerExpr env st1 b    -- lower right
-      (t,   st3)         = freshTemp st2          -- burn a temp for the result
-      dst   = OperandTemp (typeOf env e) t
-      instr = (emptyInstr (binOpToTac op)) { instrDst = dst, instrSrc1 = opA, instrSrc2 = opB }
-  in (dst, instrA ++ instrB ++ [instr], st3)      -- add new instructions in order
+      -- Widen operands to a common type before the op (matching cc02's ir.c):
+      -- shifts keep the left type and don't widen the count; pointer arithmetic
+      -- isn't widened; everything else widens both sides, and a comparison
+      -- yields u8.
+      isCmp   = op `elem` [Lt, Gt, Le, Ge, Eq, Ne]
+      isShift = op `elem` [Shl, Shr]
+      tyA = operandType opA
+      tyB = operandType opB
+      (lhs, rhs, widenInstrs, resultTy, st3)
+        | isShift                     = (opA, opB, [], tyA, st2)
+        | snd tyA == 0 && snd tyB == 0 =
+            let common        = binopCommonType tyA tyB
+                (wl, wli, sl) = widenIfNeeded st2 opA common
+                (wr, wri, sr) = widenIfNeeded sl  opB common
+            in (wl, wr, wli ++ wri, if isCmp then (U8, 0) else common, sr)
+        | otherwise                   = (opA, opB, [], tyA, st2)   -- pointer arithmetic
+      (t, st4) = freshTemp st3
+      dst   = OperandTemp resultTy t
+      instr = (emptyInstr (binOpToTac op)) { instrDst = dst, instrSrc1 = lhs, instrSrc2 = rhs }
+  in (dst, instrA ++ instrB ++ widenInstrs ++ [instr], st4)
 
 lowerExpr env st e@(Unary op operand) = case op of
   Negate    -> valueUnary TacNeg

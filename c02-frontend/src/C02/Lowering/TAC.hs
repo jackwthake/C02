@@ -9,6 +9,7 @@ module C02.Lowering.TAC (
   Cfg (..),
   Global (..),
   Struct (..),
+  IRField (..),
   Reg (..),
   Extern (..),
   Module (..),
@@ -102,9 +103,19 @@ data Global = Global
   }
 
 
+-- One laid-out struct field: its name, type, and byte offset within the struct.
+-- (Offsets/size come from the analyzer's 'computeStructLayouts'; the wire format
+-- carries them so codegen never recomputes a layout.)
+data IRField = IRField
+  { irFieldName   :: String
+  , irFieldType   :: Ty
+  , irFieldOffset :: Int
+  }
+
 data Struct = Struct
-  { structName :: String
-  , structFields :: [NamedType]
+  { irStructName   :: String
+  , irStructFields :: [IRField]
+  , irStructSize   :: Int
   }
 
 

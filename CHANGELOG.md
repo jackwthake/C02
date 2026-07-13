@@ -9,6 +9,30 @@ releases are reserved for bug fixes only.
 
 ## [Unreleased]
 
+### Added
+
+- **Module- and function-level IR lowering** (`C02.Lowering.Module`, new
+  module) — assembles a whole program into the `ir_module_t` structure
+  `c02-as` consumes. Each defined function becomes a single-block CFG (the
+  whole body in one block, ending in a `RETURN`, mirroring cc02 — labels are
+  resolved by id from the flat instruction stream, so there is no basic-block
+  splitting), alongside struct layouts (field offsets and total size from
+  `C02.Analyzer.Layout`), globals with their constant initializers, register
+  definitions, and externs from forward declarations.
+- **Binary-operator operand widening** (`C02.Lowering.Lower`). Mixed-width
+  arithmetic now widens both operands to a common type via `TAC_CAST` before
+  the operation (`u8 + u16` casts the `u8` up first), matching cc02's IR
+  generation — which `c02-as`'s codegen assumes. Shifts keep the left
+  operand's type and don't widen the count, pointer arithmetic is left
+  unwidened, and a comparison yields `u8`; constant operands are re-typed in
+  place without an instruction.
+
+### Changed
+
+- The IR `Struct` type now carries each field's byte offset and the struct's
+  total size (from `computeStructLayouts`), as the on-disk format requires, so
+  codegen never recomputes a struct layout.
+
 ## [1.3.0] 2026-07-12
 
 ### Added
