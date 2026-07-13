@@ -1,12 +1,18 @@
 -- | Command-line entry point for the c02 frontend. Reads a source file, parses
--- it, and (unless @--parse-only@) runs semantic analysis. On a clean run it dumps
--- the AST to stdout; diagnostics go to stderr with a nonzero exit so the driver
--- (c02c) aborts the pipeline instead of feeding a bad program to later stages.
+-- it, and (unless @--parse-only@) runs semantic analysis. On a clean run it lowers
+-- and serializes the IR to an object file (@-o@, default @a.o@); diagnostics go to
+-- stderr with a nonzero exit so the driver (c02c) aborts the pipeline instead of
+-- feeding a bad program to later stages.
 --
 -- @--parse-only@ stops after parsing — this is what lets the parser test stage
 -- exercise parsing constructs that aren't semantically valid whole programs (no
--- @main@, undeclared names, &c.) without analysis rejecting them. Later stages
--- (TAC lowering, codegen) and a @--emit symtab@ mode will be chained in here.
+-- @main@, undeclared names, &c.) without analysis rejecting them.
+--
+-- @--dump-ast@ still runs full analysis but, on a clean run, prints the AST to
+-- stdout instead of emitting the IR object. This is the analyzer test stage's
+-- observable: a text stdout it can diff against a golden, rather than a binary
+-- @.o@. Later stages (TAC lowering, codegen) and a @--emit symtab@ mode will be
+-- chained in here.
 module Main (main) where
 
 import Data.List (isPrefixOf, partition, sortOn)
@@ -41,6 +47,7 @@ main = do
   args <- getArgs
   let (flags, rest)    = partition ("--" `isPrefixOf`) args
       parseOnly        = "--parse-only" `elem` flags
+      dumpAST          = "--dump-ast" `elem` flags
       (outPath, files) = extractOutput rest
   case files of
     [path] -> do
@@ -48,9 +55,14 @@ main = do
       case parseProgram path src of
         Left err   -> hPutStr stderr (errorBundlePretty err) >> exitFailure
         Right prog
-          | parseOnly -> pure ()                    -- parse only; no output to emit
+          -- --dump-ast is an orthogonal reporting flag: it prints the AST to
+          -- stdout at whatever point we stop, so both test stages can diff a
+          -- text golden instead of a binary .o. --parse-only stops after parsing
+          -- (parser stage: no analysis, since its fixtures aren't whole programs);
+          -- otherwise analysis runs and a clean pass emits the IR object.
+          | parseOnly -> if dumpAST then print prog else pure ()
           | otherwise -> case analyze prog of
-              []    -> writeOutput prog outPath      -- validated → emit the IR object
+              []    -> if dumpAST then print prog else writeOutput prog outPath
               diags -> hPutStr stderr (renderDiags path src diags) >> exitFailure
     _ -> hPutStrLn stderr "usage: c02-frontend [--parse-only] [-o <out.o>] <file.c02>" >> exitFailure
 

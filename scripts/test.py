@@ -40,12 +40,15 @@ FRONTEND = os.path.join(REPO_ROOT, "bin", "c02-frontend")
 # invoke c02-frontend directly (bypassing c02c's codegen) and isolate a single
 # stage via a flag, so their goldens stay stage-specific:
 #   * parser   - `--parse-only` stops after parsing (its fixtures aren't all
-#                semantically valid whole programs, so analysis must not run).
-#   * analyzer - full parse + semantic analysis; positives dump the AST on a
-#                clean run, negatives (bad_*) print diagnostics to stderr.
+#                semantically valid whole programs, so analysis must not run);
+#                `--dump-ast` prints the parsed AST for the golden to diff.
+#   * analyzer - full parse + semantic analysis; --dump-ast makes a clean run
+#                print the AST to stdout (instead of emitting a binary .o) so the
+#                golden stays text-diffable, while negatives (bad_*) still run
+#                analysis and print diagnostics to stderr.
 STAGES = {
-    "parser":   lambda src: [FRONTEND, "--parse-only", src],
-    "analyzer": lambda src: [FRONTEND, src],
+    "parser":   lambda src: [FRONTEND, "--parse-only", "--dump-ast", src],
+    "analyzer": lambda src: [FRONTEND, "--dump-ast", src],
 }
 
 # --- terminal styling -------------------------------------------------------
