@@ -9,29 +9,59 @@ releases are reserved for bug fixes only.
 
 ## [Unreleased]
 
+## [1.4.0] 2026-07-12
+
 ### Added
 
-- **Module- and function-level IR lowering** (`C02.Lowering.Module`, new
-  module) — assembles a whole program into the `ir_module_t` structure
-  `c02-as` consumes. Each defined function becomes a single-block CFG (the
-  whole body in one block, ending in a `RETURN`, mirroring cc02 — labels are
-  resolved by id from the flat instruction stream, so there is no basic-block
-  splitting), alongside struct layouts (field offsets and total size from
-  `C02.Analyzer.Layout`), globals with their constant initializers, register
-  definitions, and externs from forward declarations.
-- **Binary-operator operand widening** (`C02.Lowering.Lower`). Mixed-width
-  arithmetic now widens both operands to a common type via `TAC_CAST` before
-  the operation (`u8 + u16` casts the `u8` up first), matching cc02's IR
-  generation — which `c02-as`'s codegen assumes. Shifts keep the left
-  operand's type and don't widen the count, pointer arithmetic is left
-  unwidened, and a comparison yields `u8`; constant operands are re-typed in
-  place without an instruction.
+- **End-to-end IR generation.** The frontend now lowers an analyzed program all
+  the way to a serialized IR object file and the CLI emits it: a clean analysis
+  writes the object to `a.o` (or `-o <path>`); `--parse-only` stops after parsing
+  and emits nothing. Verified end-to-end — the LCD hello-world example lowers,
+  serializes, and reads back through `c02-as --dump-ir` into the expected IR.
+  Built from three new pieces:
+  - **Module- and function-level lowering** (`C02.Lowering.Module`) — assembles a
+    whole program into the `ir_module_t` structure `c02-as` consumes. Each
+    defined function becomes a single-block CFG (the whole body in one block,
+    ending in a `RETURN`, mirroring cc02 — labels are resolved by id from the flat
+    instruction stream, so there is no basic-block splitting), alongside struct
+    layouts (field offsets and total size from `C02.Analyzer.Layout`), globals
+    with their constant initializers, register definitions, and externs from
+    forward declarations.
+  - **Binary-operator operand widening** (`C02.Lowering.Lower`). Mixed-width
+    arithmetic widens both operands to a common type via `TAC_CAST` before the
+    operation (`u8 + u16` casts the `u8` up first), matching cc02's IR generation
+    — which `c02-as`'s codegen assumes. Shifts keep the left operand's type and
+    don't widen the count, pointer arithmetic is left unwidened, and a comparison
+    yields `u8`; constant operands are re-typed in place without an instruction.
+  - **Binary serializer** (`C02.Lowering.Serialize`). Encodes the module to the
+    on-disk wire format, matched byte-for-byte to `c02-as`'s reader
+    (`ir-serial.c`), native-endian, with every optional field flattened to its
+    empty wire form (0-length string, 0 count, `OPERAND_NONE`, zeroed type).
+    Deliberately does **not** emit fields cc02's writer adds that `c02-as` doesn't
+    read (per-instruction asm mnemonics, per-CFG `is_interrupt`), which would
+    desync the reader.
+- **`-o <path>` flag** on the frontend CLI to choose the output object path
+  (default `a.o`).
 
 ### Changed
 
 - The IR `Struct` type now carries each field's byte offset and the struct's
   total size (from `computeStructLayouts`), as the on-disk format requires, so
   codegen never recomputes a struct layout.
+
+### Known limitations
+
+- **Register access is not yet lowered to hardware addresses.** A read or write
+  of a `reg`-declared name (e.g. `PORTB = x`) currently lowers as an ordinary
+  variable copy, not a load/store at the register's fixed address, because
+  registers are indistinguishable from variables in the lowering environment.
+  `c02-as`'s codegen resolves such names to zero-page storage, so a program that
+  drives hardware through `reg`s will **not** yet generate correct code. Closing
+  this needs a name→address map threaded through expression and statement
+  lowering.
+- **Interrupt functions lose their `is_interrupt` marking** in the object file —
+  `c02-as`'s wire format and codegen have no representation for it yet, so
+  reconciling it is a separate, two-sided frontend/`c02-as` change.
 
 ## [1.3.0] 2026-07-12
 

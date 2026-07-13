@@ -23,23 +23,43 @@ import Text.Megaparsec
 import C02.Parser.Parser (parseProgram)
 import C02.Analyzer.Analyze (analyze)
 import C02.Analyzer.Diagnostic (Diag(..), Diagnostic, render)
+import C02.Lowering.Module (lowerModule)
+import C02.Parser.AST (Program)
+import C02.Lowering.Serialize (serializeModule)
+
+import qualified Data.ByteString.Lazy as B
+
+writeOutput :: Program -> String -> IO ()
+writeOutput p fp =
+  let m = lowerModule p
+      bytes = serializeModule m
+  in B.writeFile fp bytes
+
 
 main :: IO ()
 main = do
   args <- getArgs
-  let (flags, files) = partition ("--" `isPrefixOf`) args
-      parseOnly      = "--parse-only" `elem` flags
+  let (flags, rest)    = partition ("--" `isPrefixOf`) args
+      parseOnly        = "--parse-only" `elem` flags
+      (outPath, files) = extractOutput rest
   case files of
     [path] -> do
       src <- readFile path
       case parseProgram path src of
         Left err   -> hPutStr stderr (errorBundlePretty err) >> exitFailure
         Right prog
-          | parseOnly -> print prog
+          | parseOnly -> pure ()                    -- parse only; no output to emit
           | otherwise -> case analyze prog of
-              []    -> print prog
+              []    -> writeOutput prog outPath      -- validated → emit the IR object
               diags -> hPutStr stderr (renderDiags path src diags) >> exitFailure
-    _ -> hPutStrLn stderr "usage: c02-frontend [--parse-only] <file.c02>" >> exitFailure
+    _ -> hPutStrLn stderr "usage: c02-frontend [--parse-only] [-o <out.o>] <file.c02>" >> exitFailure
+
+
+-- | Pull an optional @-o <path>@ out of the arguments, defaulting to @a.o@.
+extractOutput :: [String] -> (FilePath, [String])
+extractOutput args = case break (== "-o") args of
+  (before, "-o" : path : after) -> (path, before ++ after)
+  _                             -> ("a.o", args)
 
 
 -- | Render analyzer diagnostics in the frontend's parser-error style. Located

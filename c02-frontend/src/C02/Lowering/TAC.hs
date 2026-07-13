@@ -81,7 +81,7 @@ data Block = Block
   { blockId      :: Int
   , instructions :: [Instr]
   , successors   :: [Block]
-  }
+  } deriving (Show)
 
 
 data Cfg = Cfg
@@ -91,7 +91,7 @@ data Cfg = Cfg
   , blocks    :: [Block]
   , nextTemp  :: Int
   , nextLabel :: Int
-  }
+  } deriving (Show)
 
 
 data Global = Global
@@ -100,7 +100,7 @@ data Global = Global
   , globInitKind :: IRInitKind
   , globIntVal   :: Int
   , globalStrVal :: String
-  }
+  } deriving (Show)
 
 
 -- One laid-out struct field: its name, type, and byte offset within the struct.
@@ -110,20 +110,20 @@ data IRField = IRField
   { irFieldName   :: String
   , irFieldType   :: Ty
   , irFieldOffset :: Int
-  }
+  } deriving (Show)
 
 data Struct = Struct
   { irStructName   :: String
   , irStructFields :: [IRField]
   , irStructSize   :: Int
-  }
+  } deriving (Show)
 
 
 data Reg = Reg
   { regName :: String
   , regType :: Ty
   , regAddr :: Int
-  }
+  } deriving (Show)
 
 
 data Extern = Extern
@@ -131,7 +131,7 @@ data Extern = Extern
   , externName   :: String
   , externType   :: Ty
   , externParams :: [NamedType]
-  }
+  } deriving (Show)
 
 
 data Module = Module
@@ -140,7 +140,7 @@ data Module = Module
   , globals :: [Global]
   , regs    :: [Reg]
   , cfgs    :: [Cfg]
-  }
+  } deriving (Show)
 
 
 typeKindTag :: BaseType -> Word32

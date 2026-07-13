@@ -69,10 +69,12 @@ library
                       C02.Lowering.TAC
                       C02.Lowering.Lower
                       C02.Lowering.Module
+                      C02.Lowering.Serialize
     build-depends:    base ^>=4.20.2.0,
                       megaparsec,
                       parser-combinators,
                       containers,
+                      bytestring,
                       mtl
     default-language: Haskell2010
 
@@ -87,6 +89,7 @@ executable c02-frontend
     build-depends:    base ^>=4.20.2.0,
                       megaparsec,
                       containers,
+                      bytestring,
                       c02-frontend
 
     -- Driver lives in its own dir so it doesn't re-compile the library's
