@@ -11,9 +11,11 @@
 --     a zeroed type), never omitted.
 --   * We write exactly what @c02-as@'s reader consumes — NOT what cc02's writer
 --     emits. cc02 additionally writes per-instruction asm mnemonics (a removed
---     feature) and a per-CFG @is_interrupt@ flag; @c02-as@'s reader consumes
---     neither, so writing them would desync the stream. Interrupt support is a
---     deferred, two-sided change.
+--     feature) that @c02-as@'s reader does not consume, so writing them would
+--     desync the stream. The per-CFG @is_interrupt@ flag, by contrast, IS part of
+--     the contract as of IR version 3 (written last in each CFG, matching
+--     @c02-as@'s @read_cfg@); codegen doesn't emit RTI from it yet, but the flag
+--     is preserved through the object so it can.
 module C02.Lowering.Serialize
   ( serializeModule
   ) where
@@ -129,7 +131,8 @@ putParam :: NamedType -> Builder
 putParam (bt, depth, nm) = putType (bt, depth) <> str nm
 
 -- read_cfg: name, return_type, params(count, [type, name]), blocks(count,
--- [block]), next_temp, next_label. (No is_interrupt — see module note.)
+-- [block]), next_temp, next_label, is_interrupt. (is_interrupt is last, matching
+-- cc02's write_cfg / c02-as's read_cfg.)
 putCfg :: Cfg -> Builder
 putCfg c =
      str (fnName c)
@@ -138,6 +141,7 @@ putCfg c =
   <> u32 (length (blocks c)) <> foldMap putBlock (blocks c)
   <> u32 (nextTemp c)
   <> u32 (nextLabel c)
+  <> u32 (if isInterrupt c then 1 else 0)
 
 putField :: IRField -> Builder
 putField f = str (irFieldName f) <> putType (irFieldType f) <> u32 (irFieldOffset f)

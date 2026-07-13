@@ -46,6 +46,7 @@ buildGlobalEnv :: [Loc TopLevelDecl] -> Env
 buildGlobalEnv decls = Env
   { structDefs = Map.fromList [ (structName s, structFields s) | Loc _ (StructDef s) <- decls ]
   , symbols    = Map.fromList (concatMap sym decls)
+  , registers  = Map.fromList [ (regName r, declAddress r) | Loc _ (RegisterDecl r) <- decls ]
   }
   where
     sym (Loc _ d) = case d of
@@ -64,12 +65,13 @@ buildGlobalEnv decls = Env
 -- @next_temp@ / @next_label@ (codegen trusts them, so they must be right).
 lowerFunction :: Env -> FuncDecl -> T.Cfg
 lowerFunction genv f = T.Cfg
-  { T.fnName    = funcName f
-  , T.retType   = (funcReturnType f, funcReturnPtrDepth f)
-  , T.params    = params f
-  , T.blocks    = [ T.Block { T.blockId = 0, T.instructions = allInstrs, T.successors = [] } ]
-  , T.nextTemp  = nextTemp finalSt
-  , T.nextLabel = nextLabel finalSt
+  { T.fnName      = funcName f
+  , T.retType     = (funcReturnType f, funcReturnPtrDepth f)
+  , T.params      = params f
+  , T.blocks      = [ T.Block { T.blockId = 0, T.instructions = allInstrs, T.successors = [] } ]
+  , T.nextTemp    = nextTemp finalSt
+  , T.nextLabel   = nextLabel finalSt
+  , T.isInterrupt = isInterrupt f
   }
   where
     fenv      = genv { symbols = foldr addParam (symbols genv) (params f) }

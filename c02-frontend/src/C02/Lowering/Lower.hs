@@ -132,7 +132,55 @@ lowerInitters env st structTemp ((field, expr):rest)  =
 lowerExpr :: Env -> LowerState -> Expr -> (Operand, [Instr], LowerState)
 lowerExpr env st e@(IntLit n) = (OperandConstInt (typeOf env e) n, [], st)
 lowerExpr env st e@(StrLit s) = (OperandConstStr (typeOf env e) s, [], st)
-lowerExpr env st e@(Var name) = (OperandVar      (typeOf env e) name, [], st)
+-- A hardware register reads as a LOAD from its fixed address into a fresh temp
+-- (the address is a U16 constant; the temp keeps the register's own type). A
+-- plain variable is just its operand. Matching cc02's lower_expr NODE_IDENTIFIER.
+lowerExpr env st e@(Var name) = case Map.lookup name (registers env) of
+  Just addr ->
+    let (t, st1) = freshTemp st
+        dst      = OperandTemp (typeOf env e) t
+        instr    = (emptyInstr TacLoad) { instrDst = dst, instrSrc1 = OperandConstInt (U16, 0) addr }
+    in (dst, [instr], st1)
+  Nothing -> (OperandVar (typeOf env e) name, [], st)
+-- Logical && / || lower to short-circuit control flow (cc02 ir.c NODE_BINOP),
+-- NOT a TAC_AND/TAC_OR op: c02-as's generator has no case for those because the
+-- branch is decided here in the frontend. The result is a u8 (1/0). Allocation
+-- order (result temp, then labels) mirrors cc02 so temp/label ids line up.
+--   &&: if !left, skip to (result = 0); otherwise result = right.
+lowerExpr env st (Binary And a b) =
+  let (resTmp,   st1) = freshTemp st
+      (falseLbl, st2) = freshLabel st1
+      (endLbl,   st3) = freshLabel st2
+      result          = OperandTemp (U8, 0) resTmp
+      (leftOp, lInstrs, st4) = lowerExpr env st3 a
+      (negTmp, st5)   = freshTemp st4
+      negOp           = OperandTemp (U8, 0) negTmp
+      notI  = (emptyInstr TacNot)      { instrDst = negOp, instrSrc1 = leftOp }
+      cjI   = (emptyInstr TacCondJump) { instrSrc1 = negOp, instrLabel = Just (fromIntegral falseLbl) }
+      (rightOp, rInstrs, st6) = lowerExpr env st5 b
+      copyR = (emptyInstr TacCopy) { instrDst = result, instrSrc1 = rightOp }
+      copy0 = (emptyInstr TacCopy) { instrDst = result, instrSrc1 = OperandConstInt (U8, 0) 0 }
+  in ( result
+     , lInstrs ++ [notI, cjI] ++ rInstrs
+         ++ [copyR, jumpInstr endLbl, labelInstr falseLbl, copy0, labelInstr endLbl]
+     , st6 )
+
+--   ||: if left is true, skip to (result = 1); otherwise result = right.
+lowerExpr env st (Binary Or a b) =
+  let (resTmp,  st1) = freshTemp st
+      (trueLbl, st2) = freshLabel st1
+      (endLbl,  st3) = freshLabel st2
+      result         = OperandTemp (U8, 0) resTmp
+      (leftOp, lInstrs, st4) = lowerExpr env st3 a
+      cjI   = (emptyInstr TacCondJump) { instrSrc1 = leftOp, instrLabel = Just (fromIntegral trueLbl) }
+      (rightOp, rInstrs, st5) = lowerExpr env st4 b
+      copyR = (emptyInstr TacCopy) { instrDst = result, instrSrc1 = rightOp }
+      copy1 = (emptyInstr TacCopy) { instrDst = result, instrSrc1 = OperandConstInt (U8, 0) 1 }
+  in ( result
+     , lInstrs ++ [cjI] ++ rInstrs
+         ++ [copyR, jumpInstr endLbl, labelInstr trueLbl, copy1, labelInstr endLbl]
+     , st5 )
+
 lowerExpr env st (Binary op a b) =
   let (opA, instrA, st1) = lowerExpr env st a     -- lower left, using starting state
       (opB, instrB, st2) = lowerExpr env st1 b    -- lower right
@@ -255,13 +303,16 @@ lowerStmt env _loop st (Assign lhs op rhs) =
         ModEquals   -> Binary Mod lhs rhs
       (val, valInstrs, st1) = lowerExpr env st valueExpr
       (storeInstrs, st2) = case lhs of
-        -- NOTE: a register target is indistinguishable from a variable in 'Env'
-        -- (both are 'VarSym'), so it wrongly lands here as a plain COPY instead
-        -- of a store to its fixed address. Registers need a name->addr map
-        -- threaded through lowering (and 'lowerExpr' for reads); UNHANDLED here.
-        Var name ->
-          let dst = OperandVar (typeOf env lhs) name
-          in ([(emptyInstr TacCopy) { instrDst = dst, instrSrc1 = val }], st1)
+        -- A register write is a STORE to its fixed address (a U16 constant); any
+        -- other name is a plain COPY into the variable. The 'registers' map
+        -- (populated only for lowering) is what tells the two apart, since both
+        -- are 'VarSym' to the type system. Mirrors cc02's NODE_ASSIGN.
+        Var name -> case Map.lookup name (registers env) of
+          Just addr ->
+            ([(emptyInstr TacStore) { instrDst = OperandConstInt (U16, 0) addr, instrSrc1 = val }], st1)
+          Nothing ->
+            let dst = OperandVar (typeOf env lhs) name
+            in ([(emptyInstr TacCopy) { instrDst = dst, instrSrc1 = val }], st1)
         Deref ptr ->
           let (ptrOp, ptrInstrs, st') = lowerExpr env st1 ptr
           in (ptrInstrs ++ [(emptyInstr TacStore) { instrDst = ptrOp, instrSrc1 = val }], st')

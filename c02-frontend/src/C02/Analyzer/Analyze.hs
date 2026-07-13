@@ -109,7 +109,7 @@ withOffset off = local (\c -> c { ctxOffset = off })
 -- disallowed (see 'declLocal'), so the union is conflict-free; 'Map.unions' is
 -- left-biased and the innermost frame is leftmost, the right tie-break anyway.
 envOf :: Ctx -> Env
-envOf c = Env (ctxStructs c) (Map.unions (ctxScopes c))
+envOf c = Env (ctxStructs c) (Map.unions (ctxScopes c)) Map.empty  -- no registers during analysis
 
 -- | Resolve an expression's type in the current context, bridging the pure
 -- @Either@ typer into the accumulating walk: on an error, emit it (at the

@@ -178,6 +178,11 @@ data Env = Env
                                           -- the unknown-struct check, fields feed
                                           -- (later) Field / StructInit typing
   , symbols    :: Map String Symbol       -- Var / Call lookups
+  , registers  :: Map String Int          -- register name -> fixed address. Lowering
+                                          -- only: a read/write of one of these names
+                                          -- becomes a LOAD/STORE at the address rather
+                                          -- than a var copy. Empty during analysis
+                                          -- (registers type as ordinary 'VarSym').
   }
 
 

@@ -376,12 +376,18 @@ OP_EMITTER_SINGLE_ARG(bvc_rel, 0x50)
 
 OP_EMITTER_NO_ARG(txs, 0x9A)
 OP_EMITTER_NO_ARG(rts, 0x60)
+OP_EMITTER_NO_ARG(rti, 0x40)
 OP_EMITTER_NO_ARG(clc, 0x18)
 OP_EMITTER_NO_ARG(sec, 0x38)
 OP_EMITTER_NO_ARG(tax, 0xAA)
 OP_EMITTER_NO_ARG(dex, 0xCA)
 OP_EMITTER_NO_ARG(pha, 0x48)
 OP_EMITTER_NO_ARG(pla, 0x68)
+OP_EMITTER_NO_ARG(phx, 0xDA)
+OP_EMITTER_NO_ARG(plx, 0xFA)
+OP_EMITTER_NO_ARG(phy, 0x5A)
+OP_EMITTER_NO_ARG(ply, 0x7A)
+OP_EMITTER_NO_ARG(sei, 0x78)
 
 
 OP_EMITTER_ABS(jmp_abs, 0x4C)
@@ -399,6 +405,12 @@ OP_EMITTER_ABS(sbc_abs, 0xED)
 #undef OP_EMITTER_SINGLE_ARG
 #undef OP_EMITTER_NO_ARG
 #undef OP_EMITTER_ABS
+
+
+// NOTE: `asm {}` blocks are an intentional removal in c02-as — the IR it
+// consumes never carries a TAC_ASM op, so the mnemonic table and emitter that
+// cc02's generator had here are gone. The no-operand emitters above are kept
+// only for the ones codegen itself uses (reset/prologue/epilogue, interrupts).
 
 
 // Emit JSR with a placeholder address and queue a fixup for later resolution.
@@ -474,7 +486,11 @@ static void emit_data_section(emitter_t *e, ir_gen_t *gen) {
   unsigned     unique_count = 0;
 
   for (unsigned i = 0; i < e->data_fixup_count; i++) {
-    const char *s = e->data_fixups[i].str_val;
+    // An empty string literal ("") serializes as a length-0 string, which
+    // read_str deserializes to NULL (its absent-optional convention). Every
+    // data fixup is a string *literal*, so a NULL here means "" — coalesce it
+    // so strcmp/strlen below don't deref NULL and it still gets a ROM slot.
+    const char *s = e->data_fixups[i].str_val ? e->data_fixups[i].str_val : "";
     unsigned found = unique_count;
     for (unsigned j = 0; j < unique_count; j++) {
       if (strcmp(unique_strs[j], s) == 0) { found = j; break; }
@@ -493,8 +509,9 @@ static void emit_data_section(emitter_t *e, ir_gen_t *gen) {
 
   for (unsigned i = 0; i < e->data_fixup_count; i++) {
     data_fixup_t *f = &e->data_fixups[i];
+    const char *fs = f->str_val ? f->str_val : "";   // see NULL note above
     for (unsigned j = 0; j < unique_count; j++) {
-      if (strcmp(unique_strs[j], f->str_val) == 0) {
+      if (strcmp(unique_strs[j], fs) == 0) {
         e->rom[f->patch_pos] = (uint8_t)((unique_addrs[j] >> (8 * f->byte)) & 0xFF);
         break;
       }
@@ -514,18 +531,39 @@ static void emit_data_section(emitter_t *e, ir_gen_t *gen) {
 static void emit_vectors(emitter_t *e) {
   unsigned pos = 0xFFFA - ROM_START;
 
-  e->rom[pos++] = 0x00;               // NMI low  (unused)
-  e->rom[pos++] = 0x00;               // NMI high (unused)
+  // Only functions actually declared `interrupt` get wired into the vector table —
+  // a plain function that happens to be named "nmi"/"irq" was emitted with a normal
+  // RTS and must never be jumped into by hardware.
+  int nmi_is_interrupt = 0, irq_is_interrupt = 0;
+  for (unsigned i = 0; i < e->gen->module.cfg_count; i++) {
+    cfg_t *cfg = &e->gen->module.cfgs[i];
+    if (!cfg->is_interrupt) continue;
+    if (strcmp(cfg->name, "nmi") == 0) nmi_is_interrupt = 1;
+    else if (strcmp(cfg->name, "irq") == 0) irq_is_interrupt = 1;
+  }
+
+  uint16_t nmi_addr = 0;
+  uint16_t irq_addr = 0;
+  for (unsigned i = 0; i < e->func_label_count; i++) {
+    if (nmi_is_interrupt && strcmp(e->func_labels[i].name, "nmi") == 0) {
+      nmi_addr = e->func_labels[i].addr;
+    } else if (irq_is_interrupt && strcmp(e->func_labels[i].name, "irq") == 0) {
+      irq_addr = e->func_labels[i].addr;
+    }
+  }
+
+  e->rom[pos++] = (uint8_t)(nmi_addr & 0xFF);     // NMI low
+  e->rom[pos++] = (uint8_t)(nmi_addr >> 8);        // NMI high
   e->rom[pos++] = ROM_START & 0xFF;   // Reset low
   e->rom[pos++] = ROM_START >> 8;     // Reset high
-  e->rom[pos++] = 0x00;               // IRQ low  (unused)
-  e->rom[pos++] = 0x00;               // IRQ high (unused)
+  e->rom[pos++] = (uint8_t)(irq_addr & 0xFF);     // IRQ low
+  e->rom[pos++] = (uint8_t)(irq_addr >> 8);        // IRQ high
 }
 
 
 // Emit the reset stub: SEI, CLD, stack init, frame pointer init.
 static void emit_bootstrap(emitter_t *e) {
-  EMIT(0x78); // SEI
+  sei(e);
   EMIT(0xD8); // CLD
 
   ldx_imm(e, 0XFF); // Init hardware stack
@@ -698,6 +736,17 @@ static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
 
   zp_map_t map;
   if (!zp_map_build(e, &map, cfg)) return 0;
+
+  // The hardware only saves PC and status on interrupt entry, not A/X/Y — the
+  // handler must save them itself, before anything else (including emit_zp_save
+  // below, which clobbers A) touches a register. PHX/PHY are real 65C02 pushes,
+  // unlike TXS/TYS, which change the stack pointer instead of pushing anything.
+  int is_interrupt = cfg->is_interrupt;
+  if (is_interrupt) {
+    pha(e);
+    phx(e);
+    phy(e);
+  }
 
   // main is only called by the bootstrap, which has no ZP state to preserve.
   // Every other callee saves the caller's ZP slots on entry and restores on return.
@@ -882,7 +931,16 @@ static int emit_function_from_cfg(emitter_t *e, cfg_t *cfg) {
           // Return value is already in RET ($02/$03) above the restored region.
           if (!is_main)
             emit_zp_restore(e, &map);
-          rts(e);
+          if (!is_interrupt) {
+            rts(e);
+          } else {
+            // Reverse of the entry pushes. RTI restores PC and status from the
+            // values the hardware pushed automatically on interrupt entry.
+            ply(e);
+            plx(e);
+            pla(e);
+            rti(e);
+          }
           break;
         }
 
@@ -1698,23 +1756,34 @@ static void emit_sdiv16_helper(emitter_t *e) {
 
 // Write the "C02S" symbol table into the NOP fill area immediately after the data section,
 // then store its absolute address at SYMTABLE_START_PTR so the disassembler can find it.
-// Each entry is: u16 address (LE) + null-terminated name. The table is silently omitted if
+// Each entry is: u16 address (LE) + null-terminated name. Covers three symbol kinds —
+// function labels, user/compiler globals (e->global_entries, RAM addresses), and hardware
+// registers (e->gen->module.regs, fixed board addresses baked in as constants by the IR) —
+// concatenated into one flat table; the disassembler doesn't distinguish kinds, it just
+// substitutes any matching address it finds in an operand. The table is silently omitted if
 // the code+data section is too large to fit it before the footer (extremely unlikely in
 // practice — a fully packed 32KB image still leaves the footer region intact).
 static void emit_symbol_table(emitter_t *e) {
+  unsigned reg_count = e->gen ? e->gen->module.reg_count : 0;
+  unsigned total_syms = e->func_label_count + e->global_entry_count + reg_count;
+
   size_t sym_size = 6; // "C02S" (4) + count u16 (2)
   for (unsigned i = 0; i < e->func_label_count; i++)
     sym_size += 2 + strlen(e->func_labels[i].name) + 1;
+  for (unsigned i = 0; i < e->global_entry_count; i++)
+    sym_size += 2 + strlen(e->global_entries[i].name) + 1;
+  for (unsigned i = 0; i < reg_count; i++)
+    sym_size += 2 + strlen(e->gen->module.regs[i].name) + 1;
 
   if (e->code_pos + sym_size > SYMTABLE_START_PTR)
     return;
 
   uint16_t symtab_addr = (uint16_t)(ROM_START + e->code_pos);
 
-  // Magic number followed by number of symbols
+  // Magic number followed by total symbol count (functions + globals + registers)
   EMIT('C'); EMIT('0'); EMIT('2'); EMIT('S');
-  EMIT((uint8_t)(e->func_label_count & 0xFF));
-  EMIT((uint8_t)(e->func_label_count >> 8));
+  EMIT((uint8_t)(total_syms & 0xFF));
+  EMIT((uint8_t)(total_syms >> 8));
 
   for (unsigned i = 0; i < e->func_label_count; i++) {
     uint16_t addr = e->func_labels[i].addr;
@@ -1724,9 +1793,25 @@ static void emit_symbol_table(emitter_t *e) {
     EMIT(0);
   }
 
+  for (unsigned i = 0; i < e->global_entry_count; i++) {
+    uint16_t addr = e->global_entries[i].ram_addr;
+    EMIT((uint8_t)(addr & 0xFF));
+    EMIT((uint8_t)(addr >> 8));
+    for (const char *n = e->global_entries[i].name; *n; n++) EMIT((uint8_t)*n);
+    EMIT(0);
+  }
+
+  for (unsigned i = 0; i < reg_count; i++) {
+    uint16_t addr = (uint16_t)e->gen->module.regs[i].addr;
+    EMIT((uint8_t)(addr & 0xFF));
+    EMIT((uint8_t)(addr >> 8));
+    for (const char *n = e->gen->module.regs[i].name; *n; n++) EMIT((uint8_t)*n);
+    EMIT(0);
+  }
+
   PATCH_BYTE(SYMTABLE_START_PTR,     symtab_addr & 0xFF);
   PATCH_BYTE(SYMTABLE_START_PTR + 1, symtab_addr >> 8);
-} 
+}
 
 
 // Pass 1: allocate 2 bytes of RAM for a compiler extern and register it in

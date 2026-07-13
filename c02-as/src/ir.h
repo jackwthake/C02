@@ -204,6 +204,8 @@ typedef struct {
 
   unsigned next_temp;         // counter for generating temporaries
   unsigned next_label;        // counter for generating labels
+
+  int is_interrupt;           // declared `interrupt`? (§7.4; codegen may emit RTI)
 } cfg_t;
 
 

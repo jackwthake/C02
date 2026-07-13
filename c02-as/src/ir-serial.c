@@ -21,7 +21,7 @@
  */
 
 #define IR_MAGIC   0x43303249  /* "C02I" */
-#define IR_VERSION 2
+#define IR_VERSION 3
 
 
 // ----------------------------------------------------------------
@@ -162,6 +162,10 @@ static int read_cfg(FILE *f, arena_t *a, cfg_t *cfg) {
 
   if (!read_u32(f, &cfg->next_temp)) return 0;
   if (!read_u32(f, &cfg->next_label)) return 0;
+
+  unsigned is_interrupt;
+  if (!read_u32(f, &is_interrupt)) return 0;
+  cfg->is_interrupt = (int)is_interrupt;
   return 1;
 }
 

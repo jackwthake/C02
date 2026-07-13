@@ -44,6 +44,7 @@ sanitize:
 BUILD_DIR = $(BUILD_ROOT)/$(VARIANT)
 BIN       = $(BIN_DIR)/c02-as$(BIN_SUFFIX)
 OBJS      = $(addprefix $(BUILD_DIR)/,$(notdir $(SRCS:.c=.o)))
+DEPS      = $(OBJS:.o=.d)
 
 vpath %.c src
 
@@ -52,8 +53,14 @@ build: $(BIN)
 $(BIN): $(OBJS) | $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS_EXTRA)
 
+# -MMD -MP writes a per-object .d listing the headers it #includes, so touching
+# a header (e.g. ir.h) rebuilds every .o that depends on it. Without this, a
+# struct-layout change in a header silently under-rebuilds and the mismatched
+# objects crash at runtime.
 $(BUILD_DIR)/%.o: src/%.c | $(BUILD_DIR)
-	$(CC) $(CFLAGS) -c -o $@ $<
+	$(CC) $(CFLAGS) -MMD -MP -c -o $@ $<
+
+-include $(DEPS)
 
 $(BIN_DIR) $(BUILD_DIR):
 	mkdir -p $@

@@ -29,7 +29,7 @@ c02Magic :: Word32
 c02Magic = 0x43303249 -- "C02I"
 
 irVersion :: Word32
-irVersion = 2
+irVersion = 3
 
 -- This MUST match the order in c02-as/src/ir.h order
 data TacOp = TacAdd       | TacSub    | TacMul      | TacDiv  | TacMod
@@ -85,12 +85,13 @@ data Block = Block
 
 
 data Cfg = Cfg
-  { fnName    :: String
-  , retType   :: Ty
-  , params    :: [NamedType]
-  , blocks    :: [Block]
-  , nextTemp  :: Int
-  , nextLabel :: Int
+  { fnName      :: String
+  , retType     :: Ty
+  , params      :: [NamedType]
+  , blocks      :: [Block]
+  , nextTemp    :: Int
+  , nextLabel   :: Int
+  , isInterrupt :: Bool   -- ^ was this function declared @interrupt@ (§7.4)?
   } deriving (Show)
 
 
