@@ -9,6 +9,51 @@ releases are reserved for bug fixes only.
 
 ## [Unreleased]
 
+## [1.3.0] 2026-07-12
+
+### Added
+
+- **AST → three-address-code lowering** (`C02.Lowering.TAC` and
+  `C02.Lowering.Lower`, new modules) — the pass between the analyzed AST and
+  `c02-as`'s codegen. `TAC.hs` reproduces `c02-as`'s `ir.h` / `ir-serial.c`
+  on-disk contract in Haskell: `TacOp`, `Operand` (a sum type, one
+  constructor per operand kind), the flat `Instr` record, and the CFG/module
+  types, with hand-written tag encoders (`tacOpTag`, `operandTag`,
+  `typeKindTag`, `irInitKindTag`) kept in explicit lockstep with the C enum
+  ordinals rather than a fragile `deriving Enum`.
+- **Expression lowering** — every `Expr` form (literals, variables,
+  binary/unary ops, calls, casts, deref, field access, struct initializers)
+  to a flat `[Instr]` stream. Result types are resolved by reusing the
+  analyzer's `inferType` as the single source of truth rather than
+  re-deriving typing rules, except where the AST node supplies the type
+  syntactically (cast target, struct-init name); every operand carries its
+  type for codegen.
+- **Statement lowering** — assignment (including compound `+=` … `%=`, with
+  the store kind chosen by the target's lvalue form: variable copy, pointer
+  store, or field store), `return`, `if`/`else-if`/`else` (a guard chain
+  lowered against one shared end label), `while`, `for`, and
+  `break`/`continue` (targeting the enclosing loop's labels, threaded down as
+  loop context). Control flow follows cc02's `ir.c` label/jump structure —
+  `TAC_COND_JUMP` fires on a *true* operand, so a condition is negated to skip
+  its body when false. Local scoping is handled by extending the environment
+  into the tail of each block (mirroring the analyzer), so nested and sibling
+  scopes resolve without a separate scope stack.
+
+  Not yet wired into the CLI, and pending a follow-up: register reads/writes
+  are lowered as ordinary variable access rather than fixed-address
+  loads/stores (registers are indistinguishable from variables in the
+  environment until a register-address map is threaded through lowering; the
+  two sites are marked with `NOTE` comments).
+
+### Changed
+
+- **The analyzer no longer requires `main` to exist.** Whether a translation
+  unit defines `main` is now the linker/driver's concern — the toolchain
+  targets multi-file linking and incremental compilation — so
+  `ERR_MISSING_MAIN` is removed. When `main` *is* defined, its signature is
+  still validated: it must be `void main()` with no parameters, otherwise the
+  new `ERR_BAD_MAIN_SIGNATURE` fires. SPEC §7.4 and §8.1 updated to match.
+
 ## [1.2.2] 2026-07-10
 
 ### Added
