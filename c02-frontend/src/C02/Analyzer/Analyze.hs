@@ -27,6 +27,7 @@
 --     offset-blind 'inferType' ever having to know about it.
 module C02.Analyzer.Analyze
   ( analyze
+  , bindLocal
   ) where
 
 import           Control.Monad (forM_, unless, void, when)

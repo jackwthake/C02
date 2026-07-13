@@ -1,9 +1,13 @@
-{-# OPTIONS_GHC -Wno-unused-top-binds #-}
-module C02.Lowering.Lower (
+module C02.Lowering.Lower
+  ( LowerState(..)
+  , lowerExpr
+  , lowerStmt
+  , lowerBlock
   ) where
-import C02.Analyzer.Types (Env (..), Ty, inferType)
+import C02.Analyzer.Types (Env (..), Ty, inferType, Symbol (VarSym))
 import C02.Lowering.TAC (Instr(..), Operand(..), TacOp(..), binOpToTac)
-import C02.Parser.AST (Expr(..), UnOp(..), BaseType (Void))
+import C02.Parser.AST (Expr(..), UnOp(..), BinOp(Add, Sub, Mul, Div, Mod), BaseType (Void, U8), Stmt (..), Loc (Loc), VarDecl (declName, varType, ptrDepth, declInit), AssignmentOp (..), StructDecl (structName, structFields), Block)
+import qualified Data.Map as Map
 
 data LowerState = LowerState
   { nextTemp  :: Int
@@ -42,6 +46,34 @@ freshTemp :: LowerState -> (Int, LowerState)
 freshTemp st = (nextTemp st, st { nextTemp = nextTemp st + 1 })
 
 
+-- | Hand out the next label number and bump the counter. Same shape as
+-- 'freshTemp' but for the (until now unused) 'nextLabel' counter.
+freshLabel :: LowerState -> (Int, LowerState)
+freshLabel st = (nextLabel st, st { nextLabel = nextLabel st + 1 })
+
+
+labelInstr :: Int -> Instr
+labelInstr l = (emptyInstr TacLabel) { instrLabel = Just (fromIntegral l) }
+
+jumpInstr :: Int -> Instr
+jumpInstr l = (emptyInstr TacJump) { instrLabel = Just (fromIntegral l) }
+
+
+-- | Emit code that jumps to @target@ when @cond@ evaluates to *false*.
+-- 'TacCondJump' fires when its operand is *true* (nonzero), so we negate the
+-- condition into a fresh temp and jump on the negation: original-false becomes
+-- negated-true, the jump fires, and the guarded body is skipped. (This is
+-- exactly cc02's if/while/for condition idiom.)
+condJumpUnless :: Env -> LowerState -> Expr -> Int -> ([Instr], LowerState)
+condJumpUnless env st cond target =
+  let (condOp, condInstrs, st1) = lowerExpr env st cond
+      (negTmp, st2)             = freshTemp st1
+      negOp = OperandTemp (U8, 0) negTmp
+      notI  = (emptyInstr TacNot)      { instrDst = negOp, instrSrc1 = condOp }
+      jmpI  = (emptyInstr TacCondJump) { instrSrc1 = negOp, instrLabel = Just (fromIntegral target) }
+  in (condInstrs ++ [notI, jmpI], st2)
+
+
 lowerArgs :: Env -> LowerState -> [Expr] -> ([Operand], [Instr], LowerState)
 lowerArgs _   st []     = ([], [], st)                    -- no args: nothing lowered, state untouched
 lowerArgs env st (e:es) =
@@ -65,7 +97,7 @@ lowerExpr env st e@(StrLit s) = (OperandConstStr (typeOf env e) s, [], st)
 lowerExpr env st e@(Var name) = (OperandVar      (typeOf env e) name, [], st)
 lowerExpr env st e@(Binary op a b) =
   let (opA, instrA, st1) = lowerExpr env st a     -- lower left, using starting state
-      (opB, instrB, st2) = lowerExpr env st1 b    -- lower right — which state goes in here?
+      (opB, instrB, st2) = lowerExpr env st1 b    -- lower right
       (t,   st3)         = freshTemp st2          -- burn a temp for the result
       dst   = OperandTemp (typeOf env e) t
       instr = (emptyInstr (binOpToTac op)) { instrDst = dst, instrSrc1 = opA, instrSrc2 = opB }
@@ -128,3 +160,197 @@ lowerExpr env st e@(StructInit _name initters) =
       structTemp         = OperandTemp structTy t
       (storeInstrs, st2) = lowerInitters env st1 structTemp initters
   in (structTemp, storeInstrs, st2)
+
+
+-- | Lower one statement to a flat instruction stream. The @Maybe (Int, Int)@ is
+-- the enclosing loop's @(continueLabel, breakLabel)@, or 'Nothing' outside any
+-- loop — the explicit-threading stand-in for cc02's loop stack. It flows
+-- *down*: a loop sets it for its body, and it reverts automatically because
+-- inner calls get the new value while outer frames keep their own.
+lowerStmt :: Env -> Maybe (Int, Int) -> LowerState -> Stmt -> ([Instr], LowerState)
+
+lowerStmt env _loop st (Return mExpr) = case mExpr of
+  Nothing -> ([bareReturn], st)                       -- `return;` — nothing to carry
+  Just e  -> let (valOp, valInstrs, st1) = lowerExpr env st e
+             in (valInstrs ++ [returnWith valOp], st1) -- `return e;` — value in src1
+  where
+    bareReturn    = (emptyInstr TacReturn) { instrSrc1 = noOperand }
+    returnWith v  = (emptyInstr TacReturn) { instrSrc1 = v }
+
+lowerStmt env _loop st (ExprStmt e) =
+  let (_op, instrs, st1) = lowerExpr env st e
+  in (instrs, st1)
+
+-- A nested block is just its statements under a fresh scope; the loop context
+-- flows straight through (a block doesn't start or end a loop).
+lowerStmt env loop st (Nested b) = lowerBlock env loop st b
+
+-- The right side is lowered as a value; the left side's *form* picks the write:
+-- a plain copy into a variable, a store through a pointer, or a field store.
+-- Compound ops (+=, -=) desugar to `lhs <op> rhs`. NOTE: that re-lowers the LHS
+-- as both a value and a store target, so a side-effecting lvalue is evaluated
+-- twice — only reachable via the shallow-lvalue rule (SPEC S-5, e.g. `f() += 1`)
+-- and acceptable for ordinary lvalues.
+lowerStmt env _loop st (Assign lhs op rhs) =
+  let valueExpr = case op of
+        Equals      -> rhs
+        PlusEquals  -> Binary Add lhs rhs
+        MinusEquals -> Binary Sub lhs rhs
+        MultEquals  -> Binary Mul lhs rhs
+        DivEquals   -> Binary Div lhs rhs
+        ModEquals   -> Binary Mod lhs rhs
+      (val, valInstrs, st1) = lowerExpr env st valueExpr
+      (storeInstrs, st2) = case lhs of
+        -- NOTE: a register target is indistinguishable from a variable in 'Env'
+        -- (both are 'VarSym'), so it wrongly lands here as a plain COPY instead
+        -- of a store to its fixed address. Registers need a name->addr map
+        -- threaded through lowering (and 'lowerExpr' for reads); UNHANDLED here.
+        Var name ->
+          let dst = OperandVar (typeOf env lhs) name
+          in ([(emptyInstr TacCopy) { instrDst = dst, instrSrc1 = val }], st1)
+        Deref ptr ->
+          let (ptrOp, ptrInstrs, st') = lowerExpr env st1 ptr
+          in (ptrInstrs ++ [(emptyInstr TacStore) { instrDst = ptrOp, instrSrc1 = val }], st')
+        Field base fname ->
+          let (baseOp, baseInstrs, st') = lowerExpr env st1 base
+          in (baseInstrs ++ [(emptyInstr TacFieldStore) { instrDst = baseOp, instrSrc1 = val, instrFieldName = Just fname }], st')
+        _ -> error "lowerStmt Assign: non-lvalue target (analyzer should have rejected)"
+  in (valInstrs ++ storeInstrs, st2)
+
+-- if / else-if / else is a guard chain; lower it against one shared end label.
+lowerStmt env loop st (If clauses) =
+  let (endLabel, st1)   = freshLabel st
+      (bodyInstrs, st2) = lowerClauses env loop st1 endLabel clauses
+  in (bodyInstrs ++ [labelInstr endLabel], st2)
+
+lowerStmt env _loop st (While cond mBody) =
+  let (condLabel, st1)  = freshLabel st
+      (endLabel,  st2)  = freshLabel st1
+      (condInstrs, st3) = condJumpUnless env st2 cond endLabel
+      (bodyInstrs, st4) = case mBody of
+        Nothing   -> ([], st3)
+        Just body -> lowerBlock env (Just (condLabel, endLabel)) st3 body
+  in ( labelInstr condLabel : condInstrs ++ bodyInstrs ++ [jumpInstr condLabel, labelInstr endLabel]
+     , st4 )
+
+lowerStmt env loop st (For mInit mCond mIncr mBody) =
+  let (env', initInstrs, st1) = lowerForInit env loop st mInit
+      (condLabel, st2) = freshLabel st1
+      (endLabel,  st3) = freshLabel st2
+      (incrLabel, st4) = freshLabel st3   -- continue lands here: run incrementer, then recheck
+      (condInstrs, st5) = case mCond of
+        Nothing   -> ([], st4)
+        Just cond -> condJumpUnless env' st4 cond endLabel
+      (bodyInstrs, st6) = case mBody of
+        Nothing   -> ([], st5)
+        Just body -> lowerBlock env' (Just (incrLabel, endLabel)) st5 body
+      (incrInstrs, st7) = case mIncr of
+        Nothing   -> ([], st6)
+        Just incr -> lowerStmt env' loop st6 incr
+  in ( initInstrs
+       ++ labelInstr condLabel : condInstrs
+       ++ bodyInstrs
+       ++ labelInstr incrLabel : incrInstrs
+       ++ [jumpInstr condLabel, labelInstr endLabel]
+     , st7 )
+
+-- break/continue jump to the enclosing loop's labels. The analyzer already
+-- rejected these outside a loop, so 'Nothing' is an unreachable safety no-op.
+lowerStmt _env loop st Break = case loop of
+  Just (_cont, brk) -> ([jumpInstr brk], st)
+  Nothing           -> ([], st)
+lowerStmt _env loop st Continue = case loop of
+  Just (cont, _brk) -> ([jumpInstr cont], st)
+  Nothing           -> ([], st)
+
+-- Declarations are handled at block level (see 'lowerBlock') so they can scope
+-- the rest of the block; reaching them here is an invariant violation, treated
+-- as a benign no-op the way the analyzer does.
+lowerStmt _env _loop st (LocVarDecl _)    = ([], st)
+lowerStmt _env _loop st (StructDeclStmt _) = ([], st)
+
+
+-- | Lower an if/else-if/else clause chain against a shared @end@ label. Each
+-- guarded clause jumps past its body to the next clause on a false condition;
+-- after a non-final body, an unconditional jump to @end@ skips the rest.
+lowerClauses :: Env -> Maybe (Int, Int) -> LowerState -> Int
+             -> [(Maybe Expr, Block)] -> ([Instr], LowerState)
+lowerClauses _   _    st _   []                 = ([], st)
+lowerClauses env loop st _   [(Nothing, block)] =           -- final `else`
+  lowerBlock env loop st block                              -- no guard; falls through to end
+lowerClauses env loop st end [(Just cond, block)] =         -- final guarded clause, no else
+  let (condInstrs, st1) = condJumpUnless env st cond end    -- false skips straight to end
+      (bodyInstrs, st2) = lowerBlock env loop st1 block
+  in (condInstrs ++ bodyInstrs, st2)                        -- body falls through to end
+lowerClauses env loop st end ((Just cond, block) : rest) =  -- guarded clause, more follow
+  let (next, st1)       = freshLabel st
+      (condInstrs, st2) = condJumpUnless env st1 cond next  -- false -> next clause
+      (bodyInstrs, st3) = lowerBlock env loop st2 block
+      (restInstrs, st4) = lowerClauses env loop st3 end rest
+  in (condInstrs ++ bodyInstrs ++ [jumpInstr end, labelInstr next] ++ restInstrs, st4)
+lowerClauses env loop st _   ((Nothing, block) : _) =       -- else before end (AST forbids); take it
+  lowerBlock env loop st block
+
+
+-- | Lower a @for@ initializer, which may declare a variable scoped to the
+-- loop's cond/incr/body — so a declaration extends the env (and that extension
+-- is returned for the caller to use across the loop), like 'lowerBlock' does.
+lowerForInit :: Env -> Maybe (Int, Int) -> LowerState -> Maybe Stmt -> (Env, [Instr], LowerState)
+lowerForInit env _    st Nothing                = (env, [], st)
+lowerForInit env _    st (Just (LocVarDecl vd)) =
+  let env'     = bindLocalVar vd env
+      (i, st1) = lowerInit env st vd
+  in (env', i, st1)
+lowerForInit env loop st (Just s)               =
+  let (i, st1) = lowerStmt env loop st s
+  in (env, i, st1)
+
+
+bindLocalVar :: VarDecl -> Env -> Env
+bindLocalVar vd env = env { symbols = Map.insert (declName vd) (VarSym ty) (symbols env) }
+  where ty = (varType vd, ptrDepth vd)
+
+
+-- | Register a statement-position struct into the env for the rest of its block.
+-- Emits no instructions — it only makes the struct's fields visible so a later
+-- 'typeOf' on a value of that type resolves (mirrors the analyzer's
+-- 'declLocalStruct').
+bindLocalStruct :: StructDecl -> Env -> Env
+bindLocalStruct sd env =
+  env { structDefs = Map.insert (structName sd) (structFields sd) (structDefs env) }
+
+
+-- | Emit the store for a local's initializer, if it has one. An uninitialized
+-- local emits nothing (it exists by being referenced later); an initialized one
+-- lowers its value and copies it into the variable. The value is lowered in the
+-- pre-binding env (a local isn't in scope in its own initializer).
+lowerInit :: Env -> LowerState -> VarDecl -> ([Instr], LowerState)
+lowerInit env st vd = case declInit vd of
+  Nothing -> ([], st)
+  Just e  ->
+    let (valOp, valInstrs, st1) = lowerExpr env st e
+        ty   = (varType vd, ptrDepth vd)
+        dst  = OperandVar ty (declName vd)
+        copy = (emptyInstr TacCopy) { instrDst = dst, instrSrc1 = valOp }
+    in (valInstrs ++ [copy], st1)
+
+
+-- | Lower a block's statements in order, threading state and extending the env
+-- for declarations so they scope the rest of the block (the "scope is the
+-- recursive tail" idiom). The extended env never escapes the block, so nested
+-- scopes are preserved. The loop context flows through untouched.
+lowerBlock :: Env -> Maybe (Int, Int) -> LowerState -> [Loc Stmt] -> ([Instr], LowerState)
+lowerBlock _   _    st []                             = ([], st)
+lowerBlock env loop st (Loc _ (LocVarDecl vd) : rest) =
+  let env'      = bindLocalVar vd env         -- vd is in scope for the REST of this block
+      (i1, st1) = lowerInit env st vd         -- init lowered in the pre-binding env
+      (i2, st2) = lowerBlock env' loop st1 rest
+  in (i1 ++ i2, st2)
+lowerBlock env loop st (Loc _ (StructDeclStmt sd) : rest) =
+  let env'      = bindLocalStruct sd env      -- struct visible for the tail; emits nothing
+      (i2, st1) = lowerBlock env' loop st rest
+  in (i2, st1)
+lowerBlock env loop st (Loc _ s : rest) =
+  let (i1, st1) = lowerStmt env loop st s
+      (i2, st2) = lowerBlock env loop st1 rest
+  in (i1 ++ i2, st2)

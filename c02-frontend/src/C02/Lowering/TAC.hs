@@ -73,6 +73,7 @@ data Instr = Instr
   , instrFieldName :: Maybe String
   , instrCastType  :: Maybe Ty
   }
+  deriving (Show)
 
 
 data Block = Block
