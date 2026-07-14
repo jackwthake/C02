@@ -9,6 +9,56 @@ releases are reserved for bug fixes only.
 
 ## [Unreleased]
 
+## [1.5.0] 2026-07-13
+
+### Added
+
+- **Hardware register access is now lowered to fixed-address load/store.** A read
+  of a `reg`-declared name lowers to a `TAC_LOAD` from its address into a fresh
+  temporary, and a write (including compound `+=`) to a `TAC_STORE` at that
+  address — the address baked in as a `u16` constant, matching cc02's IR
+  generation. A `name→address` map, populated from the module's register
+  declarations, is threaded through expression and statement lowering to tell a
+  register apart from an ordinary variable (both type as plain variables to the
+  analyzer). Resolves the register limitation noted in 1.4.0.
+- **`interrupt` functions are preserved and code-generated end-to-end.** The
+  `is_interrupt` flag now rides through the object file (see the IR version bump
+  below) and `c02-as` emits real interrupt handlers: the NMI/IRQ vector table is
+  wired to the matching `interrupt fn`, and each handler saves and restores
+  A/X/Y (`PHA`/`PHX`/`PHY` … `PLY`/`PLX`/`PLA`) and returns with `RTI` rather than
+  `RTS`. Resolves the interrupt limitation noted in 1.4.0.
+
+### Changed
+
+- **IR object format bumped to version 3.** Each CFG now carries an
+  `is_interrupt` flag, written last (after `next_temp`/`next_label`) to match
+  `c02-as`'s reader. v2 and v3 objects are mutually incompatible — the version
+  guard rejects a mismatch rather than mis-reading it.
+- **Logical `&&` / `||` now lower to short-circuit control flow** instead of a
+  `TAC_AND` / `TAC_OR` operation. Matching cc02, each becomes a chain of
+  conditional jumps and copies yielding a `u8` 0/1 result, so the branch is
+  decided in the frontend and no logical-AND/OR opcode reaches codegen (which has
+  no case for one).
+- **`c02-as`'s code generator replaced with the fuller upstream generator**
+  (asm-block support dropped, since the IR carries no `TAC_ASM`). Beyond
+  interrupts, this restores the complete debug symbol table — function labels
+  **plus** globals and registers, not just functions.
+- **Frontend CLI: AST dumping moved behind `--dump-ast`.** A clean run now emits
+  the IR object by default; `--dump-ast` prints the AST instead (while still
+  running full analysis), and combines with `--parse-only` for a parse-only dump.
+  The golden test stages use this to diff text output rather than a binary object.
+
+### Fixed
+
+- **Empty string literals no longer crash codegen.** An empty string (`""`)
+  serializes as a length-0 string, which the reader maps to a NULL pointer; the
+  data-section emitter now treats a NULL string-literal value as `""` instead of
+  dereferencing it.
+- **`c02-as` now rebuilds on header changes.** Its Makefile gained `-MMD -MP`
+  dependency tracking, so editing a header (e.g. `ir.h`) recompiles every
+  dependent object. Previously a struct-layout change could silently leave stale
+  objects with a mismatched `sizeof`, crashing at runtime.
+
 ## [1.4.0] 2026-07-12
 
 ### Added
