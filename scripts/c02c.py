@@ -60,9 +60,10 @@ def main():
   (args, src_files, o_files) = parse_args()
 
   frontend = os.path.join(SCRIPT_DIR, "c02-frontend")
+  linker = os.path.join(SCRIPT_DIR, "c02-ld")
   codegen = os.path.join(SCRIPT_DIR, "c02-as")
 
-  check_stages([frontend, codegen])
+  check_stages([frontend, linker, codegen])
 
   frontend_args = []
   if args.parse_only: frontend_args += ['--parse-only']
@@ -85,10 +86,14 @@ def main():
       sys.exit(result.returncode)
 
   if args.c or args.parse_only or args.dump_ast:
-     sys.exit(0)
+    clean_o_file_temps(temps)
+    sys.exit(0)
   
   # --- 2. link + optimize (future OCaml pass) -----------------------------
   # TODO: merge IR objects and run optimization passes here.
+  result = subprocess.run([linker])
+  if result.returncode != 0:
+    sys.exit(result.returncode)
 
   linked = o_files[0] # TODO: this will be replaced with the result of the linking stage
 

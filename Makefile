@@ -1,8 +1,8 @@
-.PHONY: all clean c02-frontend c02-as c02-objdump emu-test
+.PHONY: all clean c02-frontend c02-ld c02-as c02-objdump emu-test
 
 BIN_DIR = bin
 
-all: $(BIN_DIR)/c02c c02-frontend c02-as c02-objdump
+all: $(BIN_DIR)/c02c c02-frontend c02-ld c02-as c02-objdump
 
 # Runtime tests: compile each test/emu/*.c02 to a ROM and execute it in py65,
 # checking the code generator's output against embedded EXPECT directives.
@@ -23,6 +23,10 @@ c02-frontend: c02-frontend/
 	@printf '==> c02-frontend\n'
 	@$(MAKE) -C c02-frontend
 
+c02-ld: c02-ld/
+	@printf '==> c02-ld\n'
+	@$(MAKE) -C c02-ld
+
 c02-as: c02-as/
 	@printf '==> c02-as\n'
 	@$(MAKE) -C c02-as
@@ -34,6 +38,8 @@ c02-objdump: c02-objdump/
 clean:
 	@printf '==> c02-frontend clean\n'
 	@$(MAKE) -C c02-frontend clean
+	@printf '==> c02-ld clean\n'
+	@$(MAKE) -C c02-ld clean
 	@printf '==> c02-as clean\n'
 	@$(MAKE) -C c02-as clean
 	@printf '\n==> c02-objdump clean\n'
