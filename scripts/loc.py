@@ -18,6 +18,7 @@ CommentStyle = namedtuple("CommentStyle", ["line", "block"])
 
 C_STYLE    = CommentStyle("//", ("/*", "*/"))   # C, Rust
 HASKELL    = CommentStyle("--", ("{-", "-}"))
+OCAML      = CommentStyle("", ("(*", "*)"))
 HASH_STYLE = CommentStyle("#", None)            # Python, Makefiles
 NO_STYLE   = CommentStyle(None, None)           # unknown: blank-line skip only
 
@@ -128,14 +129,20 @@ def count_lines():
         ["Makefile", os.path.join("c02-as", "Makefile")],
         os.path.join("c02-as", "src"))
 
+    ld_total, ld_code = count_dir(
+        {".ml": OCAML},
+        [],
+        os.path.join("c02-ld", "bin"))
+
+
     frontend_total, frontend_code = count_dir(
         {".hs": HASKELL},
-        ["Makefile", os.path.join("c02-frontend", "Makefile")],
+        [],
         os.path.join("c02-frontend", "src"))
 
     objdump_total, objdump_code = count_dir(
         {".rs": C_STYLE},
-        ["Makefile", os.path.join("c02-objdump", "Makefile")],
+        [],
         os.path.join("c02-objdump", "src"))
     
     parser_tests_total, parser_test_code = count_dir(
@@ -161,6 +168,7 @@ def count_lines():
     # directory/extension-style constants above.
     sections_compiler = [
       Section("c02-frontend", frontend_total, frontend_code),
+      Section("c02-ld", ld_total, ld_code),
       Section("c02-as", compiler_total, compiler_code),
     ]
 
