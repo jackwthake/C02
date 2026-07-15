@@ -1,0 +1,11 @@
+// DESC: i8 -5 + 47 == 42 (signed two's-complement add). 47 is cast since a
+// bare positive literal is u8 under the strict frontend.
+// EXPECT: mem8[0x6000] == 42
+reg u8 PORTB @ 0x6000;
+
+fn main() -> void {
+  i8 a = -5;
+  i8 b = (i8)47;
+  i8 c = a + b;
+  PORTB = (u8)c;
+}

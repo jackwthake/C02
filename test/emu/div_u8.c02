@@ -1,0 +1,9 @@
+// DESC: u8 100 / 7 == 14 (exercises __div8 helper)
+// EXPECT: mem8[0x6000] == 14
+reg u8 PORTB @ 0x6000;
+
+fn main() -> void {
+  u8 x = 100;
+  u8 y = 7;
+  PORTB = x / y;
+}

@@ -1,0 +1,13 @@
+// DESC: u16 3000 / 7 == 428 (0x01AC) and 3000 % 7 == 4 — exercises the
+// __div16 quotient and remainder outputs on a 16-bit dividend.
+// EXPECT: mem16[0x6000] == 428
+// EXPECT: mem16[0x6002] == 4
+reg u16 QUOT @ 0x6000;
+reg u16 REM  @ 0x6002;
+
+fn main() -> void {
+  u16 a = 3000;
+  u16 b = 7;
+  QUOT = a / b;
+  REM  = a % b;
+}

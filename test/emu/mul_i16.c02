@@ -1,0 +1,10 @@
+// DESC: i16 -7 * 6 == -42 (0xFFD6) — signed 16-bit multiply (bit pattern of __mul16)
+// EXPECT: mem16[0x6000] == 0xFFD6
+reg u16 PORT16 @ 0x6000;
+
+fn main() -> void {
+  i16 a = -7;
+  i16 b = (i16)6;
+  i16 c = a * b;
+  PORT16 = (u16)c;
+}

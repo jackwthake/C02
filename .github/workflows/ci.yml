@@ -35,7 +35,9 @@ jobs:
         run: make
       
       - name: Test Suite
-        run: python3 scripts/test.py
+        run: |
+         python3 scripts/test.py
+         make emu-test
       
       - name: LOC Report
         run: python3 scripts/loc.py

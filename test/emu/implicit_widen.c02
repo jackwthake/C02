@@ -1,0 +1,10 @@
+// DESC: assigning u8 200 into a u16 implicitly zero-extends (§6.3 / Appendix B):
+// low byte 200, high byte 0 — no cast, the frontend inserts the widen.
+// EXPECT: mem16[0x6000] == 200
+reg u16 PORT16 @ 0x6000;
+
+fn main() -> void {
+  u8 a = 200;
+  u16 w = a;
+  PORT16 = w;
+}

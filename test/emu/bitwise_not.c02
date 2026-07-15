@@ -1,0 +1,8 @@
+// DESC: ~0x0F == 0xF0 (u8 bitwise complement)
+// EXPECT: mem8[0x6000] == 0xF0
+reg u8 PORTB @ 0x6000;
+
+fn main() -> void {
+  u8 a = 0x0F;
+  PORTB = ~a;
+}

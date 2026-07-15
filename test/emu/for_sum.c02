@@ -1,0 +1,11 @@
+// DESC: for (i=0..7) sum += i  ->  0+1+...+7 == 28
+// EXPECT: mem8[0x6000] == 28
+reg u8 PORTB @ 0x6000;
+
+fn main() -> void {
+  u8 sum = 0;
+  for (u8 i = 0; i < 8; ++i) {
+    sum = sum + i;
+  }
+  PORTB = sum;
+}

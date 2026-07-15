@@ -1,0 +1,13 @@
+// DESC: i8 -5 < 3 (negative < positive, signed compare)
+// EXPECT: mem8[0x6000] == 42
+reg u8 PORTB @ 0x6000;
+
+fn main() -> void {
+  i8 a = -5;
+  i8 b = (i8)3;
+  if (a < b) {
+    PORTB = 42;
+  } else {
+    PORTB = 99;
+  }
+}

@@ -1,0 +1,15 @@
+// DESC: continue in a for still runs the ++i incrementer; sum of evens
+// 0+2+4+6+8 == 20 (regression guard: continue must not skip the update clause)
+// EXPECT: mem8[0x6000] == 20
+reg u8 PORTB @ 0x6000;
+
+fn main() -> void {
+  u8 sum = 0;
+  for (u8 i = 0; i < 10; ++i) {
+    if (i % 2) {
+      continue;
+    }
+    sum = sum + i;
+  }
+  PORTB = sum;
+}

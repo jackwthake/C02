@@ -1,0 +1,9 @@
+// DESC: -- on a local: x 43 -> 42 (TAC_DEC)
+// EXPECT: mem8[0x6000] == 42
+reg u8 PORTB @ 0x6000;
+
+fn main() -> void {
+  u8 x = 43;
+  --x;
+  PORTB = x;
+}

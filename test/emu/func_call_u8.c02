@@ -1,0 +1,11 @@
+// DESC: fn add(a,b: u8) -> u8; add(10, 32) -> 42 (ABI param pass + RET)
+// EXPECT: mem8[0x6000] == 42
+reg u8 PORTB @ 0x6000;
+
+fn add(u8 a, u8 b) -> u8 {
+  return a + b;
+}
+
+fn main() -> void {
+  PORTB = add(10, 32);
+}

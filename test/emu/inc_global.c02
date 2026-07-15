@@ -1,0 +1,9 @@
+// DESC: ++ on a global: counter 41 -> 42 (TAC_INC on a RAM operand)
+// EXPECT: mem8[0x6000] == 42
+reg u8 PORTB @ 0x6000;
+u8 counter = 41;
+
+fn main() -> void {
+  ++counter;
+  PORTB = counter;
+}

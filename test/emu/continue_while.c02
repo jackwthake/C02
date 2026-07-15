@@ -1,0 +1,16 @@
+// DESC: continue in a while skips odd i; sum of evens 2+4+6+8+10 == 30
+// EXPECT: mem8[0x6000] == 30
+reg u8 PORTB @ 0x6000;
+
+fn main() -> void {
+  u8 sum = 0;
+  u8 i = 0;
+  while (i < 10) {
+    i = i + 1;
+    if (i % 2) {
+      continue;
+    }
+    sum = sum + i;
+  }
+  PORTB = sum;
+}

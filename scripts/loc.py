@@ -81,7 +81,7 @@ def count_file(rel_path, style=NO_STYLE):
     return len(lines), count_effective_lines(lines, style)
 
 
-def print_loc_table(sections):
+def print_loc_table(module_name, sections):
     grand_total = sum(s.total for s in sections)
     grand_code = sum(s.code for s in sections)
     if grand_total == 0:
@@ -95,7 +95,8 @@ def print_loc_table(sections):
     code_w = max(len(f"{grand_code:,}"), len("Code"))
 
     sep = "─" * (label_w + lines_w + code_w + 13)
-    print(f"\n{'Module':<{label_w}}  {'Lines':>{lines_w}}  {'Code':>{code_w}}   % Total")
+    print("\033[1m" + module_name + "\033[0m")
+    print(f"{'Module':<{label_w}}  {'Lines':>{lines_w}}  {'Code':>{code_w}}   % Total")
     print(sep)
 
     for s in sections:
@@ -107,6 +108,8 @@ def print_loc_table(sections):
 
     print(sep)
     print(f"{'Grand Total':<{label_w}}  {grand_total:>{lines_w},}  {grand_code:>{code_w},}   100.0%")
+    print("\n")
+    return (grand_total, grand_code)
 
 
 def count_dir(ext_styles, makefiles, src_dir):
@@ -144,6 +147,11 @@ def count_lines():
         {".c02": C_STYLE},
         [],
         os.path.join("test", "analyzer"))
+    
+    emu_tests_total, emu_test_code = count_dir(
+        {".c02": C_STYLE},
+        [],
+        os.path.join("test", "emu"))
 
     tooling_total, tooling_code = count_dir(
         {".py": HASH_STYLE},
@@ -151,17 +159,34 @@ def count_lines():
 
     # To add a new toolchain component, append a Section here and add its
     # directory/extension-style constants above.
-    sections = [
-        Section("c02-frontend", frontend_total, frontend_code),
-        Section("c02-as", compiler_total, compiler_code),
-        Section("c02-objdump", objdump_total, objdump_code),
-        Section("---", 0, 0),
-        Section("Parser Tests", parser_tests_total, parser_test_code),
-        Section("Analyzer Tests", analyzer_tests_total, analyzer_test_code),
-        Section("Internal Tooling", tooling_total, tooling_code),
+    sections_compiler = [
+      Section("c02-frontend", frontend_total, frontend_code),
+      Section("c02-as", compiler_total, compiler_code),
     ]
 
-    print_loc_table(sections)
+    sections_toolchain = [
+      Section("c02-objdump", objdump_total, objdump_code),
+    ]
+
+    sections_tests = [
+      Section("Parser Tests", parser_tests_total, parser_test_code),
+      Section("Analyzer Tests", analyzer_tests_total, analyzer_test_code),
+      Section("Emulator Tests", emu_tests_total, emu_test_code),
+      Section("Internal Tooling", tooling_total, tooling_code),
+    ]
+
+    (total, code) = print_loc_table("Compiler Source", sections_compiler)
+    (x, y) = print_loc_table("Aux. Toolchain Source", sections_toolchain)
+    total += x
+    code += y
+
+    (x, y) = print_loc_table("Testing Suite + Driver Scripts", sections_tests)
+    total += x
+    code += y
+
+    print("Total Repo")
+    print("Grand Total: " + str(total))
+    print("Code Total: " + str(code))
 
 
 if __name__ == "__main__":

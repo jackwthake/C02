@@ -1,0 +1,11 @@
+// DESC: PORTB = 42 stores an immediate to a memory-mapped register at $6000
+// Also pins the structural ROM contract c02-as must always emit.
+// EXPECT: rom_size == 32768
+// EXPECT: rom16[0xFFFC] == 0x8000
+// EXPECT: sp == 0xFF
+// EXPECT: mem8[0x6000] == 42
+reg u8 PORTB @ 0x6000;
+
+fn main() -> void {
+  PORTB = 42;
+}

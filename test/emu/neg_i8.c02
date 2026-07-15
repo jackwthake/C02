@@ -1,0 +1,9 @@
+// DESC: unary minus on i8 42 -> -42 == 214 (0xD6) as a bit pattern
+// EXPECT: mem8[0x6000] == 214
+reg u8 PORTB @ 0x6000;
+
+fn main() -> void {
+  i8 x = (i8)42;
+  i8 y = -x;
+  PORTB = (u8)y;
+}

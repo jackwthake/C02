@@ -1,0 +1,8 @@
+// DESC: *(msg + 2) indexes a string literal in ROM: 'H','i','!' -> '!' (0x21)
+// EXPECT: mem8[0x6000] == '!'
+reg u8 PORTB @ 0x6000;
+
+fn main() -> void {
+  u8 *msg = "Hi!";
+  PORTB = *(msg + 2);
+}

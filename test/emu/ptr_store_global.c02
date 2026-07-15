@@ -1,0 +1,10 @@
+// DESC: *p = 55 through a pointer to a RAM global is visible via the global
+// EXPECT: mem8[0x6000] == 55
+reg u8 PORTB @ 0x6000;
+u8 g = 0;
+
+fn main() -> void {
+  u8 *p = &g;
+  *p = 55;
+  PORTB = g;
+}

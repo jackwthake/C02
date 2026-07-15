@@ -1,0 +1,10 @@
+// DESC: i16 -1000 / 8 == -125 (0xFF83). Exercises the __sdiv16 signed path.
+// EXPECT: mem16[0x6000] == 0xFF83
+reg u16 PORT16 @ 0x6000;
+
+fn main() -> void {
+  i16 a = -1000;
+  i16 b = (i16)8;
+  i16 c = a / b;
+  PORT16 = (u16)c;
+}

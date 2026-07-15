@@ -1,0 +1,14 @@
+// DESC: break exits a while(true) when i == 5; final i == 5
+// EXPECT: mem8[0x6000] == 5
+reg u8 PORTB @ 0x6000;
+
+fn main() -> void {
+  u8 i = 0;
+  while (true) {
+    if (i == 5) {
+      break;
+    }
+    i = i + 1;
+  }
+  PORTB = i;
+}

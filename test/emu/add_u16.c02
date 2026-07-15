@@ -1,0 +1,9 @@
+// DESC: u16 300 + 200 == 500 (0x01F4) written to a 16-bit register
+// EXPECT: mem16[0x6000] == 500
+reg u16 PORT16 @ 0x6000;
+
+fn main() -> void {
+  u16 a = 300;
+  u16 b = 200;
+  PORT16 = a + b;
+}

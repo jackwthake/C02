@@ -1,0 +1,10 @@
+// DESC: i16 -300 + 800 == 500 (signed 16-bit two's-complement add)
+// EXPECT: mem16[0x6000] == 500
+reg u16 PORT16 @ 0x6000;
+
+fn main() -> void {
+  i16 a = -300;
+  i16 b = (i16)800;
+  i16 c = a + b;
+  PORT16 = (u16)c;
+}

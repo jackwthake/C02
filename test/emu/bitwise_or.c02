@@ -1,0 +1,9 @@
+// DESC: 0xF0 | 0x0F == 0xFF
+// EXPECT: mem8[0x6000] == 0xFF
+reg u8 PORTB @ 0x6000;
+
+fn main() -> void {
+  u8 a = 0xF0;
+  u8 b = 0x0F;
+  PORTB = a | b;
+}
