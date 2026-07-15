@@ -1,0 +1,13 @@
+// DESC: u8 10 <= 10 takes the if-branch (boundary)
+// EXPECT: mem8[0x6000] == 42
+reg u8 PORTB @ 0x6000;
+
+fn main() -> void {
+  u8 a = 10;
+  u8 b = 10;
+  if (a <= b) {
+    PORTB = 42;
+  } else {
+    PORTB = 99;
+  }
+}

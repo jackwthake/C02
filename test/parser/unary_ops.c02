@@ -1,0 +1,39 @@
+// unary_ops.c02
+// The prefix-unary chain (SPEC 6): ++ -- ! ~ - & (address-of) and the two
+// interchangeable dereference spellings * and @. The chain is right-
+// associative and self-recursive, so prefixes stack. Field access binds
+// tighter than any prefix, so `*p.x` is `*(p.x)` and `!a.b` is `!(a.b)`.
+
+struct Box {
+  u8 v;
+}
+
+fn main() -> void {
+  u8 x = 5;
+
+  // each prefix operator once
+  u8 pre_inc = ++x;
+  u8 pre_dec = --x;
+  u8 lnot    = !x;
+  u8 bnot    = ~x;
+  u8 neg     = -x;
+  u8 *addr   = &x;
+
+  // dereference: * and @ are the same operator
+  u8 star = *addr;
+  u8 at   = @addr;
+
+  // stacked prefixes (right-associative)
+  u8 dbl_not  = !!x;
+  u8 dbl_bnot = ~~x;
+  u8 inc_deref = ++*addr;     // Incr (Deref addr)
+  u8 addr_deref = &*addr;     // AddressOf (Deref addr)
+
+  // field binds tighter than a prefix
+  Box b = Box{ .v = 1 };
+  Box *bp = &b;
+  u8 deref_field = *bp.v;     // Deref (Field bp v)
+  u8 not_field   = !b.v;      // Bang  (Field b v)
+
+  return;
+}

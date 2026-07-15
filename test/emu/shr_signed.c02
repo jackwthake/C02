@@ -1,0 +1,10 @@
+// DESC: i8 -8 >> 2 == -2 (0xFE). Signed right shift is arithmetic /
+// sign-extending (Appendix B), not logical.
+// EXPECT: mem8[0x6000] == 0xFE
+reg u8 PORTB @ 0x6000;
+
+fn main() -> void {
+  i8 a = -8;
+  i8 b = a >> (i8)2;
+  PORTB = (u8)b;
+}

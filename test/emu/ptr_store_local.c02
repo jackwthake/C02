@@ -1,0 +1,10 @@
+// DESC: *p = 77 through a pointer to a ZP local is visible via the original var
+// EXPECT: mem8[0x6000] == 77
+reg u8 PORTB @ 0x6000;
+
+fn main() -> void {
+  u8 v = 0;
+  u8 *p = &v;
+  *p = 77;
+  PORTB = v;
+}

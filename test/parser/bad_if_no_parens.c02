@@ -1,0 +1,11 @@
+// bad_if_no_parens.c02  (expected: parse error)
+// An `if` requires a parenthesised condition. Without the '(', the condition
+// parser fails immediately.
+
+fn main() -> void {
+  u8 x = 1;
+  if x > 0 {
+    x = 0;
+  }
+  return;
+}

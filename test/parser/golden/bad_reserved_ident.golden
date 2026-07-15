@@ -1,0 +1,6 @@
+test/parser/bad_reserved_ident.c02:6:3:
+  |
+6 |   u8 return = 5;
+  |   ^
+unexpected 'u'
+expecting '}'

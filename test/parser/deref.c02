@@ -1,0 +1,34 @@
+// deref.c02
+// Dereference in every position. `*` and `@` are interchangeable spellings of
+// the same Deref (SPEC 6). Dereferences stack (`**pp`), serve as lvalues
+// (`*p = ...`), and combine with field access and pointer depth.
+
+struct Node {
+  u8 v;
+}
+
+fn main() -> void {
+  u8 x = 42;
+  u8 *p = &x;
+  u8 **pp = &p;
+
+  // read through a pointer, both spellings
+  u8 a = *p;
+  u8 b = @p;
+
+  // stacked dereference
+  u8 c = **pp;
+  u8 d = @@pp;
+
+  // dereference as an lvalue
+  *p = 7;
+  *p += 1;
+  **pp = 9;
+
+  // deref combined with field access (field binds tighter)
+  Node n = Node{ .v = 0 };
+  Node *np = &n;
+  u8 nv = *np.v;      // Deref (Field np v)
+
+  return;
+}

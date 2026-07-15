@@ -1,0 +1,37 @@
+// blocks.c02
+// Bare nested blocks as statements (SPEC): a `{ ... }` in statement position
+// is a Nested block, distinct from the block that forms a function body or a
+// loop/if body. Blocks nest arbitrarily and may be empty.
+
+fn main() -> void {
+  u8 x = 0;
+
+  // a bare nested block
+  {
+    u8 y = 1;
+    x = y;
+  }
+
+  // an empty block
+  {
+  }
+
+  // deeply nested blocks
+  {
+    u8 a = 1;
+    {
+      u8 b = 2;
+      {
+        x = a + b;
+      }
+    }
+  }
+
+  // a block right after a statement, sharing no control flow
+  x = 5;
+  {
+    x = x + 1;
+  }
+
+  return;
+}

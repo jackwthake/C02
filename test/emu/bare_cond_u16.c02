@@ -1,0 +1,10 @@
+// DESC: if (256) — u16 with low byte 0 but high byte 1 is truthy (both bytes tested)
+// EXPECT: mem8[0x6000] == 42
+reg u8 PORTB @ 0x6000;
+
+fn main() -> void {
+  u16 a = 256;
+  if (a) {
+    PORTB = 42;
+  }
+}

@@ -1,0 +1,11 @@
+// DESC: i8 -6 / 2 == -3 (0xFD). Signed division truncates toward zero with the
+// correct sign (Appendix B); exercises the __sdiv8 quotient sign-fix path.
+// EXPECT: mem8[0x6000] == 0xFD
+reg u8 PORTB @ 0x6000;
+
+fn main() -> void {
+  i8 a = -6;
+  i8 b = (i8)2;
+  i8 c = a / b;
+  PORTB = (u8)c;
+}

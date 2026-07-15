@@ -1,0 +1,19 @@
+// string_escapes.c02
+// String literal escape handling (SPEC 1.4): the recognised control escapes
+// (\n \t \r \0), the literal escapes (\\ \" \'), and the drop-the-backslash
+// fallback where an unknown \c keeps c verbatim. Plus the empty string.
+
+u8 *newline   = "line one\nline two";
+u8 *tab       = "col1\tcol2";
+u8 *carriage  = "over\rwrite";
+u8 *nul       = "before\0after";
+u8 *backslash = "a\\b";
+u8 *quote     = "she said \"hi\"";
+u8 *apostroph = "it\'s";
+u8 *unknown   = "\q\z";        // unknown escapes drop the backslash: qz
+u8 *empty     = "";
+u8 *mixed     = "tab\there\nand a quote \" done";
+
+fn main() -> void {
+  return;
+}

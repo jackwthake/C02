@@ -1,0 +1,6 @@
+test/parser/bad_trailing_literal.c02:7:12:
+  |
+7 |   u8 x = 42abc;
+  |            ^
+unexpected 'a'
+expecting digit

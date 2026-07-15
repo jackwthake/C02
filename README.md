@@ -1,5 +1,4 @@
 <div align="center">
- 
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="./docs/logo-dark.png">
     <source media="(prefers-color-scheme: light)" srcset="./docs/logo-light.png">
@@ -8,26 +7,17 @@
 
   Strongly typed, C-like systems programming language built for resource-constrained 8-bit microprocessors.
   
-  [![CI](https://github.com/jackwthake/C02/actions/workflows/ci.yml/badge.svg?branch=cc02)](https://github.com/jackwthake/C02/actions/workflows/ci.yml)
+  [![CI](https://github.com/jackwthake/C02/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/jackwthake/C02/actions/workflows/ci.yml)
 </div>
 
 ## Table of Contents
 
 - [Getting Started: Key Features & Architecture](#getting-started-key-features--architecture)
 - [Current Status & Limitations](#current-status--limitations)
-  - [What works today](#what-works-today)
-  - [Not yet implemented](#not-yet-implemented)
 - [Toolchain Usage](#toolchain-usage)
   - [Compiling the Toolchain](#compiling-the-toolchain)
   - [Running the Compiler](#running-the-compiler)
 - [Language Specifications](#language-specifications)
-  - [Basic Types](#basic-types)
-  - [Comments](#comments)
-  - [Top-Level Declarations](#top-level-declarations)
-  - [Compiler Implicit Globals](#compiler-implicit-globals)
-  - [Statements](#statements)
-  - [Expressions](#expressions)
-  - [Compilation Example](#compilation-example)
 - [Binary Layout](#binary-layout)
   - [RAM](#ram)
   - [ROM](#rom)
@@ -35,255 +25,82 @@
 
 ## Getting Started: Key Features & Architecture
 
-#### cc02 Compiler
+C02 compiles through a small pipeline of standalone tools, wired together by the `c02c` driver:
 
-1. **Source Tracking Tokenizer:** Maps characters to discrete tokens while maintaining source locations (file, line, column) for robust compilation errors.
-2. **Recursive Descent Parser:** Transforms the token stream into a structured AST, treating hardware registers and standard controls as first-class grammatical constructs.
-3. **Lexically Scoped Semantic Analyzer:** Two-pass validation engine over the AST. Pass 1 registers all top-level declarations (functions, structs, registers, globals) into the global symbol table. Pass 2 walks function bodies with a scoped symbol table, checking undeclared identifiers, type mismatches, argument counts/types, struct field access, lvalue validity, and return-type consistency. Invalid declarations are poisoned to prevent cascading diagnostics.
-4. **IR Generator:** Lowers the analysed AST into a self-contained three-address code (TAC) intermediate representation. The IR module contains struct layouts with computed field offsets, global/register definitions with hardware addresses baked in, and one flat instruction stream per function - codegen can emit target code from the IR alone, without consulting the AST or symbol table. Supports incremental compilation: `-c` serializes the IR to a `.o` file that can be loaded back to skip the frontend entirely.
-5. **Code Generator:** Emits valid 65C02 ROM binaries (32K) with a bootstrap runtime, interrupt vectors, and flat zero-page register allocation. Avoids slow stack-based execution by mapping local variables, temporaries, and parameters directly onto zero-page slots. Globals are allocated in RAM ($0200+) and initialized in the bootstrap before `JSR main`. String literals are placed in a ROM data section with backpatching fixups. Supports arithmetic (`+`, `-`, unary `-`) for all integer types (u8/i8/u16/i16), comparisons across all widths and signedness (unsigned via carry-flag, signed via N⊕V), pointer dereference, and function calls. Function calls use a fixed 2-byte-per-param ABI zone (`$EF–$FE`) for parameter passing; a callee-saves convention (PHA/PLA on all ZP slots) preserves the caller's locals across calls and enables bounded recursion. All emit paths are bounds-checked against the 32 KB ROM limit — programs that overflow produce a clear diagnostic rather than silent corruption. Compiler implicit globals (`__heap_start`, `__memory_top`) are injected automatically and initialized during bootstrap. Programs compile and run on real hardware.
+1. **`c02-frontend`** (Haskell) — tokenizer, recursive-descent parser, lexically-scoped semantic analyzer, and IR generator. Lowers `.c02` source into a self-contained three-address-code (TAC) intermediate representation — struct layouts with computed field offsets, globals/registers with hardware addresses baked in, and one flat instruction stream per function — then serializes it to a `.o` object. Incremental compilation (`-c`) stops here.
+2. **`c02-as`** (C) — the code generator. Consumes a `.o` IR object and emits a 32 KB 65C02 ROM: bootstrap runtime, interrupt vectors, and flat zero-page allocation of locals, temporaries, and parameters (no slow stack-machine execution). Globals live in RAM (`$0200+`) and are initialized before `JSR main`; string literals go in a ROM data section with backpatch fixups. Every emit path is bounds-checked against the 32 KB limit, so overflow is a clear diagnostic rather than silent corruption.
+3. **`c02c`** — the driver that runs the frontend, then `c02-as`, managing intermediate `.o` files. This is the command you normally invoke.
+4. **`c02-objdump`** (Rust) — disassembler. Decodes a compiled `.bin` back into annotated 65C02 assembly, resolving jump targets to named labels, with section-aware output (`.text` / `.data`), hex dumps, and ROM usage summaries. See [c02-objdump](c02-objdump/).
 
-#### c02-objdump Disassembler
-
-- **Disassembler:** Decodes compiled `.bin` files back into annotated 65C02 assembly, resolving jump targets to named labels for readability. Supports section-aware output (`.text` / `.data` split), hex dumps with ASCII, and ROM usage summaries. See [c02-objdump](c02-objdump/) for more information.
+The function-call ABI passes up to 8 parameters through a fixed 2-byte-per-param zero-page zone (`$EF–$FE`); a callee-saves convention (PHA/PLA over the ZP slots) preserves caller locals across calls and enables bounded recursion. Compiler implicit globals (`__heap_start`, `__memory_top`) are injected automatically.
 
 ## Current Status & Limitations
 
-C02 has reached its **v1.0 milestone** — the complete single-file language, per `docs/roadmap.md`'s checklist. The **complete frontend** (tokenizer, parser, semantic analyzer), **IR generation**, and **code generator** are functional and tested — non-trivial programs compile to valid 65C02 ROMs and run on real hardware without hitting an "unimplemented" wall. Development continues toward v1.1+ (interrupt handlers, inline assembly, multi-file linking, optimization passes — see `docs/roadmap.md`).
+This repository is a rewrite: the frontend (`c02-frontend`) is Haskell, replacing the original C compiler — which still ships as `bin/cc02` for reference. The toolchain builds non-trivial programs end-to-end — `.c02` source compiles to valid 32 KB 65C02 ROMs — verified by the emulator test suite under [`test/emu`](test/emu) (py65). See the [CHANGELOG](CHANGELOG.md) for the current version.
 
-#### What works today
+The single-file language is broadly in place: data movement and hardware-register I/O; `if`/`else`, `while`, `for`, `break`/`continue`; arithmetic, bitwise, shift, and comparison operators across `u8`/`i8`/`u16`/`i16` (multiply/divide via `__mul8`/`__div8`/`__mul16`/`__div16` software routines); pointers (`&`, `*`, `ptr ± int`), type casts, structs and field access, globals, string literals, and function calls with recursion. [`docs/SPEC.md`](docs/SPEC.md) is the **normative** definition of the language and its exact semantics; [`docs/DEVIATIONS_hs_impl.md`](docs/DEVIATIONS_hs_impl.md) records where this implementation currently diverges from it (it is generally *stricter* than the original).
 
-- **Data movement:** variable copies, constant stores, hardware register writes. Implicit widening (u8→u16) zero-extends correctly; narrowing copies the low bytes.
-- **Control flow:** `if`/`else`, `while`, `for` loops via label/jump/conditional-jump, plus `break`/`continue` inside either loop form.
-- **Arithmetic:** `+`, `-`, unary `-`, `*`, `/`, `%` for all integer types (u8, i8, u16, i16). Width-aware multi-byte emission for 16-bit operations with carry/borrow propagation. Multiply and divide via `__mul8`/`__div8` software subroutines.
-- **Bitwise & shift ops:** `&`, `|`, `^`, `~`, `<<`, `>>` for all widths. Signed right shift uses the carry-from-sign-bit pattern for correct arithmetic extension.
-- **Comparisons:** all six relational operators (`<`, `<=`, `==`, `!=`, `>=`, `>`) for all widths (u8, u16) and signedness (unsigned via carry-flag, signed via N⊕V). 16-bit comparisons use a high-byte-first pattern.
-- **Increment/decrement:** `++`/`--` for both u8 and 16-bit values (pointers, u16), including globals and struct fields.
-- **Pointer dereference & store:** `*p` reads via `LDA ($nn),Y`; `*p = val` writes via `STA ($nn),Y`. Both work for local and global pointer variables.
-- **Pointer arithmetic:** `ptr + int` and `ptr - int` produce a pointer of the same type, enabling `*(msg + i)`-style indexed access.
-- **Address-of:** `&x` resolves to the variable's ZP slot address for locals or its RAM address for globals, stored as a 16-bit pointer.
-- **Type casts:** `(type)expr` — widening zero/sign-extends, narrowing copies low bytes.
-- **Struct field access:** `s.field` and `ptr.field` (auto-deref) for both local and global structs. Field reads and writes work for by-value structs and pointer-to-struct, including `++field` / `--field`.
-- **Global variables:** RAM-allocated globals with bootstrap initialization, correctly accessed via absolute addressing throughout all codegen paths.
-- **String literals:** `u8 *msg = "...";` works both at global scope and as a local variable initializer inside a function body. String data is placed once in the ROM data section with backpatching fixups.
-- **Compiler implicit globals:** `__heap_start` and `__memory_top` are injected automatically as `decl u16` globals and initialized during the bootstrap. `__heap_start` holds the first free RAM byte after all user globals *and* the compiler implicit globals themselves are allocated (each takes 2 bytes of RAM) — useful as a base pointer for bump allocators. `__memory_top` holds the top of the general-purpose RAM region (`$3FFF`). Both are available in any `.c02` file without a manual `decl`.
-- **Function calls:** full `JSR`/`RTS` ABI with up to 8 parameters passed through the `$EF–$FE` fixed-slot ABI zone. A callee-saves convention (PHA all ZP slots on entry, PLA in reverse on return) preserves caller locals across calls. Bounded recursion is supported — stack depth is limited to ≈256 / (function ZP byte count).
+Not yet implemented: **arrays** (use pointer arithmetic, `*(ptr + i)`, in the meantime) and **compound bitwise/shift assignment** (`&=`, `|=`, `^=`, `<<=`, `>>=` — the arithmetic forms `+= -= *= /= %=` work).
 
-#### Not yet implemented
-
-- **Arrays** — no array type or subscript syntax (`a[i]`). Use pointer arithmetic (`*(ptr + i)`) in the meantime.
-- **Compound bitwise/shift assignment** — `&=`, `|=`, `^=`, `<<=`, `>>=` are not yet supported; the arithmetic compound forms (`+=`, `-=`, `*=`, `/=`, `%=`) work.
-- **Short-circuit `&&`/`||` outside boolean context** — short-circuit evaluation works correctly when used directly as a loop/if condition; using the result as a plain value in other expression contexts is not yet supported.
-- **Missing-return detection is shallow.** A non-void function with no `return` at the end is flagged, but the analyzer does not perform full path-coverage analysis.
-- **Variable shadowing is disallowed**, not silently supported — a declaration that reuses a name still visible from an enclosing scope is a compile error (codegen identifies variables by name only, so a shadowed name would alias its outer namesake's storage). Reusing a name across scopes that don't overlap (e.g. two sibling `for` loops each declaring their own `i`) is unaffected.
-
-If you're exploring the codebase: the parser ([parser.c](cc02/src/parser/parser.c)), the analyzer ([analyzer.c](cc02/src/analysis/analyzer.c)), the IR generator ([ir.c](cc02/src/ir-gen/ir.c)), and the code generator ([generator.c](cc02/src/code-gen/generator.c)) are the main files. Issues and PRs are welcome.
+If you're exploring the codebase, the two stages live in [`c02-frontend/`](c02-frontend/) (Haskell) and [`c02-as/`](c02-as/) (C, the code generator). Issues and PRs are welcome.
 
 ## Toolchain Usage
 
 ### Compiling the Toolchain
 
+The three stages need a C compiler (`c02-as`), GHC + Cabal (the Haskell `c02-frontend`), and Rust (`c02-objdump`); Python 3 drives `c02c` and the tests.
+
 ```shell
 sudo apt install build-essential curl python3 python3-pip -y
 
-# Official Rust install script (for c02-objdump)
+# GHC + Cabal for the Haskell frontend (ghcup is the usual installer)
+curl --proto '=https' --tlsv1.2 -sSf https://get-ghcup.haskell.org | sh
+
+# Rust, for c02-objdump
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
-# py65 6502 emulator (for runtime tests)
+# py65 6502 emulator, for the runtime tests
 pip install py65
 
 git clone https://github.com/jackwthake/C02.git
 cd C02
+cabal update   # first build only, to populate the Cabal package index
 make
 ```
 
 ### Running the Compiler
 
+`c02c` is the driver; it runs the frontend and the code generator for you.
+
 ```bash
-cc02 [OPTIONS] <FILE>
+c02c [OPTIONS] <FILE>...
 ```
 
 #### Options
 
-- `<FILE>`:               Input file (`.c02` source or `.o`/`.out` IR object)
-- `-h, --help`:           Show help message
-- `-c`:                   Incremental compile - emit a `.o` IR object file instead of a final binary
-- `-o, --output`:         Specify output file
-- `--token-dump`:         Dump the token list after tokenization
-- `--ast-dump`:           Dump the AST after parsing
-- `--symbol-dump`:        Dump the global symbol table after analysis
-- `--ir-dump`:            Dump the IR (TAC instructions) after lowering
-- `--syntax-check-only`:  Stop after syntax and semantic checks
-- `--time-report`:        Print a report showing how long each stage of compilation took
+- `<FILE>`:            Input file(s) — `.c02` source and/or `.o` IR objects
+- `-h, --help`:        Show help message
+- `-o, --output`:      Output path (default `a.out`)
+- `-c`:                Incremental compile — stop after the frontend and emit a `.o` IR object
+- `--parse-only`:      Check syntax only, produce no output
+- `--dump-ast`:        Print the AST after parsing (no output file)
+- `--dump-ir`:         Print the IR (TAC) the code generator consumes (no output file)
+- `--strip-debug`:     Omit the `C02S` symbol table from the final ROM
 
 **Incremental compilation:**
 
 ```bash
-cc02 -c hello_world.c02 -o hello_world.o   # compile to IR object
-cc02 --ir-dump hello_world.o                # inspect the IR from the object file
+c02c -c hello_world.c02 -o hello_world.o   # compile to an IR object
+c02c --dump-ir hello_world.c02             # inspect the IR before codegen
 ```
-
-### Pretty Error Messages
-
-![Pretty error reporting](./docs/pretty-errors.png)
-
-All generated error messages are presented in a clang like format with concise source locations. The printed file locations use an editor-friendly format, enabling you to click to open the affected file.
 
 ---
 
 ## Language Specifications
 
-> The grammar below reflects what the tokenizer and parser currently accept. Semantic analysis validates the full AST after parsing, IR generation lowers it to TAC, and the code generator emits 65C02 machine code — see [Getting Started](#getting-started-key-features--architecture) and [Current Status](#current-status--limitations) for what's working today.
+The full grammar, type system, and exact runtime semantics live in [`docs/SPEC.md`](docs/SPEC.md) — the normative reference. The program below is a representative taste: `reg` declarations pin hardware ports to absolute addresses, and `fn main() -> void` is the entry point.
 
-### Basic Types
-
-- `u8` / `i8`: 8-bit integers (unsigned / signed)
-- `u16` / `i16`: 16-bit integers (unsigned / signed)
-- `void`: Function return types with no payload.
-- `struct` names: a bare identifier in type position resolves to a struct type (e.g. `Point p;`).
-- Pointer types: any base type followed by one or more `*` (e.g. `u8 *msg`, `u16 **pp`).
-
-### Comments
-
-```c
-// single-line comment
-
-/*
-  block comment
-*/
-```
-
-### Top-Level Declarations
-
-A `.c02` file is a sequence of top-level declarations: functions, `reg` declarations, `struct` declarations, global variables, and forward declarations (`decl`).
-
-#### Functions
-
-```c
-fn name(u8 a, u16 *b) -> void {
-  // body
-}
-```
-
-- Parameter list is `(type name, type name, ...)`, can be empty: `()`.
-- Return type is required, introduced with `->`.
-
-#### Registers (`reg`)
-
-Hardware interface registers are pinned directly to absolute memory addresses.
-
-```c
-reg u8 PORTA @ 0x6001;
-reg u8 PORTB @ 0x6000;
-```
-
-#### Structs
-
-```c
-struct Point {
-  u8 x;
-  u8 y;
-}
-```
-
-- Body is a sequence of `type name;` fields, no nested initialisers.
-- A trailing `;` after the closing `}` is optional.
-
-#### Global Variables
-
-```c
-u8 *msg = "Hello C02!";
-u16 counter;
-Point origin;
-```
-
-- Same form as a local variable declaration: `type name;` or `type name = expr;`.
-- Struct-typed globals are supported (`Point p;`).
-
-#### Forward Declarations (`decl`)
-
-Forward declarations introduce the signature of a function or global defined in another translation unit, allowing cross-file references with incremental compilation (`-c`).
-
-```c
-decl fn send_byte(u8 b) -> void;
-decl u8 counter;
-```
-
-- A `decl` for a function uses the same signature syntax as `fn` but has no body.
-- A `decl` for a global is `decl type name;` with no initialiser.
-- Redeclaring a name that already exists in the same file is an error.
-
-##### Compiler Implicit Globals
-
-The compiler automatically injects a small set of `u16` globals that expose runtime memory layout information. No `decl` is needed — they are available in every translation unit.
-
-| Name | Value | Description |
-| :--- | :--- | :--- |
-| `__heap_start` | first free RAM address after all globals | Base pointer for simple bump allocators. |
-| `__memory_top` | `$3FFF` | Top of the general-purpose RAM region. |
-
-### Statements
-
-```c
-// variable declaration (local)
-u8 x = 5;
-
-Point p;                      // struct-typed declaration
-p = Point{ .x = x, .y = 10 }; // struct with initializer
-p = Point{};                  // zero initialized struct
-
-Point *p2; // or p2 = null;      pointer to a Point struct, uninitialized
-Point *p2 = &p;               // pointer to a Point struct, initialized
-
-// assignment (also: += -= *= /= %=)
-x = x + 1;
-x += 1;
-
-// return
-return;
-return x;
-
-// if / else if / else
-if (x > 0) {
-  // ...
-} else if (true) { // `true` and `false` are accepted keywords
-  // ...
-} else {
-  // ...
-}
-
-// while
-while (x < 10) {
-  x += 1;
-}
-
-// for (any of the three clauses may be empty)
-for (u8 i = 0; i < 10; i += 1) {
-  // ...
-}
-
-// function call statement
-do_thing(a, b);
-```
-
-### Expressions
-
-Precedence, lowest to highest:
-
-```
-||  &&  |  ^  &  ==  !=  <  >  <=  >=  <<  >>  +  -  *  /  %  (unary)  (postfix)
-```
-
-- **Unary (prefix):** `!` (logical not), `-` (negate), `&` (address-of), `~` (bitwise not), `++` / `--`, `*` and `@` (dereference).
-- **Postfix:** `.field` field access, chainable (`a.b.c`). Auto-dereferences struct pointers (`ptr.field` where `ptr` is a `Struct*`).
-- **Calls:** `name(arg1, arg2, ...)`.
-- **Casts:** `(type)expr`, e.g. `(u16)x`.
-- **Grouping:** `(expr)`.
-- **Literals:** decimal/hex integers (`l_num`), string literals (`l_string`), identifiers.
-
-### Compilation Example
-
-This program cycles LEDs connected to PORTB on a 65C02 breadboard — counting up from 0 to 255 and back down in an infinite loop. It compiles to a valid 32K ROM and runs on real hardware.
+It cycles LEDs connected to PORTB on a 65C02 breadboard — counting up from 0 to 255 and back down in an infinite loop — and compiles to a valid 32 KB ROM.
 
 ```c
 reg u8 PORTB @ 0x6000;
@@ -308,7 +125,7 @@ fn main() -> void {
 ```
 
 ```bash
-cc02 led_counter.c02 -o led_counter.bin   # compile to 32K ROM
+c02c led_counter.c02 -o led_counter.bin   # compile to 32K ROM
 c02-objdump led_counter.bin               # disassemble to inspect the output
 ```
 
@@ -392,4 +209,5 @@ The `$FFF8–$FFF9` boundary word and the `$FFF6–$FFF7` symbol-table pointer a
 | Dependency | License | Used By |
 | :--- | :--- | :--- |
 | [clap](https://github.com/clap-rs/clap) | MIT / Apache-2.0 | `c02-objdump` CLI argument parsing |
+| [megaparsec](https://github.com/mrkkrp/megaparsec) | BSD-2-Clause | `c02-frontend` lexer/parser combinators |
 | [py65](https://github.com/mnaberez/py65) | BSD | Test harness 65C02 emulator for runtime verification |

@@ -1,0 +1,11 @@
+// DESC: i8 -7 % 2 == -1 (0xFF). Remainder takes the sign of the dividend
+// (Appendix B); exercises the __sdiv8 remainder sign-fix path.
+// EXPECT: mem8[0x6000] == 0xFF
+reg u8 PORTB @ 0x6000;
+
+fn main() -> void {
+  i8 a = -7;
+  i8 b = (i8)2;
+  i8 c = a % b;
+  PORTB = (u8)c;
+}

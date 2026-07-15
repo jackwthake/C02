@@ -1,0 +1,29 @@
+// cast_precedence.c02
+// A cast operand binds at unary precedence (SPEC 6.6): `(u8)w / 2` is
+// `((u8)w) / 2`, not `(u8)(w / 2)`. Nested casts stack right. Pointer casts
+// carry a depth. To cast a whole binary expression you must parenthesise it.
+// This complements struct_cast.c02 (which pins the cast-vs-group ambiguity).
+
+fn main() -> void {
+  u16 w = 260;
+
+  u8  narrow  = (u8)w;
+  u8  half    = (u8)w / 2;        // ((u8)w) / 2
+  u16 widened = (u16)narrow + 1;  // ((u16)narrow) + 1
+
+  // nested casts stack right
+  u8  stacked = (u8)(u16)w;       // (u8)((u16)w)
+
+  // pointer-depth casts
+  u8  *pw = &narrow;
+  u16 *p2 = (u16*)pw;
+  u8  **pp = (u8**)pw;
+
+  // cast a whole expression by wrapping it in parens first
+  u8  whole = (u8)(w + 1);        // (u8)(w+1)
+
+  // cast applied to a unary operand
+  u8  cneg  = (u8)-narrow;        // (u8)(Negate narrow)
+
+  return;
+}

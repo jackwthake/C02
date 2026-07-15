@@ -1,0 +1,13 @@
+test/analyzer/bad_undeclared.c02:2:3:
+  |
+2 |   u8 x = y;
+  |   ^
+undeclared identifier 'y'
+
+test/analyzer/bad_undeclared.c02:3:3:
+  |
+3 |   foo();
+  |   ^
+undeclared identifier 'foo'
+
+Semantic analysis failed with 2 errors.

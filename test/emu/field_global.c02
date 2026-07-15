@@ -1,0 +1,15 @@
+// DESC: global struct field store then load: origin.x after Point{ .x=7, .y=99 } -> 7
+// EXPECT: mem8[0x6000] == 7
+reg u8 PORTB @ 0x6000;
+
+struct Point {
+  u8 x;
+  u8 y;
+}
+
+Point origin;
+
+fn main() -> void {
+  origin = Point{ .x = 7, .y = 99 };
+  PORTB = origin.x;
+}

@@ -1,0 +1,9 @@
+// DESC: u8 10 + 32 == 42
+// EXPECT: mem8[0x6000] == 42
+reg u8 PORTB @ 0x6000;
+
+fn main() -> void {
+  u8 x = 10;
+  u8 y = 32;
+  PORTB = x + y;
+}

@@ -1,0 +1,9 @@
+// DESC: u16 1000 - 500 == 500
+// EXPECT: mem16[0x6000] == 500
+reg u16 PORT16 @ 0x6000;
+
+fn main() -> void {
+  u16 a = 1000;
+  u16 b = 500;
+  PORT16 = a - b;
+}

@@ -1,0 +1,6 @@
+test/parser/bad_unterminated_string.c02:5:34:
+  |
+5 | u8 *s = "this string never closes
+  |                                  ^
+unexpected newline
+expecting '"' or '\'

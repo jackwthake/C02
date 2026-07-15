@@ -1,0 +1,7 @@
+test/analyzer/bad_struct_local_field_type.c02:2:3:
+  |
+2 |   struct P {
+  |   ^
+'v' declared with incomplete type 'void'
+
+Semantic analysis failed with 1 errors.

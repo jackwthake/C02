@@ -1,0 +1,7 @@
+// bad_missing_arrow.c02  (expected: parse error)
+// A function signature requires `-> RETURN_TYPE`. Here the arrow is missing,
+// so the parser expects '->' and finds the return type keyword directly.
+
+fn main() void {
+  return;
+}

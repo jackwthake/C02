@@ -1,0 +1,49 @@
+// field_access.c02
+// Postfix field access (SPEC 6.4): left-associative, so `a.b.c` is `(a.b).c`.
+// It binds tighter than prefix operators and sits directly on any primary,
+// including a call result (`f().x`). Fields appear as lvalues and inside
+// larger expressions.
+
+struct Inner {
+  u8 v;
+}
+
+struct Outer {
+  Inner in;
+  u8 tag;
+}
+
+fn get_tag(Outer *o) -> u8 {
+  return o.tag;
+}
+
+fn make() -> Outer {
+  return Outer{ .in = Inner{ .v = 2 }, .tag = 3 };
+}
+
+fn main() -> void {
+  Outer o = Outer{ .in = Inner{ .v = 0 }, .tag = 1 };
+
+  // single and chained field access
+  u8 t  = o.tag;
+  u8 v  = o.in.v;          // (o.in).v
+
+  // field as an lvalue, including a chained one
+  o.tag = 9;
+  o.in.v = 5;
+
+  // field inside a larger expression
+  u8 sum = o.tag + o.in.v;
+  if (o.in.v == 5) {
+    o.tag = o.tag + 1;
+  }
+
+  // field access on a call result: (make()).tag
+  u8 mt = make().tag;
+
+  // and a call whose argument is itself a field expression
+  Outer *op = &o;
+  u8 ct = get_tag(op) + 1;
+
+  return;
+}

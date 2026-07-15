@@ -1,0 +1,9 @@
+// DESC: u16 300 * 13 == 3900 (0x0F3C) — 16-bit shift/add with carry (__mul16)
+// EXPECT: mem16[0x6000] == 3900
+reg u16 PORT16 @ 0x6000;
+
+fn main() -> void {
+  u16 a = 300;
+  u16 b = 13;
+  PORT16 = a * b;
+}

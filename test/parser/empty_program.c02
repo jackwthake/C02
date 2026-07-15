@@ -1,0 +1,10 @@
+// empty_program.c02
+// A translation unit with no declarations is syntactically valid: the parser
+// eats leading layout, `many topLevelParser` yields the empty list, and eof
+// succeeds. The result is TopLevels []. This file contains only comments and
+// whitespace.
+
+/* nothing but comments and blank lines below */
+
+
+// still nothing

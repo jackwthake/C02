@@ -1,0 +1,6 @@
+// bad_unterminated_block.c02  (expected: parse error)
+// A function body opens its brace but never closes it, so the block parser
+// hits EOF while still expecting a statement or a closing '}'.
+
+fn main() -> void {
+  u8 x = 1;

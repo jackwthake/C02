@@ -1,0 +1,9 @@
+// bad_missing_reg_addr.c02  (expected: parse error)
+// A register declaration requires `@ ADDRESS`. Here the '@' and address are
+// missing, so the parser expects '@' and finds ';'.
+
+reg u8 PORTB;
+
+fn main() -> void {
+  return;
+}

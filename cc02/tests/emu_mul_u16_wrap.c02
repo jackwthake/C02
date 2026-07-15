@@ -1,7 +1,0 @@
-reg u16 PORT16 @ 0x6000;
-
-fn main() -> void {
-  u16 a = 256;
-  u16 b = 256;
-  PORT16 = a * b;
-}

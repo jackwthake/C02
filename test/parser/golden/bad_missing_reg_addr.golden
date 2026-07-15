@@ -1,0 +1,6 @@
+test/parser/bad_missing_reg_addr.c02:5:13:
+  |
+5 | reg u8 PORTB;
+  |             ^
+unexpected ';'
+expecting '@', '_', or alphanumeric character

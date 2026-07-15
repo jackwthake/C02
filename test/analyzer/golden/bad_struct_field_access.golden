@@ -1,0 +1,19 @@
+test/analyzer/bad_struct_field_access.c02:5:3:
+  |
+5 |   u8 a = scalar.y;             // not a struct at all
+  |   ^
+request for field 'y' in 'u8', which is not a struct
+
+test/analyzer/bad_struct_field_access.c02:10:3:
+   |
+10 |   u8 b = ppp.x;                 // Struct** is not auto-deref'd (only one level)
+   |   ^
+request for field 'x' in 'Point**', which is not a struct
+
+test/analyzer/bad_struct_field_access.c02:12:3:
+   |
+12 |   u8 c = p.z;                   // no such field on Point
+   |   ^
+struct 'Point' has no field 'z'
+
+Semantic analysis failed with 3 errors.

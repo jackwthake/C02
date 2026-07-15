@@ -1,0 +1,9 @@
+struct S { u16 w; }
+
+fn main() -> void {
+  S s;
+  u8 x = s.w;   // narrowing: field access must yield the FIELD's declared
+                // type (u16), not a stub - this is the case that would pass
+                // silently if 'Field' still returned the old (U8,0) stub
+  return;
+}

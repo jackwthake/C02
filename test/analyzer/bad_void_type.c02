@@ -1,0 +1,5 @@
+void bad;
+fn main() -> void {
+  void local;
+  return;
+}

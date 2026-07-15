@@ -1,0 +1,9 @@
+// bad_missing_semicolon.c02  (expected: parse error)
+// A global variable declaration must end in ';'. Here the terminator is
+// missing, so the parser reaches EOF still expecting it.
+
+u8 x = 5
+
+fn main() -> void {
+  return;
+}

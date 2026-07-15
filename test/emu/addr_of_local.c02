@@ -1,0 +1,9 @@
+// DESC: &local then deref: *(&v) reads 42 back through a pointer to a ZP local
+// EXPECT: mem8[0x6000] == 42
+reg u8 PORTB @ 0x6000;
+
+fn main() -> void {
+  u8 v = 42;
+  u8 *p = &v;
+  PORTB = *p;
+}

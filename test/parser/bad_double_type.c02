@@ -1,0 +1,10 @@
+// bad_double_type.c02  (expected: parse error)
+// A declaration is TYPE *NAME: after the type, an identifier is required, but
+// a second type keyword is not an identifier, so `u8 u8 x;` has no valid parse
+// as a declaration and nothing else matches either.
+
+u8 u8 x;
+
+fn main() -> void {
+  return;
+}

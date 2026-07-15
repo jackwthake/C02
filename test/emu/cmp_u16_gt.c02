@@ -1,0 +1,13 @@
+// DESC: u16 1000 > 255 — high-byte difference
+// EXPECT: mem8[0x6000] == 42
+reg u8 PORTB @ 0x6000;
+
+fn main() -> void {
+  u16 a = 1000;
+  u16 b = 255;
+  if (a > b) {
+    PORTB = 42;
+  } else {
+    PORTB = 99;
+  }
+}

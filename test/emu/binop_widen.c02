@@ -1,0 +1,10 @@
+// DESC: u8(1) + u16(500): the narrower operand is implicitly widened before the
+// add (§6.3), result 501 (0x01F5). No cast — this is the frontend-inserted widen.
+// EXPECT: mem16[0x6000] == 501
+reg u16 PORT16 @ 0x6000;
+
+fn main() -> void {
+  u8 a = 1;
+  u16 b = 500;
+  PORT16 = a + b;
+}

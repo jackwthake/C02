@@ -1,0 +1,11 @@
+// DESC: fn write_port(val: u8) -> void; side effect writes 99 to the port
+// EXPECT: mem8[0x6000] == 99
+reg u8 PORTB @ 0x6000;
+
+fn write_port(u8 val) -> void {
+  PORTB = val;
+}
+
+fn main() -> void {
+  write_port(99);
+}

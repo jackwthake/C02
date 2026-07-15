@@ -1,0 +1,23 @@
+// unary_minus.c02
+// The maximal-munch boundary between `--` (decrement) and `-` (negate), and
+// between `++` and `+`. `--x` lexes as one decrement token; `- -x` (with a
+// space) is two negations. Likewise binary minus next to a unary minus:
+// `a - -b` is Sub a (Negate b).
+
+fn main() -> void {
+  u8 x = 5;
+
+  u8 dec     = --x;      // Unary Decr
+  u8 neg_neg = - -x;     // Unary Negate (Unary Negate x)
+  u8 inc     = ++x;      // Unary Incr
+  // note: there is no unary-plus operator, so `+x` is not a valid prefix
+  // expression; that boundary is covered by the negatives, not here.
+
+  u8 a = 3;
+  u8 b = 4;
+  u8 sub_neg = a - -b;   // Binary Sub a (Unary Negate b)
+  u8 sub_dec = a - --b;  // Binary Sub a (Unary Decr b)
+  u8 add_neg = a + -b;   // Binary Add a (Unary Negate b)
+
+  return;
+}

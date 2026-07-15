@@ -1,0 +1,9 @@
+// bad_unterminated_string.c02  (expected: parse error)
+// A string literal may not span a line: a newline (or EOF) before the closing
+// quote is an error (SPEC 1.4).
+
+u8 *s = "this string never closes
+
+fn main() -> void {
+  return;
+}

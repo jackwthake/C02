@@ -1,9 +1,0 @@
-reg u8 PORTB @ 0x6000;
-reg u8 PORTA @ 0x6001;
-
-fn main() -> void {
-  u8 lo = 200;
-  u16 wide = lo;
-  PORTB = (u8)(wide & 0xFF);
-  PORTA = (u8)(wide >> 8);
-}

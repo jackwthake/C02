@@ -1,0 +1,6 @@
+test/parser/bad_double_type.c02:6:1:
+  |
+6 | u8 u8 x;
+  | ^
+unexpected 'u'
+expecting end of input

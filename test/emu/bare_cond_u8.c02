@@ -1,0 +1,10 @@
+// DESC: if (2) — a bare nonzero u8 is truthy, PORTB = 42
+// EXPECT: mem8[0x6000] == 42
+reg u8 PORTB @ 0x6000;
+
+fn main() -> void {
+  u8 a = 2;
+  if (a) {
+    PORTB = 42;
+  }
+}

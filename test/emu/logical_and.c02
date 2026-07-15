@@ -1,0 +1,13 @@
+// DESC: a && b takes the true branch only when both are nonzero (1 && 1)
+// EXPECT: mem8[0x6000] == 42
+reg u8 PORTB @ 0x6000;
+
+fn main() -> void {
+  u8 a = 1;
+  u8 b = 1;
+  if (a && b) {
+    PORTB = 42;
+  } else {
+    PORTB = 99;
+  }
+}

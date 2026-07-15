@@ -1,0 +1,19 @@
+// operators_assoc.c02
+// Every binary level is left-associative, so a chain of same-precedence
+// operators must nest to the LEFT: `a - b - c` is `(a-b) - c`, never
+// `a - (b-c)`. The golden pins the foldl shape for each level.
+
+fn main() -> void {
+  u8 sub   = 10 - 3 - 2;         // (10-3)-2
+  u8 divs  = 100 / 5 / 2;        // (100/5)/2
+  u8 mods  = 17 % 7 % 3;         // (17%7)%3
+  u8 shift = 64 >> 1 >> 2;       // (64>>1)>>2
+  u8 shl   = 1 << 1 << 2;        // (1<<1)<<2
+  u8 cmp   = 1 < 2 < 3;          // (1<2)<3
+  u8 band  = 7 & 6 & 5;          // (7&6)&5
+  u8 bxor  = 1 ^ 2 ^ 4;          // (1^2)^4
+  u8 bor   = 1 | 2 | 4;          // (1|2)|4
+  u8 land  = 1 && 2 && 3;        // (1&&2)&&3
+  u8 lor   = 0 || 1 || 0;        // (0||1)||0
+  return;
+}

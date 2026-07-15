@@ -1,0 +1,9 @@
+struct Point { u8 x; u8 y; }
+struct Other { u8 z; }
+
+fn main() -> void {
+  Other o;
+  Point a = Point{ .x = 1, .w = 2 };   // no field 'w' on Point
+  Point b = Point{ .x = o, .y = 2 };   // Other is not compatible with Point.x's u8
+  return;
+}

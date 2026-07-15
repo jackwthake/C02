@@ -1,5 +1,0 @@
-fn main() -> i16 {
-  i16 a = -300;
-  i16 b = 800;
-  return a + b;
-}

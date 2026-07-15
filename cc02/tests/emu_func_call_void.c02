@@ -1,9 +1,0 @@
-reg u8 PORTB @ 0x6000;
-
-fn write_port(u8 val) -> void {
-  PORTB = val;
-}
-
-fn main() -> void {
-  write_port(99);
-}

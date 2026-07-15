@@ -1,0 +1,11 @@
+// DESC: fn sum16(a,b: u16) -> u16; sum16(200, 300) -> 500 (16-bit ABI + RET)
+// EXPECT: mem16[0x6000] == 500
+reg u16 PORT16 @ 0x6000;
+
+fn sum16(u16 a, u16 b) -> u16 {
+  return a + b;
+}
+
+fn main() -> void {
+  PORT16 = sum16(200, 300);
+}

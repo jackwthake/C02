@@ -1,0 +1,15 @@
+// DESC: an `interrupt` handler named nmi is wired into the NMI vector at $FFFA,
+// pointing into ROM ($8000+), while the reset vector still targets main's entry
+// at $8000. Structural check on c02-as vector-table wiring (handler not executed).
+// EXPECT: rom16[0xFFFC] == 0x8000
+// EXPECT: rom16[0xFFFA] >= 0x8000
+reg u8 PORTB @ 0x6000;
+u8 ticks = 0;
+
+fn nmi() interrupt -> void {
+  ++ticks;
+}
+
+fn main() -> void {
+  PORTB = 1;
+}

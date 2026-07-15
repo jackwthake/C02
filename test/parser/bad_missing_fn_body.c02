@@ -1,0 +1,6 @@
+// bad_missing_fn_body.c02  (expected: parse error)
+// A defined function (not a `decl` forward declaration) requires a brace body.
+// Here the signature is complete but no '{' follows, so the block parser fails
+// at EOF. A forward declaration would need `decl fn ...;` instead.
+
+fn main() -> void

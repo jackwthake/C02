@@ -1,0 +1,13 @@
+// DESC: i16 -300 < 300 (signed 16-bit compare)
+// EXPECT: mem8[0x6000] == 42
+reg u8 PORTB @ 0x6000;
+
+fn main() -> void {
+  i16 a = -300;
+  i16 b = (i16)300;
+  if (a < b) {
+    PORTB = 42;
+  } else {
+    PORTB = 99;
+  }
+}

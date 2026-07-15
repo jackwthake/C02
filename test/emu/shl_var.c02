@@ -1,0 +1,9 @@
+// DESC: 1 << n where n == 4 at runtime == 16 (variable shift amount)
+// EXPECT: mem8[0x6000] == 16
+reg u8 PORTB @ 0x6000;
+
+fn main() -> void {
+  u8 a = 1;
+  u8 n = 4;
+  PORTB = a << n;
+}

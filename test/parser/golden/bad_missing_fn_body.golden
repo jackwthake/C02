@@ -1,0 +1,6 @@
+test/parser/bad_missing_fn_body.c02:7:1:
+  |
+7 | <empty line>
+  | ^
+unexpected end of input
+expecting '*' or '{'

@@ -7,6 +7,542 @@ and this project adheres to [Semantic Versioning](https://semver.org/) - while
 the project is in `0.x`, breaking changes may land in MINOR releases; PATCH
 releases are reserved for bug fixes only.
 
+## [Unreleased]
+
+## [1.5.1] 2026-07-14
+
+### Added
+
+- **Emulator-based test suite for the code generator (`test/emu/`).** 69 `.c02`
+  programs are compiled end-to-end (`c02c` → 32 KB ROM), loaded into a py65
+  65C02 emulator, and run to the halt loop by `test/emu/run.py`, which checks
+  `// EXPECT:` directives against final CPU/memory state (results are observed
+  by writing to a memory-mapped `reg` at `$6000`, since `main` is `void`).
+  Coverage walks the TAC opcode set and the arithmetic helpers, weighted to the
+  signed/16-bit paths (`__sdiv8/16`, `__mul16`), the callee-saves ABI (clobber,
+  recursion, the 8-parameter boundary), pointers, struct fields, short-circuit
+  `&&`/`||`, and interrupt-vector wiring; expected values are taken from
+  `docs/SPEC.md` (Appendix B). `make emu-test` runs it, and CI runs it after the
+  golden suite. `run.py --ir-on-fail` dumps the IR `c02-as` consumed so a
+  failure localizes to frontend lowering vs. codegen.
+- **`docs/DEVIATIONS_hs_impl.md`** — a known-deviations doc for this repo's
+  toolchain vs. `SPEC.md`, companion to `DEVIATIONS_c_impl.md`. First entry
+  (HS-1) records that untyped integer literals adopt a target's *width* but not
+  its *signedness* (so `i8 b = 47` is rejected, contrary to §3.4) — stricter
+  than both the spec and the original `cc02`.
+
+### Changed
+
+- **README overhauled and trimmed** (roughly halved). Rewritten around the
+  current split toolchain (`c02-frontend` / `c02-as` / `c02c` / `c02-objdump`)
+  instead of the monolithic `cc02`, with corrected build prerequisites (GHC +
+  Cabal, Rust), the real `c02c` flags, and the exhaustive grammar deferred to
+  `docs/SPEC.md`. Added the `megaparsec` (BSD-2-Clause) third-party license
+  entry.
+
+### Fixed
+
+- **`SPEC.md`'s deviation links repointed** after `DEVIATIONS.md` was renamed to
+  `DEVIATIONS_c_impl.md`: all 35 `DEVIATIONS.md#…` links plus two prose mentions
+  now target the renamed file, with every anchor verified to resolve.
+
+## [1.5.0] 2026-07-13
+
+### Added
+
+- **Hardware register access is now lowered to fixed-address load/store.** A read
+  of a `reg`-declared name lowers to a `TAC_LOAD` from its address into a fresh
+  temporary, and a write (including compound `+=`) to a `TAC_STORE` at that
+  address — the address baked in as a `u16` constant, matching cc02's IR
+  generation. A `name→address` map, populated from the module's register
+  declarations, is threaded through expression and statement lowering to tell a
+  register apart from an ordinary variable (both type as plain variables to the
+  analyzer). Resolves the register limitation noted in 1.4.0.
+- **`interrupt` functions are preserved and code-generated end-to-end.** The
+  `is_interrupt` flag now rides through the object file (see the IR version bump
+  below) and `c02-as` emits real interrupt handlers: the NMI/IRQ vector table is
+  wired to the matching `interrupt fn`, and each handler saves and restores
+  A/X/Y (`PHA`/`PHX`/`PHY` … `PLY`/`PLX`/`PLA`) and returns with `RTI` rather than
+  `RTS`. Resolves the interrupt limitation noted in 1.4.0.
+
+### Changed
+
+- **IR object format bumped to version 3.** Each CFG now carries an
+  `is_interrupt` flag, written last (after `next_temp`/`next_label`) to match
+  `c02-as`'s reader. v2 and v3 objects are mutually incompatible — the version
+  guard rejects a mismatch rather than mis-reading it.
+- **Logical `&&` / `||` now lower to short-circuit control flow** instead of a
+  `TAC_AND` / `TAC_OR` operation. Matching cc02, each becomes a chain of
+  conditional jumps and copies yielding a `u8` 0/1 result, so the branch is
+  decided in the frontend and no logical-AND/OR opcode reaches codegen (which has
+  no case for one).
+- **`c02-as`'s code generator replaced with the fuller upstream generator**
+  (asm-block support dropped, since the IR carries no `TAC_ASM`). Beyond
+  interrupts, this restores the complete debug symbol table — function labels
+  **plus** globals and registers, not just functions.
+- **Frontend CLI: AST dumping moved behind `--dump-ast`.** A clean run now emits
+  the IR object by default; `--dump-ast` prints the AST instead (while still
+  running full analysis), and combines with `--parse-only` for a parse-only dump.
+  The golden test stages use this to diff text output rather than a binary object.
+
+### Fixed
+
+- **Empty string literals no longer crash codegen.** An empty string (`""`)
+  serializes as a length-0 string, which the reader maps to a NULL pointer; the
+  data-section emitter now treats a NULL string-literal value as `""` instead of
+  dereferencing it.
+- **`c02-as` now rebuilds on header changes.** Its Makefile gained `-MMD -MP`
+  dependency tracking, so editing a header (e.g. `ir.h`) recompiles every
+  dependent object. Previously a struct-layout change could silently leave stale
+  objects with a mismatched `sizeof`, crashing at runtime.
+
+## [1.4.0] 2026-07-12
+
+### Added
+
+- **End-to-end IR generation.** The frontend now lowers an analyzed program all
+  the way to a serialized IR object file and the CLI emits it: a clean analysis
+  writes the object to `a.o` (or `-o <path>`); `--parse-only` stops after parsing
+  and emits nothing. Verified end-to-end — the LCD hello-world example lowers,
+  serializes, and reads back through `c02-as --dump-ir` into the expected IR.
+  Built from three new pieces:
+  - **Module- and function-level lowering** (`C02.Lowering.Module`) — assembles a
+    whole program into the `ir_module_t` structure `c02-as` consumes. Each
+    defined function becomes a single-block CFG (the whole body in one block,
+    ending in a `RETURN`, mirroring cc02 — labels are resolved by id from the flat
+    instruction stream, so there is no basic-block splitting), alongside struct
+    layouts (field offsets and total size from `C02.Analyzer.Layout`), globals
+    with their constant initializers, register definitions, and externs from
+    forward declarations.
+  - **Binary-operator operand widening** (`C02.Lowering.Lower`). Mixed-width
+    arithmetic widens both operands to a common type via `TAC_CAST` before the
+    operation (`u8 + u16` casts the `u8` up first), matching cc02's IR generation
+    — which `c02-as`'s codegen assumes. Shifts keep the left operand's type and
+    don't widen the count, pointer arithmetic is left unwidened, and a comparison
+    yields `u8`; constant operands are re-typed in place without an instruction.
+  - **Binary serializer** (`C02.Lowering.Serialize`). Encodes the module to the
+    on-disk wire format, matched byte-for-byte to `c02-as`'s reader
+    (`ir-serial.c`), native-endian, with every optional field flattened to its
+    empty wire form (0-length string, 0 count, `OPERAND_NONE`, zeroed type).
+    Deliberately does **not** emit fields cc02's writer adds that `c02-as` doesn't
+    read (per-instruction asm mnemonics, per-CFG `is_interrupt`), which would
+    desync the reader.
+- **`-o <path>` flag** on the frontend CLI to choose the output object path
+  (default `a.o`).
+
+### Changed
+
+- The IR `Struct` type now carries each field's byte offset and the struct's
+  total size (from `computeStructLayouts`), as the on-disk format requires, so
+  codegen never recomputes a struct layout.
+
+### Known limitations
+
+- **Register access is not yet lowered to hardware addresses.** A read or write
+  of a `reg`-declared name (e.g. `PORTB = x`) currently lowers as an ordinary
+  variable copy, not a load/store at the register's fixed address, because
+  registers are indistinguishable from variables in the lowering environment.
+  `c02-as`'s codegen resolves such names to zero-page storage, so a program that
+  drives hardware through `reg`s will **not** yet generate correct code. Closing
+  this needs a name→address map threaded through expression and statement
+  lowering.
+- **Interrupt functions lose their `is_interrupt` marking** in the object file —
+  `c02-as`'s wire format and codegen have no representation for it yet, so
+  reconciling it is a separate, two-sided frontend/`c02-as` change.
+
+## [1.3.0] 2026-07-12
+
+### Added
+
+- **AST → three-address-code lowering** (`C02.Lowering.TAC` and
+  `C02.Lowering.Lower`, new modules) — the pass between the analyzed AST and
+  `c02-as`'s codegen. `TAC.hs` reproduces `c02-as`'s `ir.h` / `ir-serial.c`
+  on-disk contract in Haskell: `TacOp`, `Operand` (a sum type, one
+  constructor per operand kind), the flat `Instr` record, and the CFG/module
+  types, with hand-written tag encoders (`tacOpTag`, `operandTag`,
+  `typeKindTag`, `irInitKindTag`) kept in explicit lockstep with the C enum
+  ordinals rather than a fragile `deriving Enum`.
+- **Expression lowering** — every `Expr` form (literals, variables,
+  binary/unary ops, calls, casts, deref, field access, struct initializers)
+  to a flat `[Instr]` stream. Result types are resolved by reusing the
+  analyzer's `inferType` as the single source of truth rather than
+  re-deriving typing rules, except where the AST node supplies the type
+  syntactically (cast target, struct-init name); every operand carries its
+  type for codegen.
+- **Statement lowering** — assignment (including compound `+=` … `%=`, with
+  the store kind chosen by the target's lvalue form: variable copy, pointer
+  store, or field store), `return`, `if`/`else-if`/`else` (a guard chain
+  lowered against one shared end label), `while`, `for`, and
+  `break`/`continue` (targeting the enclosing loop's labels, threaded down as
+  loop context). Control flow follows cc02's `ir.c` label/jump structure —
+  `TAC_COND_JUMP` fires on a *true* operand, so a condition is negated to skip
+  its body when false. Local scoping is handled by extending the environment
+  into the tail of each block (mirroring the analyzer), so nested and sibling
+  scopes resolve without a separate scope stack.
+
+  Not yet wired into the CLI, and pending a follow-up: register reads/writes
+  are lowered as ordinary variable access rather than fixed-address
+  loads/stores (registers are indistinguishable from variables in the
+  environment until a register-address map is threaded through lowering; the
+  two sites are marked with `NOTE` comments).
+
+### Changed
+
+- **The analyzer no longer requires `main` to exist.** Whether a translation
+  unit defines `main` is now the linker/driver's concern — the toolchain
+  targets multi-file linking and incremental compilation — so
+  `ERR_MISSING_MAIN` is removed. When `main` *is* defined, its signature is
+  still validated: it must be `void main()` with no parameters, otherwise the
+  new `ERR_BAD_MAIN_SIGNATURE` fires. SPEC §7.4 and §8.1 updated to match.
+
+## [1.2.2] 2026-07-10
+
+### Added
+
+- **Struct field-offset computation** (`C02.Analyzer.Layout`, new module).
+  Sequential, unpadded byte offsets for every struct's fields (no alignment
+  on this target; every pointer is 2 bytes regardless of depth) — the piece
+  IR lowering will need to talk to `c02-as`'s wire format. Computed by
+  walking the whole program in source order, top-level `struct` declarations
+  interleaved with any declared inside a function body, so a by-value
+  field's pointee is always looked up in what's already been laid out.
+- **`ERR_INCOMPLETE_STRUCT_FIELD`** (§4.4): a by-value struct field that's
+  self-referential (`struct S { S s; }`) or names a struct not declared
+  earlier in the file. Scoped to **top-level** struct declarations only,
+  matching the spec's literal "position scan over top-level items" wording;
+  a locally-declared struct still gets an offset layout but not this check.
+- **Struct field access and initializer typing.** `inferType` no longer
+  stubs `a.b` / `Name{ .f = e, ... }` to a placeholder type: field access
+  auto-derefs exactly one pointer level (`Struct*`, not `Struct**`, per
+  §6.4) and resolves to the named field's actual declared type; a struct
+  initializer checks each given field exists and its value is compatible
+  with the field's type (omitted/duplicate fields are still undiagnosed,
+  S-6). Two new diagnostics back this: `ERR_UNKNOWN_FIELD` and
+  `ERR_NOT_A_STRUCT`.
+
+### Fixed
+
+- A struct declared inside a function body (statement position, §5) was
+  invisible to the rest of its own block — even to itself as a variable
+  type — because its registration was discarded instead of threaded into
+  the following statements. Locally-declared structs are now usable exactly
+  like their top-level counterparts.
+- A locally-declared struct's field types are now validated the same way a
+  top-level struct's are (rejecting an unknown struct or non-pointer `void`
+  field), without breaking a forward pointer reference to another struct
+  declared later in the same block — matching the forward-reference
+  tolerance top-level struct fields already had.
+
+## [1.2.1] 2026-07-10
+
+### Added
+
+- **Semantic diagnostics now carry source locations.** Every analyzer diagnostic
+  is rendered like a parse error — a `file:line:col:` header, the offending
+  source line, and a caret — by collecting them into a single megaparsec
+  `ParseErrorBundle` and reusing `errorBundlePretty`, so the frontend has one
+  consistent diagnostic style. Positions are tracked at statement and
+  top-level-declaration granularity: the AST tags each with its first token's
+  offset through a `Loc` wrapper that is deliberately transparent in `Show`/`Eq`
+  (so the parser's AST-dump goldens are unchanged), and the analyzer threads the
+  offset through its context rather than through the offset-blind `inferType`.
+  The caret therefore lands on the statement's first token (right line,
+  approximate column); per-token carets would require annotating every
+  expression and are deferred. Whole-translation-unit diagnostics with no span
+  (`ERR_MISSING_MAIN`) print as a plain `file: <message>` line; located
+  diagnostics are sorted by offset before rendering.
+
+## [1.2.0] 2026-07-10
+
+### Added
+
+- **Semantic analyzer scaffolding (`C02.Analyzer`).** The first type-checking
+  layer over the parsed AST, in two new modules. `C02.Analyzer.Types` provides
+  the `SPEC.md` §3.2 type-compatibility relation (`isTypeCompatible`, rules
+  1–8, strict on pointer depth and pointee — no S-18/S-19 laxity; rule 1, the
+  null-literal carve-out, is deliberately relaxed, see Changed), §3.4
+  integer-literal typing
+  (`intLiteralType`, including the `0` null type and `ERR_LITERAL_OUT_OF_RANGE`
+  for out-of-band values), and the `width`/`signedness` scalar helpers.
+  `C02.Analyzer.Diagnostic` seeds the §8.1 error catalog as a sum type.
+- **Expression type inference (`inferType`).** Resolves the type of integer
+  literals, casts (§3.3: rejects casts to an unknown struct and to a struct by
+  value, and otherwise accepts with no source/destination relatedness check),
+  variable references, and function calls. Calls validate argument **count**
+  before any type (`ERR_WRONG_ARG_COUNT`) and then each argument against its
+  parameter (`ERR_TYPE_MISMATCH`, context `"function call"`), yielding the
+  callee's return type. Resolution carries an environment of the whole-file
+  struct-name set plus a symbol table that distinguishes variables from
+  functions (so a function used as a value is `ERR_NOT_ASSIGNABLE` and a
+  non-function call target is `ERR_NOT_A_FUNCTION`). Binary operators (§6.3,
+  including pointer arithmetic and `&&`/`||`), unary operators (the address-of/
+  increment/decrement lvalue rules and the §3.4 negated-literal typing), string
+  literals, and pointer dereference are all typed; only struct field access and
+  struct literals remain stubbed, pending struct-field typing.
+- **Semantic analysis driver (`C02.Analyzer.Analyze`).** Ties the type
+  relations to a whole `Program` and runs from the frontend `Main`. Two passes
+  over the top-level declarations: pass 1 registers every global (variables,
+  registers, functions, `decl` forward declarations, and structs) into one
+  namespace — a repeated name is `ERR_REDECLARATION` (SPEC S-7: a same-file
+  `decl` never prototypes a definition) — followed by a top-level
+  type-validation sweep and a `main`-definition check (`ERR_MISSING_MAIN`);
+  pass 2 walks each function body. Unlike the pure typer's first-error
+  `Either`, the walk runs in `ReaderT Ctx (Writer [Diagnostic])` and
+  **accumulates every diagnostic**, closing with a
+  `Semantic analysis failed with N errors.` summary. Scoping is lexical via
+  Reader `local` — a declaration's binding scopes exactly the rest of its
+  block, and returning from a block is the pop — and shadowing an enclosing
+  binding is rejected outright (`ERR_SHADOWED_DECLARATION`, SPEC §7.2).
+  Per-statement checks cover local declarations (non-pointer `void` and
+  unknown-struct types, initializer compatibility), assignment lvalue-ness
+  (`ERR_NOT_LVALUE`) and type, `return` against the enclosing return type,
+  `break`/`continue` loop nesting, and a shallow last-statement missing-return
+  check (`ERR_MISSING_RETURN`). `C02.Analyzer.Diagnostic` now carries the full
+  §8 error catalog plus a `render` that prints each diagnostic in its
+  `SPEC.md`-worded form.
+- **`analyzer` test stage (`test/analyzer/`).** Eleven golden cases exercising
+  the driver: a clean positive (`basic`) plus `bad_*` negatives pinning
+  undeclared identifiers, argument-count errors, redeclaration, shadowing,
+  missing return, missing `main`, `break`/`continue` outside a loop, a
+  non-lvalue assignment target, a `void` variable, and a bad `return` value.
+- **Golden-file test suite (`scripts/test.py`, `test/`).** A stage-keyed runner
+  that builds the toolchain, compiles each case through a stage-specific
+  frontend invocation, and diffs its output against a committed golden
+  (`--bless` regenerates them).
+  Tests live under `test/<stage>/` with goldens in `test/<stage>/golden/`, so
+  new stages (e.g. `test/analyzer/`) slot in additively. The first stage,
+  `test/parser/`, ships 43 cases covering every grammar production and its edge
+  cases — the full precedence ladder and associativity, the prefix-unary chain
+  (`* @` deref aliases, `--x` vs `- -x`), cast binding, postfix field chains,
+  struct forward-references, literal formats and string escapes — plus `bad_*`
+  negatives that pin one parse error each. Positives assert a clean parse
+  (exit 0, AST on stdout); an unexpected nonzero exit is a `CRASH` and a `bad_`
+  case that parses is an `XPASS`. `CONTRIBUTING.md` documents the workflow.
+
+### Changed
+
+- **The bare literal `0` / `null` is compatible with any destination, not just
+  pointers.** `SPEC.md` §3.2 rule 1 scopes the null-literal carve-out to
+  pointer targets, so `u8 x = 0;` would strictly be a type mismatch. Because
+  the type system can't distinguish the literal `0` from a genuine `void*`
+  value (both are `void` at pointer depth 1), the analyzer takes the relaxed
+  reading (deviations S-1/S-17): a null-shaped value satisfies any destination.
+  This keeps `u8 x = 0;` and `u8 x = null;` well-formed.
+- **The frontend accepts a `--parse-only` flag.** It stops after parsing and
+  dumps the AST, skipping semantic analysis. The `parser` test stage uses it so
+  its fixtures — which exercise parsing constructs but aren't all semantically
+  valid whole programs — aren't rejected by the analyzer; the `analyzer` stage
+  runs the full frontend. Both stages now invoke `c02-frontend` directly rather
+  than assuming the `c02c` pipeline driver isolates a stage.
+- **Cast operands bind at `unary` precedence, not the whole expression.** A
+  cast now reaches only the next unary/postfix term, matching standard C:
+  `(u8)w / 2` parses as `((u8)w) / 2`, and `(u16)a * b` casts `a` alone so the
+  widened-multiply idiom holds. `SPEC.md` §6.6 is respecified accordingly, and
+  the previous whole-expression binding — the root cause of deviation P0-2,
+  where `(u8)w / 2` silently computed `(u8)(w / 2)` — no longer occurs in the
+  frontend. Parenthesize to cast a full expression: `(u8)(w / 2)`.
+- **`SPEC.md` §7.1 and §5.5 grammar updates** accompany the above and two
+  further decisions: statement/declaration disambiguation is now specified to
+  use the whole-file struct-name prescan uniformly (block, top-level, cast,
+  and `for`-init all share one mechanism — deviation G-4 reframed), and the
+  `for`-init clause grammar now permits assignment (`for (i = 0; ...)`),
+  matching what the frontend already accepts (deviation G-3).
+
+### Fixed
+
+- **The frontend now exits nonzero on a parse error.** A failed parse writes its
+  diagnostic to stderr and returns a failure exit code, instead of printing to
+  stdout and exiting 0. This lets the `c02c` driver abort the pipeline on a
+  parse error rather than handing a half-parsed program to later stages, and
+  keeps a clean parse's AST dump alone on stdout.
+
+- **Keywords and `true`/`false`/`null` are now reserved.** The lexer's
+  `identifier` rejects every reserved word from `SPEC.md` §1.1, so
+  `u8 return = 5;` no longer parses as a declaration named `return`. `true`,
+  `false`, and `null` lex to numeric literals `1`, `0`, `0` before identifier
+  scanning (as the spec requires) rather than becoming `Var` references — so
+  `while (true)` now yields `IntLit 1`, and they can't be used as identifiers.
+
+- **`keyword` respects maximal munch.** A keyword no longer matches a prefix of
+  a longer identifier: `return_value` is one identifier, not `return` followed
+  by a stray `_value`. The guard now rejects a trailing `_` (not just
+  alphanumerics), and backtracks cleanly so the identifier path can take over.
+
+- **Statements led by a struct name can be expressions.** A struct-name-led
+  statement that isn't a declaration — e.g. the struct literal
+  `Point { .x = 1 };` in statement position — now backtracks and re-parses as
+  an expression statement instead of failing at the `{` (`SPEC.md` §5.2).
+
+- **`reg` declarations accept pointer types.** `reg u8 *X @ 0x6000;` parses
+  (`SPEC.md` §4.3); `RegDecl` gained a `regPtrDepth` field to carry the depth.
+
+- **Radix prefixes don't span whitespace.** `0x`/`0X`/`0b`/`0B` are matched
+  without the trailing space consumer, so `0x FF` is a lexer error rather than
+  silently reading as `255`.
+
+- **String escapes follow `SPEC.md` §1.4, not Haskell's rules.** Only
+  `\n \t \r \0 \\ \" \'` are recognized; any other `\c` drops the backslash and
+  keeps `c` verbatim (no error), and a literal newline or EOF before the
+  closing `"` is an error. Replaces the previous `megaparsec` `charLiteral`
+  handling, which rejected unknown escapes and honored decimal `\065`-style
+  escapes the spec doesn't define.
+
+## [1.1] 2026-07-09
+
+The `c02-frontend` Haskell parser reaches feature parity with `SPEC.md`: an
+entire `.c02` source file — top-level declarations, statements, control flow,
+expressions, and structs — now parses into a `Program`/`Stmt`/`Expr` AST. The
+only construct from the spec grammar still unparsed is the `asm { ... }` block.
+
+### Added
+
+- **Expression parser.** The frontend parses full C02 expressions into an
+  `Expr` AST, using `megaparsec`'s companion `Control.Monad.Combinators.Expr`.
+  `makeExprParser` drives the complete `SPEC.md` §6 precedence ladder — all ten
+  binary levels, from `*`/`/`/`%` down to `||`, each left-associative — layered
+  over a hand-rolled, right-associative prefix-unary chain (`! - & ~ ++ -- * @`,
+  with `*` and `@` collapsed to a single `Deref` since the spec makes them
+  interchangeable spellings of dereference). Primaries cover integer and string
+  literals, variable references, function calls, C-style casts (`(TYPE) expr`),
+  and parenthesized grouping. A maximal-munch operator matcher keeps
+  multi-character operators intact, so `<`, `<<`, and `<=` (likewise `&`/`&&`,
+  `|`/`||`) no longer steal one another's leading characters;
+
+- **Statement and control-flow parsing.** The full `SPEC.md` §5 statement
+  grammar now parses: local variable declarations, assignments and compound
+  assignments (`= += -= *= /= %=`) to any lvalue, bare expression statements,
+  `return`, `break`, `continue`, nested `{ }` blocks, `if`/`else if`/`else`
+  chains, and `while`/`for` loops — each loop with the spec's optional
+  body-or-bare-`;` form, and `for` with optional init/cond/increment clauses.
+  Function bodies are now real parsed blocks rather than the previous `{}`
+  stub. One design decision runs through it: the terminating `;` is owned by
+  the statement *sequence*, not the individual statement parsers — which is
+  what lets the `for` header reuse the ordinary clause parsers for its
+  un-terminated init/increment while the loop grammar owns its own `;`
+  separators. Shared-prefix ambiguities are left-factored rather than
+  back-tracked (assignment-vs-expression-statement parse one leading expression
+  and then branch on what follows), keeping error messages sharp and avoiding
+  reparses;
+
+- **Struct initialization and field access.** Postfix field access (`a.b.c`,
+  chaining left-associatively, valid on call results and as an assignment
+  target) and designated-initializer struct literals (`Point { .x = 1, .y = 2 }`,
+  trailing comma and empty `{}` accepted) parse into new `Field` and
+  `StructInit` `Expr` variants. Field access lives in its own postfix layer
+  between the unary chain and primaries, per `SPEC.md` §6.4;
+
+- **Struct types and declarations, via a whole-file name prescan.**
+  `struct Name { type field; ... }` declarations parse at top level and in
+  statement position, and struct names are now first-class types. Because
+  resolving an identifier as a type is context-sensitive — `(Point) x` is a
+  cast, `(a) - b` is a grouped subtraction — the frontend follows `SPEC.md`
+  §6.6: a one-time, whole-file **prescan** collects every `struct Name {` name
+  before parsing begins (making struct types forward-reference-tolerant), and
+  that immutable name set is threaded through the parser as a `ReaderT`
+  environment. `baseTypeParser` consults it to decide whether a bare identifier
+  names a struct type, which drives both the cast-vs-group and the
+  declaration-vs-expression-statement disambiguations. The prescan is
+  deliberately token-aware (a `struct` inside a comment or string literal is
+  ignored) and scope-blind, reproducing the intended `DEVIATIONS.md` G-5
+  shadowing behavior. Adds `containers` and `mtl` dependencies;
+
+- **Expression-valued variable initializers.** A variable initializer accepts a
+  full expression (`u8 y = sum(2, 3) * 4;`), not just an integer literal;
+  `VarDecl.declInit` is now `Maybe Expr`;
+
+- **Left-factored call/identifier parsing.** Call-vs-variable-vs-struct-init are
+  disambiguated by left-factoring on the shared leading identifier — parse the
+  name once, then branch on `(`, `{`, or neither — instead of `try`-based
+  backtracking, so a malformed call like `f(1 2)` reports an error at the
+  offending token rather than silently degrading to a variable reference.
+  Argument and parameter lists accept an optional trailing comma (`sepEndBy`),
+  per the spec grammar;
+
+### Known Limitations
+
+- **`asm` blocks are not parsed.** `asm { ... }` (`SPEC.md` §5) is the one
+  statement form the frontend does not yet accept; every other construct in the
+  spec grammar does. IR emission also remains unimplemented;
+
+## [1.0.1] 2026-07-08
+
+A ground-up re-architecture of the compiler: the monolithic `cc02` binary is
+being split into a multi-stage toolchain — a Haskell **frontend**
+(lexer/parser/analysis/IR generation), a planned OCaml **linker/optimizer**,
+and a C **backend** (`c02-as`) — coordinated by a `c02c` driver. The serialized
+IR object (`.o`) is the contract between stages. The v1.0 language and its 6502
+ROM output are unchanged; what changes is how the compiler is built and invoked.
+
+### Added
+
+- **`c02-as` — standalone code-generation backend.** Consumes a serialized IR
+  object file and emits a 32K 6502 ROM, with no dependency on the frontend,
+  AST, or symbol table. Lifted from `cc02`'s IR-object → codegen path (the one
+  part of the old toolchain that survives the rewrite) and trimmed to a
+  self-contained module: `ir.h` no longer pulls in the parser/analyzer, the
+  serializer keeps only its read half, and the loaded-IR context drops all
+  generation-side state. Output is verified byte-identical to `cc02` across the
+  example programs and the struct/field regression cases;
+
+- **Multiple `c02-as` build variants** — `make` (release, `-O3`), `make debug`
+  (`-O0 -ggdb`), and `make sanitize` (`-ggdb -fsanitize=address,undefined`),
+  each in its own build directory so the three coexist without clobbering each
+  other. The sanitized build runs clean (ASan + UBSan, leak detection on) over
+  the full example set;
+
+- **`c02-frontend` — working top-level parser.** Built on `megaparsec`, the
+  frontend now parses an entire `.c02` source file into a `Program` AST:
+  register declarations (`reg TYPE NAME @ ADDR;`), global variables (`TYPE
+  NAME (= NUMBER)?;`), function signatures with parameter lists (`fn NAME(TYPE
+  NAME, ...) -> TYPE { ... }`; body parsing is still a stub), and forward
+  declarations (`decl fn ...;` / `decl TYPE NAME;`, per `SPEC.md` §4.6) — the
+  variable form correctly rejects an initializer as a parse error. Integer
+  literals support hex (`0x`/`0X`), binary (`0b`/`0B`), and decimal forms,
+  each requiring a word-boundary after the digits (`0y5` is now a parse error
+  instead of silently returning `0`). Keyword and identifier lexing is
+  boundary-aware the same way, so `u8x` can no longer be misparsed as the
+  keyword `u8` followed by identifier `x`; identifiers permit leading/embedded
+  underscores. `parseFile` wires the whole thing to `Text.Megaparsec.parse`,
+  printing either the parsed AST or an `errorBundlePretty` diagnostic.
+  Command-line argument handling and IR emission are still unimplemented;
+
+- **`SPEC.md` / `DEVIATIONS.md`** — the normative C02 language specification
+  and a catalog of known behavioral deviations in `cc02` (the pre-rewrite
+  reference implementation) versus that spec. `SPEC.md` is the source of
+  truth the Haskell frontend is being written against; `DEVIATIONS.md` tracks
+  where `cc02`'s actual behavior diverges from it, so the rewrite can decide
+  deliberately whether to match `cc02` or the spec on each point;
+
+- **`c02c` — compiler driver.** A script orchestrating the pipeline
+  (frontend → link/optimize → codegen), installed into `bin/` alongside the
+  binaries it invokes and able to resolve them whether run from `bin/` or the
+  repo root. The codegen stage is already wired for real, so `c02c prog.o -o
+  prog.bin` produces a ROM today; the frontend → codegen `.o` handoff is a TODO
+  pending the frontend;
+
+### Changed
+
+- **The IR object format is now a cross-language wire contract.** With the
+  frontend moving to Haskell, `ir-serial.c`'s read layout (magic, version,
+  length-prefixed strings, native endianness and integer widths) is the
+  interface any writer must match byte-for-byte, rather than an internal
+  same-binary detail. Documented as such in `ir.h` and `ir-serial.c`;
+
+- **Top-level build and CI rewired.** `make` now builds `c02-frontend`,
+  `c02-as`, and `c02-objdump` and installs `c02c`; the `cc02`-only `test` /
+  `update-tests` Makefile targets and the CI compile-examples step are gone;
+
+- **`.gitignore`** — added Haskell/cabal artifacts (`dist-newstyle/`, GHC
+  environment files, `cabal.project.local`, `*.hi`);
+
+### Removed
+
+- **`cc02` — the monolithic single-file compiler.** Its frontend
+  (lexer/parser/analyzer/IR generator) is being rewritten in Haskell and its
+  backend extracted into `c02-as`, so the combined binary and its test suite
+  are removed from this tree. It remains available in the pre-rewrite `main`
+  history;
+
 ## [v1.0.0] 2026-07-01
 
 - **v1.0 milestone: Complete Single-File Language** — every must-have and

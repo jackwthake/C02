@@ -37,11 +37,11 @@ fn main() -> void {
 
     // Phase 3: unary minus — show two's complement of 42
     i8 neg = -42;
-    PORTB = neg;
+    PORTB = (u8)neg;
 
     // Phase 4: signed comparison gate
     i8 a = -10;
-    i8 b = 5;
+    i8 b = (i8)5;
     if (a < b) {
       PORTB = 0xFF;
     } else {

@@ -1,0 +1,6 @@
+test/parser/bad_missing_semicolon.c02:7:1:
+  |
+7 | fn main() -> void {
+  | ^
+unexpected 'f'
+expecting "!=", "&&", "<<", "<=", "==", ">=", ">>", "||", '%', '&', '*', '+', '-', '.', '/', ';', '<', '>', '^', or '|'

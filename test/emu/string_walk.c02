@@ -1,0 +1,12 @@
+// DESC: the canonical "array via pointer" idiom — walk a ROM string with
+// *(msg + i) in a for-loop, streaming each byte to the port. The full run of
+// writes must spell the string (exercises loop + string data + repeated IO).
+// EXPECT: trace8[0x6000] endswith "Hello C02!"
+reg u8 PORTB @ 0x6000;
+
+fn main() -> void {
+  u8 *msg = "Hello C02!";
+  for (u8 i = 0; *(msg + i); ++i) {
+    PORTB = *(msg + i);
+  }
+}

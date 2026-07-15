@@ -1,0 +1,12 @@
+// DESC: !2 == 0 (false) so the else-branch runs, PORTB = 42 (TAC_NOT)
+// EXPECT: mem8[0x6000] == 42
+reg u8 PORTB @ 0x6000;
+
+fn main() -> void {
+  u8 a = 2;
+  if (!a) {
+    PORTB = 99;
+  } else {
+    PORTB = 42;
+  }
+}

@@ -1,6 +1,0 @@
-[1;37manalyzer_bad_return.c02[0m:[1;37m4[0m:[1;37m3: [1;31merror: [0mtype mismatch in return: expected u8, found void
-[1;34m4 |[0m   return;            // missing return value in a non-void function
-[1;34m  |[1;31m   ^~~~~~[0m
-[31m
-Semantic analysis failed with [1;31m1[0m[31m errors.
-[0m

@@ -1,0 +1,9 @@
+// bad_assign_no_rhs.c02  (expected: parse error)
+// An assignment's right-hand side must be an expression. Here it is empty, so
+// the parser expects the start of an expression and finds ';'.
+
+fn main() -> void {
+  u8 x = 0;
+  x = ;
+  return;
+}

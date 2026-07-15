@@ -1,0 +1,7 @@
+test/analyzer/bad_return.c02:2:3:
+  |
+2 |   return;
+  |   ^
+type mismatch in return: expected u8, found void
+
+Semantic analysis failed with 1 errors.

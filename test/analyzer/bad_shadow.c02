@@ -1,0 +1,5 @@
+u8 x;
+fn main() -> void {
+  u8 x = 1;
+  return;
+}

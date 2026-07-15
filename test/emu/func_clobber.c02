@@ -1,0 +1,14 @@
+// DESC: callee-saves ABI: local x = 5 survives a double_val(3)=6 call;
+// PORTB = x + r = 11 (regression guard for ZP save/restore across calls)
+// EXPECT: mem8[0x6000] == 11
+reg u8 PORTB @ 0x6000;
+
+fn double_val(u8 n) -> u8 {
+  return n + n;
+}
+
+fn main() -> void {
+  u8 x = 5;
+  u8 r = double_val(3);
+  PORTB = x + r;
+}

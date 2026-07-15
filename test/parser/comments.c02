@@ -1,0 +1,29 @@
+// comments.c02
+// Line (//) and block (/* */) comments are skipped by the whitespace consumer
+// wherever layout is allowed - between tokens, mid-expression, and mid-decl.
+// The struct-name prescan reuses the same consumer, so the word `struct`
+// inside a comment or string must NOT register a phantom struct type.
+
+/* a block comment
+   spanning several
+   lines, before any declaration */
+
+u8 /* between type and name */ g /* after name */ = /* before value */ 1;
+
+// The word struct appears in this line comment but defines nothing.
+/* nor does this block comment mention of struct Ghost { } define a type */
+
+fn main() -> void { // trailing line comment
+  u8 x = 1 /* inline */ + 2;           // mid-expression block comment
+  u8 y = /* leading */ 3;
+
+  if (x > 0 /* comment in a condition */) {
+    x = x - 1; // comment after a statement
+  }
+
+  u8 *s = "the token struct inside a string is not a struct decl";
+
+  /* a block comment
+     immediately before return */
+  return;
+}

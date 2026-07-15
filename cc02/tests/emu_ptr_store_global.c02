@@ -1,9 +1,0 @@
-reg u8 PORTB @ 0x6000;
-
-u8 target = 0;
-
-fn main() -> void {
-  u8 *p = &target;
-  *p = 55;
-  PORTB = target;
-}

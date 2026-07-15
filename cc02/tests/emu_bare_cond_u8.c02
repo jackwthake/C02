@@ -1,8 +1,0 @@
-reg u8 PORTB @ 0x6000;
-
-fn main() -> void {
-  u8 x = 2;
-  if (x) {
-    PORTB = 42;
-  }
-}
