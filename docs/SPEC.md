@@ -20,14 +20,14 @@ harness for the c02 compiler. Two things follow from that:
    `cc02` binary does not actually implement a stated rule, that gap is
    flagged inline with a terse `⚠ [ID](...)` marker linking to the full
    write-up in the companion document,
-   [`DEVIATIONS.md`](DEVIATIONS.md) — see [§9](#9-known-deviations-from-this-spec).
+   [`DEVIATIONS_c_impl.md`](DEVIATIONS_c_impl.md) — see [§9](#9-known-deviations-from-this-spec).
    A fuzzer generating or classifying test cases should treat deviations as
    *expected, already-known* divergences, not new findings — unless
    behavior changes from what's recorded there. These deviations live in the
    current `v1.1` branch implementation. This branch's (`rewrite/c02-haskell-frontend`)
    goal is to address the frontend deviations.
 2. Nothing here should be taken as "codegen is definitely correct" —
-   `DEVIATIONS.md` documents nine distinct silent-miscompile classes that
+   `DEVIATIONS_c_impl.md` documents nine distinct silent-miscompile classes that
    are accepted by analysis but produce wrong machine code. A
    conforming-per-this-spec program can still misbehave at runtime today.
 
@@ -121,7 +121,7 @@ no length/const information carried in the type (§3).
 Block comments do **not** nest — the first `*/` closes it regardless of
 intervening `/*`.
 
-> ⚠ [G-1](DEVIATIONS.md#g-1-unterminated-block-comment-silently-swallowed):
+> ⚠ [G-1](DEVIATIONS_c_impl.md#g-1-unterminated-block-comment-silently-swallowed):
 > an unterminated `/*` is silently consumed to EOF with no lexer error
 > (asymmetric with the erroring unterminated-string case).
 
@@ -265,7 +265,7 @@ binary operands, struct-init fields). In order:
    exemption: its `void`-at-`ptr_depth-1` inferred type is `is_ptr = true`,
    so it should be rejected by rule 3 like any other pointer-vs-non-pointer
    mismatch — `Point p = 0;` is not meant to be a well-formed program (see
-   [S-17](DEVIATIONS.md#s-17-bare-literal-0-bypasses-the-destination-type-check-entirely)
+   [S-17](DEVIATIONS_c_impl.md#s-17-bare-literal-0-bypasses-the-destination-type-check-entirely)
    for how `cc02` actually handles this today).
 2. Else if `expected` is `void*` (`kind === "void"`, `ptr_depth === 1`) and
    `actual` is *any* pointer type **also at `ptr_depth === 1`**,
@@ -274,7 +274,7 @@ binary operands, struct-init fields). In order:
    under this rule; it falls through to the ordinary depth-mismatch
    rejection (rules 3–4) and needs an explicit cast, same as any other
    depth mismatch (see
-   [S-18](DEVIATIONS.md#s-18-void-accepts-pointers-of-any-depth-not-just-depth-1)
+   [S-18](DEVIATIONS_c_impl.md#s-18-void-accepts-pointers-of-any-depth-not-just-depth-1)
    for how `cc02` actually handles this today).
 3. Else if `expected.is_ptr != actual.is_ptr`, **not compatible**.
 4. Else if pointer depths differ, **not compatible**.
@@ -289,7 +289,7 @@ binary operands, struct-init fields). In order:
    mismatch, e.g. `u8*` vs `u16*`, and there is no pointee-widening for
    pointers: an exact pointee-kind match, or an explicit cast, is required,
    same as if this were a struct-name mismatch — see
-   [S-19](DEVIATIONS.md#s-19-pointer-pointee-types-silently-widen-like-scalar-values)
+   [S-19](DEVIATIONS_c_impl.md#s-19-pointer-pointee-types-silently-widen-like-scalar-values)
    for how `cc02` actually handles this today). For two non-pointer
    values, **compatible iff `signedness(actual) === signedness(expected)`
    and `width(actual) <= width(expected)`** — implicit widening only within
@@ -299,7 +299,7 @@ binary operands, struct-init fields). In order:
    signedness always requires an explicit cast, same as narrowing does.
    `width` is 1 for `u8`/`i8`, 2 for `u16`/`i16`; `signedness` is unsigned
    for `u8`/`u16`, signed for `i8`/`i16` (see
-   [S-2](DEVIATIONS.md#s-2-no-signedness-checking) for how `cc02` actually
+   [S-2](DEVIATIONS_c_impl.md#s-2-no-signedness-checking) for how `cc02` actually
    handles this today).
 
 Rule 1 is exclusive to the **bare literal `0`** — it does not extend to a
@@ -309,7 +309,7 @@ is checked like any other pointer under rules 2–4: compatible with a
 `void*`-expecting destination (rule 2), or with a matching pointer
 type/depth (rules 3–4) — **not** compatible with a non-pointer destination.
 
-> ⚠ [S-1](DEVIATIONS.md#s-1-voidnull-literal-conflation): `cc02` doesn't
+> ⚠ [S-1](DEVIATIONS_c_impl.md#s-1-voidnull-literal-conflation): `cc02` doesn't
 > draw this distinction — internally, the literal `0` and every `void*`-typed
 > *value* share one representation ("the null type": `void` with pointer
 > depth 1), and rule 1 fires on that shared representation unconditionally.
@@ -317,7 +317,7 @@ type/depth (rules 3–4) — **not** compatible with a non-pointer destination.
 > compatible with any destination type — including non-pointer scalars and
 > by-value structs.
 
-> ⚠ [S-17](DEVIATIONS.md#s-17-bare-literal-0-bypasses-the-destination-type-check-entirely):
+> ⚠ [S-17](DEVIATIONS_c_impl.md#s-17-bare-literal-0-bypasses-the-destination-type-check-entirely):
 > the literal `0` itself has the same problem, independent of S-1 — `cc02`'s
 > compatibility check never inspects `expected`'s pointer-ness before
 > granting the literal its exemption, so `0` is accepted against *any*
@@ -327,7 +327,7 @@ type/depth (rules 3–4) — **not** compatible with a non-pointer destination.
 
 **BinOP expression with mixed signedness**: A binary operator with one signed and one unsigned operand is a type error; an explicit cast on one operand is required.
 
-> ⚠ [S-2](DEVIATIONS.md#s-2-no-signedness-checking): `i8 x = 200;` and
+> ⚠ [S-2](DEVIATIONS_c_impl.md#s-2-no-signedness-checking): `i8 x = 200;` and
 > `u8 y = someI8Var;` both pass with no diagnostic — width is checked, sign
 > is not.
 
@@ -409,7 +409,7 @@ fn irq() interrupt -> void { ... }
 - Calling `nmi()`/`irq()` directly like an ordinary function
   (`irq();`) is **currently accepted** by the analyzer with no check that
   the callee is an interrupt handler — see
-  [P2-3](DEVIATIONS.md#p2-3-interrupt-handlers-can-be-called-directly).
+  [P2-3](DEVIATIONS_c_impl.md#p2-3-interrupt-handlers-can-be-called-directly).
 
 ### 4.3 Registers (`reg`)
 
@@ -423,7 +423,7 @@ reg u8 PORTB @ 0x6000;
   an arbitrary constant expression.
 - ⚠ The address is not range-checked against `0xFFFF` anywhere in the
   pipeline — see
-  [P2-1](DEVIATIONS.md#p2-1-reg-addresses-above-0xffff-are-silently-truncated).
+  [P2-1](DEVIATIONS_c_impl.md#p2-1-reg-addresses-above-0xffff-are-silently-truncated).
 
 ### 4.4 Structs
 
@@ -465,7 +465,7 @@ Same shape as a local declaration (§5.1): `type name;` or
 (so it may reference any other global/function declared anywhere in the
 file, not just earlier ones).
 
-> ⚠ [P0-5](DEVIATIONS.md#p0-5-non-literal-global-initializers-are-silently-dropped):
+> ⚠ [P0-5](DEVIATIONS_c_impl.md#p0-5-non-literal-global-initializers-are-silently-dropped):
 > only a bare number/string literal initializer is actually captured —
 > every other shape (`2 + 3`, `-5`, a struct initializer) is silently
 > dropped, leaving the global's storage unwritten.
@@ -484,12 +484,12 @@ decl u8 counter;
 - Intended for cross-translation-unit references (multi-file linking,
   incremental `-c` compilation).
 
-> ⚠ [S-7](DEVIATIONS.md#s-7-decl-cannot-prototype-a-same-file-definition):
+> ⚠ [S-7](DEVIATIONS_c_impl.md#s-7-decl-cannot-prototype-a-same-file-definition):
 > a `decl` followed by a same-file definition of the same name is rejected
 > as `ERR_REDECLARATION` — `decl` is cross-file only, not an in-file
 > prototype idiom.
 >
-> ⚠ [G-2](DEVIATIONS.md#g-2-decl-fn--interrupt-drops-the-qualifier):
+> ⚠ [G-2](DEVIATIONS_c_impl.md#g-2-decl-fn--interrupt-drops-the-qualifier):
 > `decl fn irq() interrupt -> void;` parses, but the `interrupt` qualifier
 > is silently discarded — the AST has no field to store it.
 
@@ -529,7 +529,7 @@ RHS (`foo(Point{.x=1,.y=2})` is syntactically legal).
 - Fields: `.name = expr`, comma-separated, **trailing comma tolerated**
   (`Point{ .x = 1, }` parses).
 - Field order in the initializer need not match declaration order.
-- ⚠ [S-6](DEVIATIONS.md#s-6-struct-initializers-neednt-be-complete-or-unique):
+- ⚠ [S-6](DEVIATIONS_c_impl.md#s-6-struct-initializers-neednt-be-complete-or-unique):
   omitted fields produce no diagnostic, and a duplicate field entry is
   never flagged.
 
@@ -579,7 +579,7 @@ for (;;) { ... }            // all three clauses independently optional
 - `if`/`while`/`for` **conditions are not required to be scalar** — the
   analyzer resolves the condition's type but never checks it's not a struct
   or `void`. See
-  [P2-2](DEVIATIONS.md#p2-2-struct-values-accepted-as-arithmeticcondition-operands).
+  [P2-2](DEVIATIONS_c_impl.md#p2-2-struct-values-accepted-as-arithmeticcondition-operands).
 
 ### 5.5 `for`-Loop Clauses
 
@@ -595,7 +595,7 @@ non-declaration branch is now identical to the incrementer: a full expression
 optionally followed by an assignment operator and right-hand side, so
 `for (i = 0; ...)` reusing an existing variable is well-formed.
 
-> ⚠ [G-3](DEVIATIONS.md#g-3-for-init-cannot-reuse-an-existing-variable):
+> ⚠ [G-3](DEVIATIONS_c_impl.md#g-3-for-init-cannot-reuse-an-existing-variable):
 > `cc02` rejects reusing an existing variable via plain assignment in the
 > init clause — `for (i = 0; ...)` is a parse error there unless `i` is
 > freshly declared right there — even though the grammar above permits it.
@@ -604,7 +604,7 @@ optionally followed by an assignment operator and right-hand side, so
 
 This clause disambiguates "declaration vs. expression" using the struct-name
 prescan (§6.6) — the same mechanism as casts and ordinary block statements
-(§7.1). See [G-4](DEVIATIONS.md#g-4-block-statements-disambiguate-by-shape-not-the-prescan)
+(§7.1). See [G-4](DEVIATIONS_c_impl.md#g-4-block-statements-disambiguate-by-shape-not-the-prescan)
 for how `cc02`'s block-statement disambiguation diverges from that shared rule.
 
 ### 5.6 Return / Break / Continue
@@ -634,7 +634,7 @@ asm {
   the currently-supported mnemonic list).
 - ⚠ The analyzer performs **no check at all** on `asm` blocks — an invalid
   mnemonic produces no semantic-analysis diagnostic. See
-  [S-10](DEVIATIONS.md#s-10-asm-blocks-are-unvalidated).
+  [S-10](DEVIATIONS_c_impl.md#s-10-asm-blocks-are-unvalidated).
 
 ### 5.8 Prefix-Only Increment/Decrement
 
@@ -694,17 +694,17 @@ force a `u8` result — `u8 a = !x;` on an `i16 x` is a type error, while
   - `ptr - ptr` (both operands the same pointer type) also produces a
     pointer of that same type — the address difference, not an integer
     count.
-  > ⚠ [S-3](DEVIATIONS.md#s-3-pointer-arithmetic-is-order-sensitive):
+  > ⚠ [S-3](DEVIATIONS_c_impl.md#s-3-pointer-arithmetic-is-order-sensitive):
   > `cc02`'s binary-operator special case only checks `left.is_ptr` — so
   > `ptr + 5` compiles but `5 + ptr` is rejected as a type error; the
   > commutative `int + ptr` form isn't implemented.
-  > ⚠ [P2-7](DEVIATIONS.md#p2-7-pointer-arithmetic-is-unscaled): pointer
+  > ⚠ [P2-7](DEVIATIONS_c_impl.md#p2-7-pointer-arithmetic-is-unscaled): pointer
   > arithmetic is unscaled at codegen time — `p + 1` always advances one
   > byte regardless of pointee size (this applies to `ptr - ptr`'s address
   > difference too — it's a raw byte count, not scaled by pointee size).
 - Struct-typed operands are **not rejected** by the analyzer as long as both
   sides name the same struct — `pointA + pointB` "type-checks." See
-  [P2-2](DEVIATIONS.md#p2-2-struct-values-accepted-as-arithmeticcondition-operands).
+  [P2-2](DEVIATIONS_c_impl.md#p2-2-struct-values-accepted-as-arithmeticcondition-operands).
 - **Result-type widening**: for any binary operator except `&&`/`||`, when
   the two operands share signedness but differ in width, the result type is
   the **wider** of the two operand types — the narrower operand is
@@ -717,7 +717,7 @@ force a `u8` result — `u8 a = !x;` on an `i16 x` is a type error, while
 - `&&` and `||` are the one exception to the above: they always produce a
   **`u8`** result regardless of operand type or width, since they're
   truthiness tests rather than width-preserving arithmetic (see
-  [S-20](DEVIATIONS.md#s-20-logical-operators-widen-their-result-instead-of-always-producing-u8)
+  [S-20](DEVIATIONS_c_impl.md#s-20-logical-operators-widen-their-result-instead-of-always-producing-u8)
   for how `cc02` actually handles this today).
 
 ### 6.4 Postfix — Field Access
@@ -766,7 +766,7 @@ into a flat name set. A leading `(` is treated as a cast iff the token
 immediately after is a base-type keyword (`u8`/`i8`/`u16`/`i16`/`void`) or
 an identifier in that prescanned set.
 
-> ⚠ [G-5](DEVIATIONS.md#g-5-struct-name-shadowing-misparses-a-cast): a
+> ⚠ [G-5](DEVIATIONS_c_impl.md#g-5-struct-name-shadowing-misparses-a-cast): a
 > local variable that shadows a struct name breaks this — `(Point) - 1`
 > misparses as a cast when `Point` is a local shadowing the struct, not a
 > subtraction. Fails loudly downstream, not silently; accepted upstream
@@ -786,7 +786,7 @@ u16 r = (u16)a * b;  // casts a alone, then multiplies — the widened-multiply 
 
 To cast a whole binary expression, parenthesize it explicitly: `(u8)(w / 2)`.
 
-> ⚠ [P0-2](DEVIATIONS.md#p0-2-cast-binds-to-the-whole-following-expression):
+> ⚠ [P0-2](DEVIATIONS_c_impl.md#p0-2-cast-binds-to-the-whole-following-expression):
 > `cc02` instead parses the cast operand at `logical_or` precedence (the top
 > of the expression grammar), so a cast swallows the entire following
 > expression — `(u8)w / 2` computes `(u8)(w / 2)` = `0xFF`, not `0x7F`, and
@@ -841,14 +841,14 @@ Two consequences follow:
   name still parses `Name * x;` as a declaration of `x : Name*`, not as a
   multiply of the shadowing local — the `*`-declaration twin of the cast
   misparse in
-  [G-5](DEVIATIONS.md#g-5-struct-name-shadowing-misparses-a-cast).
+  [G-5](DEVIATIONS_c_impl.md#g-5-struct-name-shadowing-misparses-a-cast).
 
 All three identifier-vs-type disambiguations in the grammar — block/top-level
 statements (here), casts (§6.6), and `for`-init clauses (§5.5) — share this
 one prescan mechanism, so the identical token shape resolves **identically**
 regardless of position.
 
-> ⚠ [G-4](DEVIATIONS.md#g-4-block-statements-disambiguate-by-shape-not-the-prescan):
+> ⚠ [G-4](DEVIATIONS_c_impl.md#g-4-block-statements-disambiguate-by-shape-not-the-prescan):
 > `cc02` disambiguates block- and top-level statements by a purely shape-based
 > rule (skip `*` tokens, check for a following identifier) rather than the
 > prescan — so `foo * bar;` there **always** parses as a declaration of
@@ -881,7 +881,7 @@ namesake's storage; this rule exists to prevent that, not merely for
 style. Two **sibling** scopes (e.g. two separate `for (u8 i...)` loops) are
 unaffected, since each is fully popped before the next is pushed.
 
-> ⚠ [S-8](DEVIATIONS.md#s-8-shadowing-check-is-asymmetric): this check
+> ⚠ [S-8](DEVIATIONS_c_impl.md#s-8-shadowing-check-is-asymmetric): this check
 > applies only to variables and parameters — a struct declared inside a
 > function body is only checked for same-scope redeclaration, never
 > outer-scope shadowing.
@@ -894,11 +894,11 @@ lvalue. Lvalue-ness is checked **structurally and shallowly**: the
 or `NODE_DEREF`. There is no recursion into whether the *base* of a
 field-access/deref chain is itself addressable storage.
 
-> ⚠ [S-5](DEVIATIONS.md#s-5-lvalue-checking-is-shallow):
+> ⚠ [S-5](DEVIATIONS_c_impl.md#s-5-lvalue-checking-is-shallow):
 > `someFunctionCall().field = 5;` is accepted as a valid assignment target
 > purely because the outermost node "looks like" an lvalue shape — this is
 > exactly what lets `&p.x` reach codegen and crash the compiler
-> ([P1-1](DEVIATIONS.md#p1-1-address-of-a-struct-field-segfaults-the-compiler)).
+> ([P1-1](DEVIATIONS_c_impl.md#p1-1-address-of-a-struct-field-segfaults-the-compiler)).
 
 ### 7.4 `main`
 
@@ -919,7 +919,7 @@ supports multi-file linking and incremental compilation:
   `ERR_BAD_MAIN_SIGNATURE`. A `main` introduced only via `decl` is a forward
   declaration, not a definition, so it is not signature-checked here.
 
-> ⚠ [S-9](DEVIATIONS.md#s-9-mains-signature-is-unchecked): `cc02` only
+> ⚠ [S-9](DEVIATIONS_c_impl.md#s-9-mains-signature-is-unchecked): `cc02` only
 > verifies that a symbol named `main` exists and is a function — any return
 > type and any parameter list/count are accepted silently, and a `main`
 > introduced solely via `decl` (with no defining body) satisfies the check
@@ -953,7 +953,7 @@ fn h() -> u8 {
 
 There is no control-flow/path-coverage analysis — do not rely on the
 absence of `ERR_MISSING_RETURN` as proof every path returns. See
-[S-12](DEVIATIONS.md#s-12-missing-return-detection-is-shallow).
+[S-12](DEVIATIONS_c_impl.md#s-12-missing-return-detection-is-shallow).
 
 ---
 
@@ -985,14 +985,14 @@ unlike the parser — §8.3).
 | `ERR_INCOMPLETE_STRUCT_FIELD` | By-value struct field is self-referential, or names a struct not declared earlier in the file (§4.4). |
 | `ERR_BREAK_OUTSIDE_LOOP` / `ERR_CONTINUE_OUTSIDE_LOOP` | `break`/`continue` with loop-depth 0. |
 | `ERR_STRUCT_CAST_BY_VALUE` | `(StructName)expr` cast with no pointer level. |
-| `ERR_WRONG_ARG_TYPE` | Defined in the enum, but **never actually emitted** — `ERR_TYPE_MISMATCH` (context `"function call"`) is used instead. Treat as dead/reserved. ([S-16](DEVIATIONS.md#s-16-err_wrong_arg_type-is-dead-code)) |
+| `ERR_WRONG_ARG_TYPE` | Defined in the enum, but **never actually emitted** — `ERR_TYPE_MISMATCH` (context `"function call"`) is used instead. Treat as dead/reserved. ([S-16](DEVIATIONS_c_impl.md#s-16-err_wrong_arg_type-is-dead-code)) |
 
 ### 8.2 Warnings
 
 | Warning | Fires when | Notes |
 |---|---|---|
 | `WARN_INVALID_INTERRUPT` | `interrupt`-qualified function fails name/return-type/param-count checks (§4.2). | The only warning that actually prints. |
-| `WARN_UNUSED_VARIABLE` / `_FUNCTION` / `_STRUCT` / `_FIELD` | Never — defined in the enum with print-dispatch plumbing, but no code path ever constructs one (`// unimplemented`). | Do not rely on these appearing; no unused-anything detection exists today. ([S-11](DEVIATIONS.md#s-11-unused-variable-diagnostics-are-unimplemented)) |
+| `WARN_UNUSED_VARIABLE` / `_FUNCTION` / `_STRUCT` / `_FIELD` | Never — defined in the enum with print-dispatch plumbing, but no code path ever constructs one (`// unimplemented`). | Do not rely on these appearing; no unused-anything detection exists today. ([S-11](DEVIATIONS_c_impl.md#s-11-unused-variable-diagnostics-are-unimplemented)) |
 
 ### 8.3 Parser Errors
 
@@ -1015,7 +1015,7 @@ Every `⚠` marker throughout this document flags a specific point where
 stated. Full write-ups, verified reproductions, and a quick-reference index
 — grouped by category: **G** lexer/parser quirks, **P** codegen
 silent-miscompiles, **S** analyzer type-system laxity — live in the
-companion document, **[`DEVIATIONS.md`](DEVIATIONS.md)**.
+companion document, **[`DEVIATIONS_c_impl.md`](DEVIATIONS_c_impl.md)**.
 
 That document is also the fuzz harness's known-issues oracle: the
 P-numbered items are encoded as live regression tests in the upstream
@@ -1024,7 +1024,7 @@ repo's `cc02/tests/bug_test.py` (`python3 cc02/tests/bug_test.py` from the
 those is confirming a known issue, not discovering a new one — only a
 *behavior change* from what's recorded there is noteworthy.
 
-Each entry in `DEVIATIONS.md` is marked **Executed** (independently
+Each entry in `DEVIATIONS_c_impl.md` is marked **Executed** (independently
 reproduced, either while authoring these documents or via
 `bug_test.py`/`docs/BUG_REPORT.md` upstream) or **Source** (derived from
 reading `cc02` source, not independently executed) — treat **Source**
