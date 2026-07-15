@@ -9,6 +9,43 @@ releases are reserved for bug fixes only.
 
 ## [Unreleased]
 
+## [1.5.1] 2026-07-14
+
+### Added
+
+- **Emulator-based test suite for the code generator (`test/emu/`).** 69 `.c02`
+  programs are compiled end-to-end (`c02c` → 32 KB ROM), loaded into a py65
+  65C02 emulator, and run to the halt loop by `test/emu/run.py`, which checks
+  `// EXPECT:` directives against final CPU/memory state (results are observed
+  by writing to a memory-mapped `reg` at `$6000`, since `main` is `void`).
+  Coverage walks the TAC opcode set and the arithmetic helpers, weighted to the
+  signed/16-bit paths (`__sdiv8/16`, `__mul16`), the callee-saves ABI (clobber,
+  recursion, the 8-parameter boundary), pointers, struct fields, short-circuit
+  `&&`/`||`, and interrupt-vector wiring; expected values are taken from
+  `docs/SPEC.md` (Appendix B). `make emu-test` runs it, and CI runs it after the
+  golden suite. `run.py --ir-on-fail` dumps the IR `c02-as` consumed so a
+  failure localizes to frontend lowering vs. codegen.
+- **`docs/DEVIATIONS_hs_impl.md`** — a known-deviations doc for this repo's
+  toolchain vs. `SPEC.md`, companion to `DEVIATIONS_c_impl.md`. First entry
+  (HS-1) records that untyped integer literals adopt a target's *width* but not
+  its *signedness* (so `i8 b = 47` is rejected, contrary to §3.4) — stricter
+  than both the spec and the original `cc02`.
+
+### Changed
+
+- **README overhauled and trimmed** (roughly halved). Rewritten around the
+  current split toolchain (`c02-frontend` / `c02-as` / `c02c` / `c02-objdump`)
+  instead of the monolithic `cc02`, with corrected build prerequisites (GHC +
+  Cabal, Rust), the real `c02c` flags, and the exhaustive grammar deferred to
+  `docs/SPEC.md`. Added the `megaparsec` (BSD-2-Clause) third-party license
+  entry.
+
+### Fixed
+
+- **`SPEC.md`'s deviation links repointed** after `DEVIATIONS.md` was renamed to
+  `DEVIATIONS_c_impl.md`: all 35 `DEVIATIONS.md#…` links plus two prose mentions
+  now target the renamed file, with every anchor verified to resolve.
+
 ## [1.5.0] 2026-07-13
 
 ### Added
