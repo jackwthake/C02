@@ -80,7 +80,6 @@ data Instr = Instr
 data Block = Block
   { blockId      :: Int
   , instructions :: [Instr]
-  , successors   :: [Block]
   } deriving (Show)
 
 
