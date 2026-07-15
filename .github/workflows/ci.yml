@@ -38,15 +38,17 @@ jobs:
           dune-cache: true
 
       - name: Install Dune
-        run: opam install -y dune
+        run: |
+          opam install -y dune
+          echo "$(opam var bin)" >> "$GITHUB_PATH"
 
       - name: Build
-        run: opam exec -- make
-      
+        run: make
+
       - name: Test Suite
         run: |
          python3 scripts/test.py
-         opam exec -- make emu-test
+         make emu-test
       
       - name: LOC Report
         run: python3 scripts/loc.py
