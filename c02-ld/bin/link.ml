@@ -89,10 +89,19 @@ let symbols_to_module (symbols : symbol list) (structs : ir_struct list) : ir_mo
   let externs = List.filter_map (function Extern e -> Some e | _ -> None) symbols in
   { regs; globals; cfgs; externs; structs }
 
+let dedup_structs structs : ir_struct list =
+  List.fold_left (fun acc s ->
+    match List.find_opt (fun k -> k.ir_struct_name = s.ir_struct_name) acc with
+    | None                -> s :: acc
+    | Some k when k = s   -> acc
+    | Some _              -> failwith ("Struct: " ^ s.ir_struct_name ^ " redeclaration")
+  ) [] structs
+
 (* Whole-program link: gather every module, resolve the symbol namespace, and
    rebuild one merged module. *)
 let link (modules : ir_module list) : ir_module =
   let merged  = merge_modules modules in
   let symtab  = populate_symbol_table merged in
   let symbols = reconcile symtab in
-  symbols_to_module symbols merged.structs
+
+  symbols_to_module symbols (dedup_structs merged.structs)
