@@ -53,7 +53,12 @@ def make_temp_object():
 
 def clean_o_file_temps(o_files):
   for f in o_files:
-    os.remove(f)
+    # A temp path is registered before its file is written, so a stage that
+    # fails early can leave a path here that never became a file — tolerate it.
+    try:
+      os.remove(f)
+    except FileNotFoundError:
+      pass
 
 
 def main():
@@ -72,42 +77,49 @@ def main():
   output = "a.out" if args.output == None else args.output
   temps = []
 
-  # --- 1. frontend: c02 source -> IR object -------------------------------
-  for src in src_files:
-    if args.c:
-      src_out = output
-    else:
+  # The pipeline registers temp objects in `temps` as it goes; the finally
+  # clause deletes them on every exit path — success, a failing stage's
+  # sys.exit (which raises SystemExit and passes through finally), or a crash.
+  try:
+    # --- 1. frontend: c02 source -> IR object -----------------------------
+    for src in src_files:
       src_out = make_temp_object()
       temps += [src_out] # collect temps for deletion after pipeline
-    
-    o_files += [src_out]
-    result = subprocess.run([frontend] + frontend_args + ['-o', src_out] + [src])
-    if result.returncode != 0:
+      o_files += [src_out]
+      result = subprocess.run([frontend] + frontend_args + ['-o', src_out] + [src])
+      if result.returncode != 0:
+        sys.exit(result.returncode)
+
+    if args.parse_only or args.dump_ast:
+      sys.exit(0)
+
+    # --- 2. link: merge every object into one -----------------------------
+    # With -c we stop here and write the merged object to the requested -o. It
+    # may be a library with no main, which is fine: the generator, not the
+    # linker, requires an entry point. Without -c the merged object feeds codegen.
+    if args.c:
+      result = subprocess.run([linker] + o_files + ["-o", output])
       sys.exit(result.returncode)
 
-  if args.c or args.parse_only or args.dump_ast:
+    if len(o_files) > 1: # more than one object: merge them
+      linked = make_temp_object()
+      temps += [linked]
+      result = subprocess.run([linker] + o_files + [ "-o", linked])
+      if result.returncode != 0:
+        sys.exit(result.returncode)
+    else:
+      linked = o_files[0] # single object nothing to merge
+
+    generater_args = []
+    if args.dump_ir: generater_args += ['--dump-ir']
+    if args.strip_debug: generater_args += ['--strip-debug']
+
+    # --- 3. codegen: IR object -> 6502 ROM --------------------------------
+    result = subprocess.run([codegen, linked, "-o", output] + generater_args)
+    if result.returncode != 0:
+      sys.exit(result.returncode)
+  finally:
     clean_o_file_temps(temps)
-    sys.exit(0)
-  
-  # --- 2. link + optimize (future OCaml pass) -----------------------------
-  # TODO: merge IR objects and run optimization passes here.
-  result = subprocess.run([linker] + o_files)
-  if result.returncode != 0:
-    sys.exit(result.returncode)
-
-  linked = o_files[0] # TODO: this will be replaced with the result of the linking stage
-
-  generater_args = []
-  if args.dump_ir: generater_args += ['--dump-ir']
-  if args.strip_debug: frontend_args += ['--strip-debug']
-
-  # --- 3. codegen: IR object -> 6502 ROM -----------------------------------
-  # TODO: consume the frontend's emitted .o. Until that exists, run the
-  result = subprocess.run([codegen, linked, "-o", output] + generater_args)
-
-  clean_o_file_temps(temps)
-  if result.returncode != 0:
-    sys.exit(result.returncode)
 
 if __name__ == "__main__":
   main()

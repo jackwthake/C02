@@ -4,6 +4,8 @@
 *.vsix
 .vscode
 /bin/
+/lib/
+/scratchpad/
 *.out
 *.bin
 *.d

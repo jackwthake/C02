@@ -14,13 +14,25 @@ let parse_file filename =
   read_module cursor
 
 let () =
-  (* argv.(0) is the program name; the rest are the files to read *)
-  let files = Array.to_list Sys.argv |> List.tl in
+  (* argv.(0) is the program name; the rest are the args *)
+  let args = Array.to_list Sys.argv |> List.tl in
+
+  (* parse args: expect -o <outfile> plus one or more input files *)
+  let rec walk acc_files out = function
+    | [] -> (List.rev acc_files, out)
+    | "-o" :: file :: rest -> walk acc_files (Some file) rest
+    | flag :: _ when flag = "-o" -> failwith "-o requires a filename"
+    | f :: rest -> walk (f :: acc_files) out rest
+  in
+  let (files, outfile) = walk [] None args in
+  let outfile = match outfile with Some f -> f | None -> failwith "missing -o output file" in
+
   let modules = List.map (fun f -> parse_file f) files in
 
+  (* The linker always emits a relocatable object; it never requires a main.
+     Entry-point existence (§7.4) is enforced by the generator, the only stage
+     that turns an object into an executable — a linked object may legitimately
+     be a library. Conflict rejection, struct dedup, and extern pass-through
+     still happen in `link`. *)
   let linked = link modules in
-  if not (List.exists (fun f -> f.fn_name = "main") linked.cfgs) then failwith "no main function in linked program";
-
-  Printf.printf "structs=%d globals=%d regs=%d cfgs=%d externs=%d\n"
-    (List.length linked.structs) (List.length linked.globals)
-    (List.length linked.regs) (List.length linked.cfgs) (List.length linked.externs)
+  write_module linked outfile

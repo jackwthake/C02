@@ -137,6 +137,14 @@ let operand_type = function
   | OperandNone t          | OperandTemp (t, _)          | OperandVar (t, _)
   | OperandConstInt (t, _) | OperandConstStr (t, _) -> t
 
+(* operand -> wire OPERAND_* kind. Inverse of read_operand's `match kind`. *)
+let operand_tag = function
+  | OperandNone _     -> 0
+  | OperandTemp _     -> 1
+  | OperandVar _      -> 2
+  | OperandConstInt _ -> 3
+  | OperandConstStr _ -> 4
+
 (* base_type -> wire TYPE_* kind. The inverse lives in the reader's read_type,
  * because kind 5 (STRUCT) must also pull a length-prefixed name off the cursor
  * to fill in `StructName`. *)
@@ -144,21 +152,43 @@ let type_kind_tag = function
   | U8 -> 0 | I8 -> 1 | U16 -> 2 | I16 -> 3 | Void -> 4
   | StructName _ -> 5
 
-let tac_op_of_int = function
-  | 0 -> TacAdd        | 1  -> TacSub    | 2  -> TacMul      | 3  -> TacDiv   | 4  -> TacMod
-  | 5 -> TacLt         | 6  -> TacGt     | 7  -> TacLte      | 8  -> TacGte   | 9  -> TacEq   | 10 -> TacNeq
-  | 11 -> TacAnd       | 12 -> TacOr
-  | 13 -> TacShl       | 14 -> TacShr    | 15 -> TacBand     | 16 -> TacBxor  | 17 -> TacBor
-  | 18 -> TacNeg       | 19 -> TacNot    | 20 -> TacBnot
-  | 21 -> TacInc       | 22 -> TacDec
-  | 23 -> TacAddrOf    | 24 -> TacLoad   | 25 -> TacStore
-  | 26 -> TacCopy
-  | 27 -> TacLabel     | 28 -> TacJump   | 29 -> TacCondJump
-  | 30 -> TacCall      | 31 -> TacReturn | 32 -> TacContinue | 33 -> TacBreak
-  | 34 -> TacFieldLoad | 35 -> TacFieldStore
-  | 36 -> TacCast
-  | n -> failwith (Printf.sprintf "bad tac_op %d" n)
+(* tac_op wire numbering: the index into this array IS the tag. Both directions
+ * are derived from it, so they cannot drift apart — a hand-written inverse would
+ * be a second list to keep in lockstep, and a mismatch there is a silent binary
+ * desync. Line grouping mirrors the type declaration above; keep it that way so
+ * the two stay diffable against ir.h's enum. *)
+let tac_ops = [|
+  TacAdd;       TacSub;    TacMul;      TacDiv;   TacMod;
+  TacLt;        TacGt;     TacLte;      TacGte;   TacEq;   TacNeq;
+  TacAnd;       TacOr;
+  TacShl;       TacShr;    TacBand;     TacBxor;  TacBor;
+  TacNeg;       TacNot;    TacBnot;
+  TacInc;       TacDec;
+  TacAddrOf;    TacLoad;   TacStore;
+  TacCopy;
+  TacLabel;     TacJump;   TacCondJump;
+  TacCall;      TacReturn; TacContinue; TacBreak;
+  TacFieldLoad; TacFieldStore;
+  TacCast;
+|]
+
+let tac_op_of_int n =
+  if n < 0 || n >= Array.length tac_ops then failwith (Printf.sprintf "bad tac_op %d" n)
+  else tac_ops.(n)
+
+(* Inverse by construction. A constructor added to tac_op but missing from
+ * tac_ops fails loudly here instead of emitting a wrong tag. *)
+let tac_op_tag op =
+  let rec go i =
+    if i >= Array.length tac_ops then failwith "tac_op missing from tac_ops"
+    else if tac_ops.(i) = op then i
+    else go (i + 1)
+  in
+  go 0
 
 let ir_init_kind_of_int = function
   | 0 -> IRInitNone | 1 -> IRInitInt | 2 -> IRInitStr
   | n -> failwith (Printf.sprintf "bad ir_init_kind %d" n)
+
+let ir_init_kind_tag = function
+  | IRInitNone -> 0 | IRInitInt -> 1 | IRInitStr -> 2

@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/) - while
 the project is in `0.x`, breaking changes may land in MINOR releases; PATCH
 releases are reserved for bug fixes only.
 
-## [Unreleased]
+## [1.6.0] 2026-07-16
 
 ### Added
 
@@ -34,11 +34,48 @@ releases are reserved for bug fixes only.
   name clashes are rejected, and forward declarations are *resolved* — an
   `extern` is matched to its definition (return type plus parameter *types*,
   names ignored) and dropped, leaving only genuinely-unresolved externs in the
-  output for the code generator to satisfy (partial-link semantics). Exactly one
-  `void main()` is enforced at link time (§7.4 — the existence half the analyzer
-  defers). Verified end-to-end: cross-module resolution, signature-mismatch and
+  output for the code generator to satisfy (partial-link semantics). The linker
+  never requires a `main`: it always emits a relocatable object, which may be a
+  library. Verified end-to-end: cross-module resolution, signature-mismatch and
   redefinition rejection, and a clean 69/69 single-module regression.
-  Re-serializing the merged module to a `.o` and de-duplicating structs remain.
+- **`c02-ld` struct de-duplication.** Structs are their own namespace (not in the
+  symbol table), so merging is handled separately: `dedup_structs` folds the
+  concatenated struct list, keeping one copy when a repeated name has an identical
+  layout and rejecting a genuine conflict (same name, differing fields/size).
+  Field order is significant, so a reordered layout is treated as a conflict.
+- **`c02-ld` IR object-file writer + `-o` output.** The linker now re-serializes
+  the merged module back to the wire format, so its output is a real `.o` the code
+  generator consumes. `bin/serializer.ml` gains a `put_*` for every `read_*`
+  (types, operands, the fat instruction, blocks, CFGs, structs, globals,
+  registers, externs), built on OCaml's `Buffer`; the `tac_op` wire numbering is
+  driven by a single array so the read and write directions cannot drift apart.
+  `c02-ld -o out.o in.o …` writes the linked object. Validated: all 69 objects
+  round-trip idempotently (link, re-link, `cmp` — proving the writer inverts the
+  reader); `c02-as` accepts the output; 65/69 assemble to byte-identical ROMs
+  versus the un-linked pipeline, the other 4 differing only in function *order*
+  (which is layout-only — the reset stub calls `main` by label — and all 4 still
+  pass the emulator suite); and a real multi-file program (an LCD library split
+  into its own translation unit, referenced through forward declarations) links to
+  a correct, same-sized binary.
+- **`c02c` driver wires the linker into the pipeline, with `-c` library builds.**
+  The driver now runs the real three-stage pipeline (frontend → `c02-ld` →
+  `c02-as`): each source is compiled to a temp object, the objects are merged by
+  the linker (skipped when there is only one, which goes straight to codegen), and
+  the merged object is assembled to a ROM. `-c` stops after the link and writes the
+  merged object to the requested `-o`, so several sources compile into a single
+  reusable library object (a `decl fn` forward declaration in a client resolves
+  against it at final link). Temp objects are cleaned up on every exit path via a
+  `try/finally`. Verified: an LCD driver library split into its own translation
+  unit compiles under `-c` and links into a working program, and a real
+  library-plus-`main` round trip runs on the emulator.
+- **Entry-point (`main`) existence is enforced by the code generator.** Because
+  `c02-ld` only ever emits a relocatable object (which may be a library), the check
+  for a program entry point moved to `c02-as` — the one stage that produces an
+  executable and emits `jsr main`. `emit_call_main` now reports a clear
+  `program has no 'main' function` when no `main` is defined, rather than surfacing
+  it as an unresolved-symbol error. The analyzer still validates `main`'s
+  *signature* (`void`, no parameters) when it is defined; existence is a
+  whole-program property left to codegen (SPEC §7.4).
 - **OCaml/dune wired into the build and CI.** The root `make` builds `c02-ld`
   through dune; CI provisions the OCaml toolchain via `ocaml/setup-ocaml`, and
   the `c02-ld` Makefile wraps dune calls in `opam exec` so builds don't depend

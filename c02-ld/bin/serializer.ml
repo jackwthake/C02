@@ -173,3 +173,123 @@ let read_module c : ir_module =
   let externs = List.init extern_count (fun _ -> read_extern c) in
   
   { externs; structs; globals; regs; cfgs }
+
+
+(* writing *)
+let put_u32 b v = Buffer.add_int32_le b (Int32.of_int v)
+let put_i64 b v = Buffer.add_int64_le b (Int64.of_int v)
+let put_u64 b v = Buffer.add_int64_le b (Int64.of_int v)   (* reg addr; same bytes *)
+let put_str b s = put_u32 b (String.length s); Buffer.add_string b s
+
+
+let put_type b (t : ty) =
+  let (bt, ptr_d) = t in
+  put_u32 b (type_kind_tag bt);
+  put_u32 b (if ptr_d > 0 then 1 else 0);
+  put_u32 b ptr_d;
+  match bt with StructName nm -> put_str b nm | _ -> ()
+
+let put_named_type b (n : named_type) =
+  let (base, depth, name) = n in
+  put_type b (base, depth);
+  put_str b name
+
+(* A length-prefixed sequence: [u32 count][elements]. The write-side counterpart
+ * to the reader's `let n = u32 c in List.init n (fun _ -> read_x c)` — write the
+ * count, then iterate the element putter over the list. *)
+let put_list b put_elem lst =
+  put_u32 b (List.length lst);
+  List.iter (fun x -> put_elem b x) lst
+
+(* read_operand: kind, type (always), then the kind-specific payload. *)
+let put_operand b (op : operand) =
+  put_u32 b (operand_tag op);
+  put_type b (operand_type op);
+  match op with
+  | OperandNone _       -> ()
+  | OperandTemp (_, i)  -> put_u32 b i
+  | OperandVar (_, n)   -> put_str b n
+  | OperandConstInt (_, n) -> put_i64 b n
+  | OperandConstStr (_, s) -> put_str b s
+
+(* read_instr order: op, dst, src1, src2, label, call_name, call_arg_count,
+ * [args], field_name, cast_type. Fat instruction — every field unconditionally,
+ * regardless of op. Our fields are raw (""/0 for absent), so no option handling. *)
+let put_instr b (i : instr) =
+  put_u32 b (tac_op_tag i.op);
+  put_operand b i.dst;
+  put_operand b i.src1;
+  put_operand b i.src2;
+  put_u32 b i.label;
+  put_str b i.call_name;
+  put_list b put_operand i.call_args;
+  put_str b i.field_name;
+  put_type b i.cast_type
+
+(* read_block: id, instr_count, [instrs]. successors is NOT on the wire. *)
+let put_block b (blk : block) =
+  put_u32 b blk.block_id;
+  put_list b put_instr blk.instructions
+
+(* read_cfg: name, ret_type, params, blocks, next_temp, next_label, is_interrupt. *)
+let put_cfg b (c : cfg) =
+  put_str b c.fn_name;
+  put_type b c.ret_type;
+  put_list b put_named_type c.params;
+  put_list b put_block c.blocks;
+  put_u32 b c.next_temp;
+  put_u32 b c.next_label;
+  put_u32 b (if c.is_interrupt then 1 else 0)
+
+(* struct field: name, type, offset. *)
+let put_ir_field b (f : ir_field) =
+  put_str b f.ir_field_name;
+  put_type b f.ir_field_type;
+  put_u32 b f.ir_field_offset
+
+(* struct: name, field_count, total_size, THEN fields (size precedes them). *)
+let put_ir_struct b (s : ir_struct) =
+  put_str b s.ir_struct_name;
+  put_u32 b (List.length s.ir_struct_fields);
+  put_u32 b s.ir_struct_size;
+  List.iter (fun f -> put_ir_field b f) s.ir_struct_fields
+
+(* global: name, type, init_kind, then a kind-dependent payload. *)
+let put_global b (g : global) =
+  put_str b g.glob_name;
+  put_type b g.glob_type;
+  put_u32 b (ir_init_kind_tag g.glob_init_kind);
+  (match g.glob_init_kind with
+   | IRInitInt  -> put_i64 b g.glob_int_val
+   | IRInitStr  -> put_str b g.glob_str_val
+   | IRInitNone -> ())
+
+(* register: name, type, u64 hardware address. *)
+let put_reg b (r : reg) =
+  put_str b r.reg_name;
+  put_type b r.reg_type;
+  put_u64 b r.reg_addr
+
+(* extern: is_function flag, name, type, params. *)
+let put_extern b (e : extern) =
+  put_u32 b (if e.extern_is_func then 1 else 0);
+  put_str b e.extern_name;
+  put_type b e.extern_type;
+  put_list b put_named_type e.extern_params
+
+(* Sections in the reader's order (structs, globals, regs, cfgs, externs), which
+ * is NOT the ir_module record's field order. *)
+let put_module b (m : ir_module) =
+  put_u32 b c02_magic;
+  put_u32 b ir_version;
+  put_list b put_ir_struct m.structs;
+  put_list b put_global    m.globals;
+  put_list b put_reg       m.regs;
+  put_list b put_cfg       m.cfgs;
+  put_list b put_extern    m.externs
+
+let write_module (m : ir_module) filename =
+  let b = Buffer.create 4096 in
+  put_module b m;
+  Out_channel.with_open_bin filename (fun oc -> Buffer.output_buffer oc b)
+  

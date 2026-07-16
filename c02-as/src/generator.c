@@ -577,12 +577,29 @@ static void emit_bootstrap(emitter_t *e) {
 
 
 // Emit JSR main followed by an infinite halt loop (JMP to self).
-static void emit_call_main(emitter_t *e) {
+// A whole program must define an entry point (SPEC §7.4): this is where that is
+// enforced, since the generator is the only stage that produces an executable —
+// a linked object may legitimately be a library with no main.
+static int emit_call_main(emitter_t *e) {
+  int has_main = 0;
+  for (unsigned i = 0; i < e->gen->module.cfg_count; ++i) {
+    if (strcmp(e->gen->module.cfgs[i].name, "main") == 0) {
+      has_main = 1;
+      break;
+    }
+  }
+  
+  if (!has_main) {
+    fprintf(stderr, "codegen: program has no 'main' function\n");
+    return 0;
+  }
+
   jsr(e, "main");
 
   // halt loop
   uint16_t halt_addr = (uint16_t)(ROM_START + e->code_pos);
   jmp_abs(e, halt_addr);
+  return 1;
 }
 
 
@@ -1911,7 +1928,12 @@ uint8_t *generate_rom(ir_gen_t *gen, size_t *final_rom_size, int emit_symbols) {
     return NULL;
   }
   
-  emit_call_main(&e);
+  if (!emit_call_main(&e)) {
+    free(e.rom);
+    emitter_free(&e);
+    *final_rom_size = 0;
+    return NULL;
+  }
 
   for (unsigned i = 0; i < gen->module.cfg_count; ++i) {
     if (!emit_function_from_cfg(&e, &gen->module.cfgs[i])) {
