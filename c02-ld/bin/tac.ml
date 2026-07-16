@@ -60,11 +60,11 @@ type instr = {
   dst        : operand;
   src1       : operand;
   src2       : operand;
-  label      : int option;
-  call_name  : string option;
-  call_args  : operand list option;
-  field_name : string option;
-  cast_type  : ty option;
+  label      : int;
+  call_name  : string;
+  call_args  : operand list;
+  field_name : string;
+  cast_type  : ty;
 }
 
 (* `successors` is NOT on the wire — rebuild it from terminators after load.

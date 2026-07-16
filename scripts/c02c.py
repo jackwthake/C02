@@ -91,7 +91,7 @@ def main():
   
   # --- 2. link + optimize (future OCaml pass) -----------------------------
   # TODO: merge IR objects and run optimization passes here.
-  result = subprocess.run([linker])
+  result = subprocess.run([linker] + o_files)
   if result.returncode != 0:
     sys.exit(result.returncode)
 

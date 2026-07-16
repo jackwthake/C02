@@ -9,6 +9,25 @@ releases are reserved for bug fixes only.
 
 ## [Unreleased]
 
+### Added
+
+- **`c02-ld` IR object-file reader (OCaml).** The linker now deserializes the
+  frozen IR wire format (`c02-as/src/ir.h` + `ir-serial.c`, as emitted by the
+  frontend's `C02.Lowering.Serialize`) into native OCaml types. `bin/tac.ml`
+  ports the TAC/IR data model and its wire numbering; `bin/serializer.ml` is a
+  cursor-based reader covering the whole format — types, operands, the
+  fixed-shape ("fat") instruction record, blocks, CFGs, structs, globals,
+  registers, and externs — with magic/version enforcement up front. The reader
+  is a faithful transcription of the stream: instruction fields absent for a
+  given opcode are stored raw (empty string / `0` / `[]`) rather than modelled
+  as options, since the linker consumes TAC and never re-emits it. Validated by
+  parsing all 69 `test/emu` objects with no desync (section counts match
+  `c02-as --dump-ir`). Symbol resolution, layout, and relocation are next.
+- **OCaml/dune wired into the build and CI.** The root `make` builds `c02-ld`
+  through dune; CI provisions the OCaml toolchain via `ocaml/setup-ocaml`, and
+  the `c02-ld` Makefile wraps dune calls in `opam exec` so builds don't depend
+  on an active opam environment.
+
 ## [1.5.1] 2026-07-14
 
 ### Added
