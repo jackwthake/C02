@@ -20,9 +20,25 @@ releases are reserved for bug fixes only.
   registers, and externs — with magic/version enforcement up front. The reader
   is a faithful transcription of the stream: instruction fields absent for a
   given opcode are stored raw (empty string / `0` / `[]`) rather than modelled
-  as options, since the linker consumes TAC and never re-emits it. Validated by
+  as options — a lossless choice, since the wire never distinguished absent from
+  empty, so the raw form re-serializes to byte-identical output. Validated by
   parsing all 69 `test/emu` objects with no desync (section counts match
-  `c02-as --dump-ir`). Symbol resolution, layout, and relocation are next.
+  `c02-as --dump-ir`).
+- **`c02-ld` cross-module linking (merge + symbol resolution).** Given several
+  `.o` inputs, `bin/link.ml` merges them into one module and resolves the symbol
+  namespace. Registers, globals, functions, and externs are keyed by name in one
+  symbol table (a single namespace per SPEC §7.2; structs are a separate
+  namespace), and a `combine` pass applies the linkage rules on each name
+  collision: identical registers dedup, globals follow the tentative-definition
+  rule (at most one initializer), duplicate function definitions and cross-kind
+  name clashes are rejected, and forward declarations are *resolved* — an
+  `extern` is matched to its definition (return type plus parameter *types*,
+  names ignored) and dropped, leaving only genuinely-unresolved externs in the
+  output for the code generator to satisfy (partial-link semantics). Exactly one
+  `void main()` is enforced at link time (§7.4 — the existence half the analyzer
+  defers). Verified end-to-end: cross-module resolution, signature-mismatch and
+  redefinition rejection, and a clean 69/69 single-module regression.
+  Re-serializing the merged module to a `.o` and de-duplicating structs remain.
 - **OCaml/dune wired into the build and CI.** The root `make` builds `c02-ld`
   through dune; CI provisions the OCaml toolchain via `ocaml/setup-ocaml`, and
   the `c02-ld` Makefile wraps dune calls in `opam exec` so builds don't depend
