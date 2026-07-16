@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/) - while
 the project is in `0.x`, breaking changes may land in MINOR releases; PATCH
 releases are reserved for bug fixes only.
 
+## [1.6.1] 2026-07-16
+
+### Fixed
+
+- **Store of the literal `0` to a `u8` lvalue no longer clobbers the adjacent
+  byte.** The literal `0` is typed `void*` (the null type, SPEC §3.4), and the
+  code generator sizes a `TacStore` by its *source* operand — so `PORTA = 0` or
+  `*p = 0` into a `u8` target emitted a two-byte store, spilling a second zero
+  into the next address. In the LCD hello-world example this left `DDRB = 0`,
+  turning PORTB back to inputs so no character ever reached the display. The
+  frontend's assignment lowering (`C02.Lowering.Lower`) now coerces the value to
+  the destination's type on the register-write and pointer-store (`Deref`) paths
+  before emitting the store, restoring parity with cc02's `NODE_ASSIGN`. (The
+  struct-field path was unaffected: `TacFieldStore` is sized by the field's own
+  declared width, not the source operand.) Guarded by new `store_zero_reg` and
+  `ptr_store_zero` emulator tests.
+
 ## [1.6.0] 2026-07-16
 
 ### Added

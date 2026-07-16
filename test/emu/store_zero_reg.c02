@@ -1,0 +1,12 @@
+// DESC: reg = 0 stores one byte; the literal 0 is void*-typed (S-3.4) and must be
+// narrowed to the register's u8, else the store spills a second byte into the
+// adjacent register. Regression: the LCD hello-world PORTB=0 clobbered DDRB.
+// EXPECT: mem8[0x6000] == 0
+// EXPECT: mem8[0x6001] == 0xAB
+reg u8 PORTB @ 0x6000;
+reg u8 PORTA @ 0x6001;
+
+fn main() -> void {
+  PORTA = 0xAB;   // sentinel one byte above PORTB
+  PORTB = 0;      // pre-fix: stored 2 bytes and wiped PORTA
+}

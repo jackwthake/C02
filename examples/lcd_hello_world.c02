@@ -2,8 +2,8 @@
 decl fn lcd_init() -> void;
 decl fn lcd_putc(u8 ch) -> void;
 
+u8 *msg = "Hello C02!";
 fn main() -> void {
-  u8 *msg = "Hello C02!";
   lcd_init();
   
   for (u8 *p = msg; *p != null; ++p) {
