@@ -78,6 +78,7 @@ groupParser = do
 primaryParser :: Parser Expr
 primaryParser = choice
   [ IntLit <$> intLiteralParser
+  , IntLit <$> charLiteralParser
   , StrLit <$> stringLiteralParser
   , try castParser <|> groupParser     -- both open with '('
   , identExprParser                    -- identifier: Call / struct-init / Var

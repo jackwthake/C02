@@ -3,4 +3,4 @@ test/parser/bad_unterminated_block.c02:7:1:
 7 | <empty line>
   | ^
 unexpected end of input
-expecting "++", "--", "0B", "0X", "0b", "0x", "break", "continue", "false", "for", "i16", "i8", "if", "null", "return", "struct", "true", "u16", "u8", "void", "while", '!', '"', '&', '(', '*', '-', '@', '_', '{', '}', '~', integer, or letter
+expecting "++", "--", "0B", "0X", "0b", "0x", "break", "continue", "false", "for", "i16", "i8", "if", "null", "return", "struct", "true", "u16", "u8", "void", "while", '!', '"', '&', ''', '(', '*', '-', '@', '_', '{', '}', '~', integer, or letter

@@ -11,6 +11,7 @@ module C02.Parser.Lexer
   , identifier
   , intLiteralParser
   , stringLiteralParser
+  , charLiteralParser
   , operator
   ) where
 
@@ -21,6 +22,7 @@ import Data.Void (Void)
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Control.Monad.Reader (ReaderT)
+import Data.Char (ord)
 
 -- The parser carries a read-only environment: the set of struct type names from
 -- the whole-file prescan (SPEC 6.6). Reader (not State) because it's fixed before
@@ -103,6 +105,9 @@ stringLiteralParser = lexeme (char '"' *> manyTill strChar (char '"'))
       , '\0' <$ char '0'
       , anySingle          -- \\ \" \' and the drop-the-backslash fallback
       ]
+
+charLiteralParser :: Parser Int
+charLiteralParser = ord <$> between (char '\'') (char '\'') L.charLiteral
 
 -- Match an operator token, enforcing maximal munch: the same trick 'keyword'
 -- uses, but guarding against operator chars instead of identifier chars. This is

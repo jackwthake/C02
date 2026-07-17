@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/) - while
 the project is in `0.x`, breaking changes may land in MINOR releases; PATCH
 releases are reserved for bug fixes only.
 
+## [Unreleased]
+
+- Added char literal to parser, 'a' now gets translated to its ascii value in that case, 97. 
+
 ## [1.6.2] 2026-07-16
 
 ### Added
