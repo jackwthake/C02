@@ -1,0 +1,3 @@
+DESC: the same register name mapped to different addresses in two modules conflicts
+MODE: reject
+STDERR: Conflicting registers: X and X

@@ -1,0 +1,3 @@
+decl u8 x;
+reg u8 PORTB @ 0x6000;
+fn main() -> void { PORTB = x; }

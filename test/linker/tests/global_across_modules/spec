@@ -1,0 +1,3 @@
+DESC: a decl'd global is resolved to its initialized definition in another module
+MODE: run
+EXPECT: mem8[0x6000] == 42

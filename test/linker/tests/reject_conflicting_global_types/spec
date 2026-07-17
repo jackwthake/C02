@@ -1,0 +1,3 @@
+DESC: the same global name with different types in two modules conflicts
+MODE: reject
+STDERR: Conflicting global types

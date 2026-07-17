@@ -31,13 +31,25 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Set up OCaml and Dune
+        uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: '5.3'
+          dune-cache: true
+
+      - name: Install Dune
+        run: |
+          opam install -y dune
+          echo "$(opam var bin)" >> "$GITHUB_PATH"
+
       - name: Build
         run: make
-      
+
       - name: Test Suite
         run: |
          python3 scripts/test.py
          make emu-test
+         make linker-test
       
       - name: LOC Report
         run: python3 scripts/loc.py

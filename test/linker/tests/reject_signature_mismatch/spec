@@ -1,0 +1,3 @@
+DESC: an extern function resolved to a definition with a different parameter type is rejected
+MODE: reject
+STDERR: signature mismatch for foo

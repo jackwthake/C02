@@ -1,0 +1,6 @@
+reg u8 PORTB @ 0x6000;
+decl fn add(u8 a, u8 b) -> u8;
+
+fn main() -> void {
+  PORTB = add(40, 2);
+}

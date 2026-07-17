@@ -1,0 +1,3 @@
+decl fn foo(u8 x) -> void;
+reg u8 PORTB @ 0x6000;
+fn main() -> void { PORTB = 1; }

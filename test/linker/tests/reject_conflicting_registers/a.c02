@@ -1,0 +1,3 @@
+reg u8 X @ 0x6000;
+decl fn s() -> u8;
+fn main() -> void { X = s(); }

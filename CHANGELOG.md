@@ -7,7 +7,118 @@ and this project adheres to [Semantic Versioning](https://semver.org/) - while
 the project is in `0.x`, breaking changes may land in MINOR releases; PATCH
 releases are reserved for bug fixes only.
 
-## [Unreleased]
+## [1.6.2] 2026-07-16
+
+### Added
+
+- **Linker test suite (`test/linker/`).** 19 cases exercising `c02-ld`'s
+  cross-module merge and symbol resolution, driven end-to-end through the
+  `bin/c02c` driver. `test/linker/run.py` discovers one directory per case
+  (`.c02` module sources plus a `spec` of directives) and checks three kinds of
+  outcome: `run` cases link into a whole program that is executed in the py65
+  emulator (reusing `test/emu`'s `run_rom`) and asserted on final machine state;
+  `link` cases assert on the merged IR via `--dump-ir` (de-dup collapse, a
+  resolved extern being dropped, an unresolved extern surviving a partial link);
+  and `reject` cases assert that linking fails with a specific diagnostic — one
+  per `failwith` site in `link.ml`'s `combine`/`dedup_structs` (duplicate
+  function, conflicting externs, signature/type mismatch, function-vs-variable
+  and variable-vs-register kind clashes, conflicting registers, multiple global
+  initializers, conflicting global types, cross-kind collision, struct
+  redeclaration). Modules reference each other with the `decl` keyword (SPEC
+  §4.6). `make linker-test` runs it. Every rejection branch was first confirmed
+  reachable from valid single-file source, so the suite needs no hand-built
+  object fixtures.
+
+## [1.6.1] 2026-07-16
+
+### Fixed
+
+- **Store of the literal `0` to a `u8` lvalue no longer clobbers the adjacent
+  byte.** The literal `0` is typed `void*` (the null type, SPEC §3.4), and the
+  code generator sizes a `TacStore` by its *source* operand — so `PORTA = 0` or
+  `*p = 0` into a `u8` target emitted a two-byte store, spilling a second zero
+  into the next address. In the LCD hello-world example this left `DDRB = 0`,
+  turning PORTB back to inputs so no character ever reached the display. The
+  frontend's assignment lowering (`C02.Lowering.Lower`) now coerces the value to
+  the destination's type on the register-write and pointer-store (`Deref`) paths
+  before emitting the store, restoring parity with cc02's `NODE_ASSIGN`. (The
+  struct-field path was unaffected: `TacFieldStore` is sized by the field's own
+  declared width, not the source operand.) Guarded by new `store_zero_reg` and
+  `ptr_store_zero` emulator tests.
+
+## [1.6.0] 2026-07-16
+
+### Added
+
+- **`c02-ld` IR object-file reader (OCaml).** The linker now deserializes the
+  frozen IR wire format (`c02-as/src/ir.h` + `ir-serial.c`, as emitted by the
+  frontend's `C02.Lowering.Serialize`) into native OCaml types. `bin/tac.ml`
+  ports the TAC/IR data model and its wire numbering; `bin/serializer.ml` is a
+  cursor-based reader covering the whole format — types, operands, the
+  fixed-shape ("fat") instruction record, blocks, CFGs, structs, globals,
+  registers, and externs — with magic/version enforcement up front. The reader
+  is a faithful transcription of the stream: instruction fields absent for a
+  given opcode are stored raw (empty string / `0` / `[]`) rather than modelled
+  as options — a lossless choice, since the wire never distinguished absent from
+  empty, so the raw form re-serializes to byte-identical output. Validated by
+  parsing all 69 `test/emu` objects with no desync (section counts match
+  `c02-as --dump-ir`).
+- **`c02-ld` cross-module linking (merge + symbol resolution).** Given several
+  `.o` inputs, `bin/link.ml` merges them into one module and resolves the symbol
+  namespace. Registers, globals, functions, and externs are keyed by name in one
+  symbol table (a single namespace per SPEC §7.2; structs are a separate
+  namespace), and a `combine` pass applies the linkage rules on each name
+  collision: identical registers dedup, globals follow the tentative-definition
+  rule (at most one initializer), duplicate function definitions and cross-kind
+  name clashes are rejected, and forward declarations are *resolved* — an
+  `extern` is matched to its definition (return type plus parameter *types*,
+  names ignored) and dropped, leaving only genuinely-unresolved externs in the
+  output for the code generator to satisfy (partial-link semantics). The linker
+  never requires a `main`: it always emits a relocatable object, which may be a
+  library. Verified end-to-end: cross-module resolution, signature-mismatch and
+  redefinition rejection, and a clean 69/69 single-module regression.
+- **`c02-ld` struct de-duplication.** Structs are their own namespace (not in the
+  symbol table), so merging is handled separately: `dedup_structs` folds the
+  concatenated struct list, keeping one copy when a repeated name has an identical
+  layout and rejecting a genuine conflict (same name, differing fields/size).
+  Field order is significant, so a reordered layout is treated as a conflict.
+- **`c02-ld` IR object-file writer + `-o` output.** The linker now re-serializes
+  the merged module back to the wire format, so its output is a real `.o` the code
+  generator consumes. `bin/serializer.ml` gains a `put_*` for every `read_*`
+  (types, operands, the fat instruction, blocks, CFGs, structs, globals,
+  registers, externs), built on OCaml's `Buffer`; the `tac_op` wire numbering is
+  driven by a single array so the read and write directions cannot drift apart.
+  `c02-ld -o out.o in.o …` writes the linked object. Validated: all 69 objects
+  round-trip idempotently (link, re-link, `cmp` — proving the writer inverts the
+  reader); `c02-as` accepts the output; 65/69 assemble to byte-identical ROMs
+  versus the un-linked pipeline, the other 4 differing only in function *order*
+  (which is layout-only — the reset stub calls `main` by label — and all 4 still
+  pass the emulator suite); and a real multi-file program (an LCD library split
+  into its own translation unit, referenced through forward declarations) links to
+  a correct, same-sized binary.
+- **`c02c` driver wires the linker into the pipeline, with `-c` library builds.**
+  The driver now runs the real three-stage pipeline (frontend → `c02-ld` →
+  `c02-as`): each source is compiled to a temp object, the objects are merged by
+  the linker (skipped when there is only one, which goes straight to codegen), and
+  the merged object is assembled to a ROM. `-c` stops after the link and writes the
+  merged object to the requested `-o`, so several sources compile into a single
+  reusable library object (a `decl fn` forward declaration in a client resolves
+  against it at final link). Temp objects are cleaned up on every exit path via a
+  `try/finally`. Verified: an LCD driver library split into its own translation
+  unit compiles under `-c` and links into a working program, and a real
+  library-plus-`main` round trip runs on the emulator.
+- **Entry-point (`main`) existence is enforced by the code generator.** Because
+  `c02-ld` only ever emits a relocatable object (which may be a library), the check
+  for a program entry point moved to `c02-as` — the one stage that produces an
+  executable and emits `jsr main`. `emit_call_main` now reports a clear
+  `program has no 'main' function` when no `main` is defined, rather than surfacing
+  it as an unresolved-symbol error. The analyzer still validates `main`'s
+  *signature* (`void`, no parameters) when it is defined; existence is a
+  whole-program property left to codegen (SPEC §7.4).
+- **OCaml/dune wired into the build and CI.** The root `make` builds `c02-ld`
+  through dune; CI provisions the OCaml toolchain via `ocaml/setup-ocaml`, and
+  the `c02-ld` Makefile wraps dune calls in `opam exec` so builds don't depend
+  on an active opam environment.
 
 ## [1.5.1] 2026-07-14
 

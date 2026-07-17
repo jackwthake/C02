@@ -68,7 +68,7 @@ lowerFunction genv f = T.Cfg
   { T.fnName      = funcName f
   , T.retType     = (funcReturnType f, funcReturnPtrDepth f)
   , T.params      = params f
-  , T.blocks      = [ T.Block { T.blockId = 0, T.instructions = allInstrs, T.successors = [] } ]
+  , T.blocks      = [ T.Block { T.blockId = 0, T.instructions = allInstrs } ]
   , T.nextTemp    = nextTemp finalSt
   , T.nextLabel   = nextLabel finalSt
   , T.isInterrupt = isInterrupt f

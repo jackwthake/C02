@@ -1,0 +1,3 @@
+DESC: an identical struct declared in two modules is deduplicated to one layout
+MODE: link
+IR_COUNT: struct Pt == 1

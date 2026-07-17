@@ -308,14 +308,25 @@ lowerStmt env _loop st (Assign lhs op rhs) =
         -- (populated only for lowering) is what tells the two apart, since both
         -- are 'VarSym' to the type system. Mirrors cc02's NODE_ASSIGN.
         Var name -> case Map.lookup name (registers env) of
+          -- Coerce the value to the register's own type first: codegen sizes a
+          -- store by its source operand, so an un-narrowed source (e.g. the
+          -- literal 0, typed void* per S-3.4) would store two bytes and clobber
+          -- the adjacent register.
           Just addr ->
-            ([(emptyInstr TacStore) { instrDst = OperandConstInt (U16, 0) addr, instrSrc1 = val }], st1)
+            let (val', coerceInstrs, st1') = widenIfNeeded st1 val (typeOf env lhs)
+            in (coerceInstrs ++ [(emptyInstr TacStore) { instrDst = OperandConstInt (U16, 0) addr, instrSrc1 = val' }], st1')
           Nothing ->
             let dst = OperandVar (typeOf env lhs) name
             in ([(emptyInstr TacCopy) { instrDst = dst, instrSrc1 = val }], st1)
+        -- Coerce the value to the pointee type for the same reason as the register
+        -- write above: TacStore is sized by its source operand, so `*p = 0` into a
+        -- u8 target must narrow the void*-typed literal 0 or it stores two bytes.
+        -- (TacFieldStore below is sized by the field's own width in codegen, so it
+        -- needs no such coercion.)
         Deref ptr ->
           let (ptrOp, ptrInstrs, st') = lowerExpr env st1 ptr
-          in (ptrInstrs ++ [(emptyInstr TacStore) { instrDst = ptrOp, instrSrc1 = val }], st')
+              (val', coerceInstrs, st'') = widenIfNeeded st' val (typeOf env lhs)
+          in (ptrInstrs ++ coerceInstrs ++ [(emptyInstr TacStore) { instrDst = ptrOp, instrSrc1 = val' }], st'')
         Field base fname ->
           let (baseOp, baseInstrs, st') = lowerExpr env st1 base
           in (baseInstrs ++ [(emptyInstr TacFieldStore) { instrDst = baseOp, instrSrc1 = val, instrFieldName = Just fname }], st')

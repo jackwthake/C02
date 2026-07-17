@@ -1,0 +1,3 @@
+DESC: the same struct name with a different layout in two modules is rejected
+MODE: reject
+STDERR: Struct: Pt redeclaration

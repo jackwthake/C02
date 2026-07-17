@@ -3,7 +3,9 @@
 *.o
 *.vsix
 .vscode
-bin/
+/bin/
+/lib/
+/scratchpad/
 *.out
 *.bin
 *.d
@@ -17,3 +19,6 @@ dist/
 cabal.project.local
 cabal.project.local~
 *.hi
+
+#Ocaml
+_build

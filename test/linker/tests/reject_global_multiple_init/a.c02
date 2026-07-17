@@ -1,0 +1,3 @@
+u8 g = 5;
+reg u8 PORTB @ 0x6000;
+fn main() -> void { PORTB = g; }
