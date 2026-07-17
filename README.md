@@ -27,34 +27,38 @@
 
 C02 compiles through a small pipeline of standalone tools, wired together by the `c02c` driver:
 
-1. **`c02-frontend`** (Haskell) — tokenizer, recursive-descent parser, lexically-scoped semantic analyzer, and IR generator. Lowers `.c02` source into a self-contained three-address-code (TAC) intermediate representation — struct layouts with computed field offsets, globals/registers with hardware addresses baked in, and one flat instruction stream per function — then serializes it to a `.o` object. Incremental compilation (`-c`) stops here.
-2. **`c02-as`** (C) — the code generator. Consumes a `.o` IR object and emits a 32 KB 65C02 ROM: bootstrap runtime, interrupt vectors, and flat zero-page allocation of locals, temporaries, and parameters (no slow stack-machine execution). Globals live in RAM (`$0200+`) and are initialized before `JSR main`; string literals go in a ROM data section with backpatch fixups. Every emit path is bounds-checked against the 32 KB limit, so overflow is a clear diagnostic rather than silent corruption.
-3. **`c02c`** — the driver that runs the frontend, then `c02-as`, managing intermediate `.o` files. This is the command you normally invoke.
-4. **`c02-objdump`** (Rust) — disassembler. Decodes a compiled `.bin` back into annotated 65C02 assembly, resolving jump targets to named labels, with section-aware output (`.text` / `.data`), hex dumps, and ROM usage summaries. See [c02-objdump](c02-objdump/).
+1. **`c02-frontend`** (Haskell) — tokenizer, recursive-descent parser, lexically-scoped semantic analyzer, and IR generator. Lowers `.c02` source into a self-contained three-address-code (TAC) intermediate representation — struct layouts with computed field offsets, globals/registers with hardware addresses baked in, and one flat instruction stream per function — then serializes it to a `.o` object, one per translation unit.
+2. **`c02-ld`** (OCaml) — the linker. Merges one or more `.o` objects into a single relocatable object and resolves the symbol namespace: it binds cross-module references (a `decl` forward declaration in one file to its definition in another), de-duplicates identical `reg` and `struct` declarations, applies the tentative-definition rule to globals, and rejects genuine conflicts (duplicate definitions, signature/type mismatches, namespace collisions). It never requires a `main`, so a merged object may be a library. Incremental compilation (`-c`) stops here, emitting the merged object.
+3. **`c02-as`** (C) — the code generator. Consumes the linked `.o` IR object and emits a 32 KB 65C02 ROM: bootstrap runtime, interrupt vectors, and flat zero-page allocation of locals, temporaries, and parameters (no slow stack-machine execution). Globals live in RAM (`$0200+`) and are initialized before `JSR main`; string literals go in a ROM data section with backpatch fixups. Every emit path is bounds-checked against the 32 KB limit, so overflow is a clear diagnostic rather than silent corruption.
+4. **`c02c`** — the driver that runs the frontend on each source, then `c02-ld`, then `c02-as`, managing intermediate `.o` files. This is the command you normally invoke.
+5. **`c02-objdump`** (Rust) — disassembler. Decodes a compiled `.bin` back into annotated 65C02 assembly, resolving jump targets to named labels, with section-aware output (`.text` / `.data`), hex dumps, and ROM usage summaries. See [c02-objdump](c02-objdump/).
 
 The function-call ABI passes up to 8 parameters through a fixed 2-byte-per-param zero-page zone (`$EF–$FE`); a callee-saves convention (PHA/PLA over the ZP slots) preserves caller locals across calls and enables bounded recursion. Compiler implicit globals (`__heap_start`, `__memory_top`) are injected automatically.
 
 ## Current Status & Limitations
 
-This repository is a rewrite: the frontend (`c02-frontend`) is Haskell, replacing the original C compiler — which still ships as `bin/cc02` for reference. The toolchain builds non-trivial programs end-to-end — `.c02` source compiles to valid 32 KB 65C02 ROMs — verified by the emulator test suite under [`test/emu`](test/emu) (py65). See the [CHANGELOG](CHANGELOG.md) for the current version.
-
-The single-file language is broadly in place: data movement and hardware-register I/O; `if`/`else`, `while`, `for`, `break`/`continue`; arithmetic, bitwise, shift, and comparison operators across `u8`/`i8`/`u16`/`i16` (multiply/divide via `__mul8`/`__div8`/`__mul16`/`__div16` software routines); pointers (`&`, `*`, `ptr ± int`), type casts, structs and field access, globals, string literals, and function calls with recursion. [`docs/SPEC.md`](docs/SPEC.md) is the **normative** definition of the language and its exact semantics; [`docs/DEVIATIONS_hs_impl.md`](docs/DEVIATIONS_hs_impl.md) records where this implementation currently diverges from it (it is generally *stricter* than the original).
+The language is broadly in place: data movement and hardware-register I/O; `if`/`else`, `while`, `for`, `break`/`continue`; arithmetic, bitwise, shift, and comparison operators across `u8`/`i8`/`u16`/`i16` (multiply/divide via `__mul8`/`__div8`/`__mul16`/`__div16` software routines); pointers (`&`, `*`, `ptr ± int`), type casts, structs and field access, globals, string literals, and function calls with recursion. [`docs/SPEC.md`](docs/SPEC.md) is the **normative** definition of the language and its exact semantics; [`docs/DEVIATIONS_hs_impl.md`](docs/DEVIATIONS_hs_impl.md) records where this implementation currently diverges from it (it is generally *stricter* than the original).
 
 Not yet implemented: **arrays** (use pointer arithmetic, `*(ptr + i)`, in the meantime) and **compound bitwise/shift assignment** (`&=`, `|=`, `^=`, `<<=`, `>>=` — the arithmetic forms `+= -= *= /= %=` work).
 
-If you're exploring the codebase, the two stages live in [`c02-frontend/`](c02-frontend/) (Haskell) and [`c02-as/`](c02-as/) (C, the code generator). Issues and PRs are welcome.
+If you're exploring the codebase, the stages live in [`c02-frontend/`](c02-frontend/) (Haskell), [`c02-ld/`](c02-ld/) (OCaml, the linker), and [`c02-as/`](c02-as/) (C, the code generator). Issues and PRs are welcome.
 
 ## Toolchain Usage
 
 ### Compiling the Toolchain
 
-The three stages need a C compiler (`c02-as`), GHC + Cabal (the Haskell `c02-frontend`), and Rust (`c02-objdump`); Python 3 drives `c02c` and the tests.
+The four stages need a C compiler (`c02-as`), GHC + Cabal (the Haskell `c02-frontend`), OCaml + dune (the `c02-ld` linker), and Rust (`c02-objdump`); Python 3 drives `c02c` and the tests.
 
 ```shell
 sudo apt install build-essential curl python3 python3-pip -y
 
 # GHC + Cabal for the Haskell frontend (ghcup is the usual installer)
 curl --proto '=https' --tlsv1.2 -sSf https://get-ghcup.haskell.org | sh
+
+# OCaml + dune for the linker (c02-ld); opam ships the compiler
+sudo apt install opam -y
+opam init -y && eval $(opam env)
+opam install dune -y
 
 # Rust, for c02-objdump
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
@@ -81,17 +85,21 @@ c02c [OPTIONS] <FILE>...
 - `<FILE>`:            Input file(s) — `.c02` source and/or `.o` IR objects
 - `-h, --help`:        Show help message
 - `-o, --output`:      Output path (default `a.out`)
-- `-c`:                Incremental compile — stop after the frontend and emit a `.o` IR object
+- `-c`:                Compile and link to a relocatable `.o` object (a partial link — no `main` required) instead of a full ROM
 - `--parse-only`:      Check syntax only, produce no output
 - `--dump-ast`:        Print the AST after parsing (no output file)
 - `--dump-ir`:         Print the IR (TAC) the code generator consumes (no output file)
 - `--strip-debug`:     Omit the `C02S` symbol table from the final ROM
 
-**Incremental compilation:**
+**Separate compilation and linking:**
+
+Pass several sources and/or `.o` objects and `c02c` compiles each source, then links everything into one output. A `.c02` references a symbol defined in another file with a `decl` forward declaration (`decl fn f(u8 x) -> void;`, `decl u8 counter;`).
 
 ```bash
-c02c -c hello_world.c02 -o hello_world.o   # compile to an IR object
-c02c --dump-ir hello_world.c02             # inspect the IR before codegen
+c02c -c util.c02 -o util.o             # compile + partial-link to a relocatable object
+c02c main.c02 util.o -o program.bin    # link that object into a full ROM
+c02c main.c02 util.c02 -o program.bin  # or compile and link several sources at once
+c02c --dump-ir main.c02 util.c02       # inspect the linked IR before codegen
 ```
 
 ---
