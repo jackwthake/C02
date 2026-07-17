@@ -1,0 +1,3 @@
+DESC: an identical register declared in two modules is deduplicated to one entry
+MODE: link
+IR_COUNT: reg u8 PORTB @ 0x6000 == 1

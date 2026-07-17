@@ -1,4 +1,4 @@
-.PHONY: all clean c02-frontend c02-ld c02-as c02-objdump emu-test
+.PHONY: all clean c02-frontend c02-ld c02-as c02-objdump emu-test linker-test
 
 BIN_DIR = bin
 LIB_DIR = lib
@@ -11,6 +11,10 @@ all: $(BIN_DIR)/c02c c02-frontend c02-ld c02-as c02-objdump lib/libc02.o
 emu-test: all
 	@printf '\n==> emu-test\n'
 	@python3 test/emu/run.py --no-build
+
+linker-test: all
+	@printf '\n==> linker-test\n'
+	@python3 test/linker/run.py
 
 # Install the driver script alongside the binaries it invokes.
 $(BIN_DIR)/c02c: scripts/c02c.py | $(BIN_DIR)

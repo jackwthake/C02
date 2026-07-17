@@ -1,0 +1,4 @@
+struct Pt { u8 x; }
+reg u8 PORTB @ 0x6000;
+decl fn side() -> u8;
+fn main() -> void { Pt p; p.x = 5; PORTB = side(); }

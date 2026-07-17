@@ -1,0 +1,3 @@
+fn helper() -> u8 {
+  return 7;
+}

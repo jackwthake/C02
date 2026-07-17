@@ -1,0 +1,2 @@
+reg u8 X @ 0x6001;
+fn s() -> u8 { return 1; }

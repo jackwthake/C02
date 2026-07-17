@@ -1,0 +1,3 @@
+DESC: two decls of the same name with different signatures (neither defined) conflict
+MODE: reject
+STDERR: Conflicting externs

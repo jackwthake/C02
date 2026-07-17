@@ -1,0 +1,2 @@
+struct Pt { u8 x; u8 y; }
+fn side() -> u8 { Pt q; q.y = 9; return q.y; }

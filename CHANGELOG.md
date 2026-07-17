@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/) - while
 the project is in `0.x`, breaking changes may land in MINOR releases; PATCH
 releases are reserved for bug fixes only.
 
+## [1.6.2] 2026-07-16
+
+### Added
+
+- **Linker test suite (`test/linker/`).** 19 cases exercising `c02-ld`'s
+  cross-module merge and symbol resolution, driven end-to-end through the
+  `bin/c02c` driver. `test/linker/run.py` discovers one directory per case
+  (`.c02` module sources plus a `spec` of directives) and checks three kinds of
+  outcome: `run` cases link into a whole program that is executed in the py65
+  emulator (reusing `test/emu`'s `run_rom`) and asserted on final machine state;
+  `link` cases assert on the merged IR via `--dump-ir` (de-dup collapse, a
+  resolved extern being dropped, an unresolved extern surviving a partial link);
+  and `reject` cases assert that linking fails with a specific diagnostic — one
+  per `failwith` site in `link.ml`'s `combine`/`dedup_structs` (duplicate
+  function, conflicting externs, signature/type mismatch, function-vs-variable
+  and variable-vs-register kind clashes, conflicting registers, multiple global
+  initializers, conflicting global types, cross-kind collision, struct
+  redeclaration). Modules reference each other with the `decl` keyword (SPEC
+  §4.6). `make linker-test` runs it. Every rejection branch was first confirmed
+  reachable from valid single-file source, so the suite needs no hand-built
+  object fixtures.
+
 ## [1.6.1] 2026-07-16
 
 ### Fixed

@@ -1,0 +1,3 @@
+DESC: two modules that both define the same function are rejected
+MODE: reject
+STDERR: Redefined function: foo

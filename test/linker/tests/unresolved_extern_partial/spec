@@ -1,0 +1,4 @@
+DESC: an unresolved extern survives a partial link (-c) for a later stage to satisfy
+MODE: link
+PARTIAL: yes
+IR_PRESENT: Externs

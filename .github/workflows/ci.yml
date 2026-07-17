@@ -49,6 +49,7 @@ jobs:
         run: |
          python3 scripts/test.py
          make emu-test
+         make linker-test
       
       - name: LOC Report
         run: python3 scripts/loc.py
