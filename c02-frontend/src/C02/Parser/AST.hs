@@ -56,10 +56,9 @@ data TopLevelDecl = GlobalVarDecl VarDecl
                   | FwdFuncDecl   FuncDecl
                   | FwdVarDecl    VarDecl
                   | StructDef     StructDecl
-                  | IncludeStmt   InclStmt
                   deriving (Show, Eq)
 
-data Program = TopLevels [ Loc TopLevelDecl ] deriving Show
+data Program = Program [Loc InclStmt] [Loc TopLevelDecl] deriving Show
 
 --                Type      Ptr Depth   Name
 type NamedType = (BaseType, Int,        String)

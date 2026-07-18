@@ -396,24 +396,26 @@ includeParser = do
   return (InclStmt path)
 
 -- Parse a single top level item
-topLevelParser :: Parser TopLevelDecl
+topLevelParser :: Parser (Either InclStmt TopLevelDecl)
 topLevelParser = choice
-  [ IncludeStmt   <$> includeParser 
-  , StructDef     <$> structDeclParser
-  , RegisterDecl  <$> regDeclParser
-  , GlobalVarDecl <$> varDeclParser <* symbol ";"
-  , FunctionDecl  <$> funcDeclParser
-  , fwdDeclParser
-  ]
+   [ Left                   <$> includeParser
+   , Right . StructDef      <$> structDeclParser
+   , Right . RegisterDecl   <$> regDeclParser
+   , Right . GlobalVarDecl  <$> varDeclParser <* symbol ";"
+   , Right . FunctionDecl   <$> funcDeclParser
+   , Right                  <$> fwdDeclParser
+   ]
 
 
 -- Parse a program
 programParser :: Parser Program
 programParser = do
-  sc                            -- eat any leading whitespace/comments before the first token
-  decls <- many (located topLevelParser)  -- each top-level decl tagged with its offset
-  eof                           -- fail if anything is left unconsumed
-  return (TopLevels decls)
+   sc                            -- eat any leading whitespace/comments before the first token
+   decls <- many (located topLevelParser)  -- each top-level decl tagged with its offset
+   eof                           -- fail if anything is left unconsumed
+   let incls = [Loc off incl | Loc off (Left incl) <- decls]
+       tops  = [Loc off top  | Loc off (Right top)  <- decls]
+   return (Program incls tops)
 
 
 -- Whole-file, scope-blind prescan for struct type names (SPEC 6.6). Walks the

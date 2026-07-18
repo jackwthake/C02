@@ -51,7 +51,7 @@ data StructSite = StructSite
 -- can only be a var-decl or expression, never a struct decl, so it's not
 -- walked here).
 collectStructSites :: Program -> [StructSite]
-collectStructSites (TopLevels decls) = concatMap top decls
+collectStructSites (Program _ decls) = concatMap top decls
   where
     top (Loc off (StructDef s))    = [StructSite off True s]
     top (Loc _   (FunctionDecl f)) = concatMap stmt (bodyOf f)

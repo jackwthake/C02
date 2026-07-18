@@ -70,7 +70,7 @@ type Analyze = ReaderT Ctx (Writer [Diag])
 -- the list is by pass (pass-1 redeclarations, then top-level validation, then
 -- missing-main, then pass 2); the renderer sorts the located ones by offset.
 analyze :: Program -> [Diag]
-analyze prog@(TopLevels decls) = p1errs ++ layoutErrs ++ execWriter (runReaderT walk ctx0)
+analyze prog@(Program _ decls) = p1errs ++ layoutErrs ++ execWriter (runReaderT walk ctx0)
   where
     (globalScope, structs, p1errs) = buildGlobals decls
     -- The offsets/sizes in the layout map aren't needed here — its
@@ -234,7 +234,6 @@ buildGlobals = go Map.empty Map.empty Set.empty []
     classify (FunctionDecl f)  = (funcName f, Just (funcSym f), Nothing)
     classify (FwdFuncDecl f)   = (funcName f, Just (funcSym f), Nothing)
     classify (StructDef s)     = (structName s, Nothing, Just (structFields s))
-    classify (IncludeStmt _)   = error "classify: IncludeStmt reached the analyzer (resolveIncludes should strip all includes first)"
 
     funcSym f = FuncSym (funcReturnType f, funcReturnPtrDepth f)
                         [ (bt, depth) | (bt, depth, _) <- params f ]
@@ -247,7 +246,6 @@ buildGlobals = go Map.empty Map.empty Set.empty []
 validateTopLevel :: [Loc TopLevelDecl] -> Analyze ()
 validateTopLevel = mapM_ (\(Loc off d) -> withOffset off (one d))
   where
-    one (IncludeStmt _) = error "validateTopLevel: IncludeStmt reached the analyzer (resolveIncludes should strip all includes first)"
     one (GlobalVarDecl v) = do
       ok <- checkDeclType (declName v) (varType v, ptrDepth v)
       forM_ (declInit v) $ \e -> do

@@ -12,18 +12,22 @@ releases are reserved for bug fixes only.
 - Added char literal to parser, 'a' now gets translated to its ascii value in that case, 97. 
 - **`include "path"` file inclusion.** A pre-analysis resolution pass
   (`C02.Analyzer.Includes.resolveIncludes`) runs in the frontend driver between
-  parsing and semantic analysis, replacing each `include` statement with the
-  top-level declarations of the named file, resolved recursively. Paths resolve
-  relative to the including file's directory. A visited-set gives automatic
-  `#pragma once` de-duplication on diamond includes and makes cyclic includes
-  terminate rather than loop. Parse errors in an included file, and missing or
-  unreadable headers, are reported in the standard diagnostic bundle format
-  (`file:line:col` with a caret). Intended for `.c02h` headers carrying forward
-  declarations, with definitions supplied by other objects at link time. Known
-  limitation: semantic diagnostics that originate *inside* an included file are
-  still rendered against the root source — per-file span tracking is not yet
-  threaded through the spliced AST, so the reported file/line for those can be
-  wrong.
+  parsing and semantic analysis, expanding each `include` into the top-level
+  declarations of the named file (resolved recursively) and splicing them ahead
+  of the including file's own declarations, so a header's forward declarations
+  and struct definitions precede the code that uses them. Includes are parsed
+  into a separate list on the `Program` AST node rather than a `TopLevelDecl`
+  variant, so a resolved program's declarations cannot represent an include and
+  the analyzer never sees one. Paths resolve relative to the including file's
+  directory. A visited-set gives automatic `#pragma once` de-duplication on
+  diamond includes and makes cyclic includes terminate rather than loop. Parse
+  errors in an included file, and missing or unreadable headers, are reported in
+  the standard diagnostic bundle format (`file:line:col` with a caret). Intended
+  for `.c02h` headers carrying forward declarations, with definitions supplied by
+  other objects at link time. Known limitation: semantic diagnostics that
+  originate *inside* an included file are still rendered against the root
+  source — per-file span tracking is not yet threaded through the spliced AST, so
+  the reported file/line for those can be wrong.
 
 ## [1.6.2] 2026-07-16
 
