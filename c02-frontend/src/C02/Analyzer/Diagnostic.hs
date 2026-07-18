@@ -8,7 +8,7 @@ module C02.Analyzer.Diagnostic
   , render
   ) where
 
-import C02.Parser.AST (BaseType(..))
+import C02.Parser.AST (BaseType(..), Pos(..))
 
 -- | A resolved type spelled out as (kind, pointer depth). This is the same shape
 -- as @C02.Analyzer.Types.Ty@, respelled here because that module imports this
@@ -39,12 +39,12 @@ data Diagnostic
 
 
 -- | A diagnostic paired with where (if anywhere) it points. 'At' carries the
--- source byte offset of the statement/declaration it arose in, for a
--- @file:line:col@ + caret render; 'Free' is a whole-translation-unit diagnostic
+-- source 'Pos' (file + byte offset) of the statement/declaration it arose in, for
+-- a @file:line:col@ + caret render; 'Free' is a whole-translation-unit diagnostic
 -- with no meaningful span, rendered as a plain line. No diagnostic currently
 -- produces one (kept for future whole-translation-unit diagnostics).
 data Diag
-  = At !Int Diagnostic
+  = At !Pos Diagnostic
   | Free Diagnostic
   deriving (Show, Eq)
 

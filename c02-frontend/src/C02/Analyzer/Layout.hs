@@ -39,7 +39,7 @@ data StructLayout = StructLayout
 -- | One struct declaration's position in the whole-program source order:
 -- top-level ('siteTopLevel' 'True') or nested in a function body.
 data StructSite = StructSite
-  { siteOffset   :: Int
+  { siteOffset   :: Pos
   , siteTopLevel :: Bool
   , siteDecl     :: StructDecl
   }

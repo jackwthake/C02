@@ -18,21 +18,35 @@ module C02.Parser.AST
   , StructDecl(..)
   , FuncDecl(..)
   , InclStmt(..)
+  , Pos(..)
   , Loc(..)
+  , locPos
   , locOffset
   , unLoc
   ) where
 
--- | A value tagged with the byte offset of its first token in the source. Used
--- only at statement and top-level-declaration granularity, so semantic
--- diagnostics can report @file:line:col@ (the analyzer threads the offset; the
--- renderer turns it into a position). Deliberately __transparent__ in both 'Show'
--- and 'Eq' — the wrapper prints and compares as its payload alone — so the
--- parser's AST-dump goldens are unaffected by the added positions.
-data Loc a = Loc !Int a
+-- | A source position: the file a node came from plus the byte offset of its
+-- first token within that file. Both are needed because include resolution
+-- splices declarations from several files into one program, so an offset alone
+-- can't be resolved back to a line without knowing which file's text it indexes.
+-- The 'FilePath' is stamped once per file by the parser and shared by every node
+-- in that file, so carrying it inline costs one reference per file, not per node.
+data Pos = Pos !FilePath !Int
+  deriving (Show, Eq)
+
+-- | A value tagged with the source position of its first token. Used only at
+-- statement and top-level-declaration granularity, so semantic diagnostics can
+-- report @file:line:col@ (the analyzer threads the 'Pos'; the renderer turns it
+-- into a line/column against that file's source). Deliberately __transparent__ in
+-- both 'Show' and 'Eq' — the wrapper prints and compares as its payload alone —
+-- so the parser's AST-dump goldens are unaffected by the embedded positions.
+data Loc a = Loc !Pos a
+
+locPos :: Loc a -> Pos
+locPos (Loc p _) = p
 
 locOffset :: Loc a -> Int
-locOffset (Loc off _) = off
+locOffset (Loc (Pos _ off) _) = off
 
 unLoc :: Loc a -> a
 unLoc (Loc _ a) = a

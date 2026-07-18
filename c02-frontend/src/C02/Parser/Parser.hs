@@ -27,7 +27,7 @@ import C02.Parser.Lexer
 -- statement/decl's position lands on its first token. Used only at statement and
 -- top-level granularity (see 'Loc').
 located :: Parser a -> Parser (Loc a)
-located p = Loc <$> getOffset <*> p
+located p = Loc <$> (Pos <$> asks envFile <*> getOffset) <*> p
 
 
 -- Left-factored: parse the identifier once, then decide on what follows.
@@ -280,7 +280,7 @@ baseTypeParser = choice   -- try each variant in order
 structTypeParser :: Parser BaseType
 structTypeParser = try $ do
   name  <- lexeme identifier
-  known <- asks (Set.member name)
+  known <- asks (Set.member name . envStructNames)
   if known then return (StructName name)
            else fail ("`" ++ name ++ "` is not a struct type")
 
@@ -426,7 +426,7 @@ programParser = do
 prescanStructNames :: String -> Set String
 prescanStructNames src =
   -- run with an empty env: the prescan never consults the set it helps build
-  Set.fromList (either (const []) id (parse (runReaderT (sc *> go) Set.empty) "" src))
+  Set.fromList (either (const []) id (parse (runReaderT (sc *> go) (ParserEnv Set.empty "")) "" src))
   where
     go :: Parser [String]
     go = choice
@@ -448,4 +448,4 @@ prescanStructNames src =
 -- (SPEC 6.6) and threads the resulting set through the parser as its environment.
 parseProgram :: FilePath -> String -> Either (ParseErrorBundle String Void) Program
 parseProgram path src =
-  parse (runReaderT programParser (prescanStructNames src)) path src
+  parse (runReaderT programParser (ParserEnv (prescanStructNames src) path)) path src

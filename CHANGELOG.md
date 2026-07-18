@@ -24,10 +24,18 @@ releases are reserved for bug fixes only.
   errors in an included file, and missing or unreadable headers, are reported in
   the standard diagnostic bundle format (`file:line:col` with a caret). Intended
   for `.c02h` headers carrying forward declarations, with definitions supplied by
-  other objects at link time. Known limitation: semantic diagnostics that
-  originate *inside* an included file are still rendered against the root
-  source — per-file span tracking is not yet threaded through the spliced AST, so
-  the reported file/line for those can be wrong.
+  other objects at link time.
+- **Per-file source spans for diagnostics across includes.** `Loc` now carries a
+  `Pos` (file path + byte offset) instead of a bare offset, stamped once per file
+  by the parser and shared by every node in that file. The include resolver
+  retains each file's source text alongside the flattened program, and the
+  diagnostic renderer groups located diagnostics by file — one `errorBundlePretty`
+  bundle per file, rendered against that file's own source. A semantic error that
+  originates *inside* an included header is now reported against the header's
+  `file:line:col` with the header's source line and caret, rather than being
+  mis-rendered against the root source. AST-dump goldens are unaffected: `Loc`
+  stays transparent in `Show`/`Eq`, so the embedded `Pos` neither prints nor
+  participates in equality.
 
 ## [1.6.2] 2026-07-16
 

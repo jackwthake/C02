@@ -60,7 +60,7 @@ data Ctx = Ctx
                                             -- type still goes through 'ctxStructs' and stays order-sensitive
   , ctxReturn     :: Ty                     -- enclosing function's return type
   , ctxLoopDepth  :: Int                    -- break/continue legal iff > 0
-  , ctxOffset     :: Int                    -- source offset of the current stmt/decl
+  , ctxOffset     :: Pos                    -- source position of the current stmt/decl
   }
 
 type Analyze = ReaderT Ctx (Writer [Diag])
@@ -84,7 +84,10 @@ analyze prog@(Program _ decls) = p1errs ++ layoutErrs ++ execWriter (runReaderT 
                , ctxAllStructs = Map.keysSet allLayouts
                , ctxReturn     = (Void, 0)
                , ctxLoopDepth  = 0
-               , ctxOffset     = 0 }
+               -- Sentinel only: every diagnostic is emitted inside a 'withOffset'
+               -- that overrides this with the real stmt/decl 'Pos', so it is never
+               -- rendered. (No file, offset 0.)
+               , ctxOffset     = Pos "" 0 }
     walk = do
       validateTopLevel decls
       checkMain decls
@@ -102,7 +105,7 @@ emit d = do
   tell [At off d]
 
 -- | Run a sub-walk with the current offset set to a statement/declaration's.
-withOffset :: Int -> Analyze a -> Analyze a
+withOffset :: Pos -> Analyze a -> Analyze a
 withOffset off = local (\c -> c { ctxOffset = off })
 
 -- | Flatten the scope stack into the 'Env' the pure typer consumes. Shadowing is
@@ -184,7 +187,7 @@ checkShadowRedecl name = do
 -- in scope. This is the "scope is 'local'" idiom: the binding is visible for
 -- exactly @k@ (the rest of the block) and vanishes when @k@ returns. The
 -- declaration's own checks run under @off@; @k@ sets its own statements' offsets.
-declLocal :: Int -> VarDecl -> Analyze a -> Analyze a
+declLocal :: Pos -> VarDecl -> Analyze a -> Analyze a
 declLocal off vd k = do
   let ty   = (varType vd, ptrDepth vd)
       name = declName vd
@@ -346,7 +349,7 @@ analyzeBlock (Loc off s : rest)                   = withOffset off (analyzeStmt 
 -- forward-reference-tolerant symbol table". Only by-value CONTAINMENT
 -- ordering is checked (top-level only, ERR_INCOMPLETE_STRUCT_FIELD via
 -- 'C02.Analyzer.Layout') — this is a plain "does the name exist" check.
-declLocalStruct :: Int -> StructDecl -> Analyze a -> Analyze a
+declLocalStruct :: Pos -> StructDecl -> Analyze a -> Analyze a
 declLocalStruct off sd k = do
   let checkFieldType = checkDeclTypeWith (\sn -> asks (Set.member sn . ctxAllStructs))
   withOffset off $ forM_ (structFields sd) $ \(bt, d, nm) -> void $ checkFieldType nm (bt, d)
