@@ -27,6 +27,7 @@ import Text.Megaparsec
   , ParseErrorBundle(..), ParseError(FancyError), ErrorFancy(ErrorFail)
   , PosState(..), initialPos, defaultTabWidth )
 import C02.Parser.Parser (parseProgram)
+import C02.Analyzer.Includes (resolveIncludes)
 import C02.Analyzer.Analyze (analyze)
 import C02.Analyzer.Diagnostic (Diag(..), Diagnostic, render)
 import C02.Lowering.Module (lowerModule)
@@ -61,9 +62,13 @@ main = do
           -- (parser stage: no analysis, since its fixtures aren't whole programs);
           -- otherwise analysis runs and a clean pass emits the IR object.
           | parseOnly -> if dumpAST then print prog else pure ()
-          | otherwise -> case analyze prog of
-              []    -> if dumpAST then print prog else writeOutput prog outPath
-              diags -> hPutStr stderr (renderDiags path src diags) >> exitFailure
+          | otherwise -> do
+              resolved <- resolveIncludes path prog
+              case resolved of
+                Left err           -> hPutStr stderr (errorBundlePretty err) >> exitFailure
+                Right resolvedProg -> case analyze resolvedProg of
+                  []    -> if dumpAST then print resolvedProg else writeOutput resolvedProg outPath
+                  diags -> hPutStr stderr (renderDiags path src diags) >> exitFailure
     _ -> hPutStrLn stderr "usage: c02-frontend [--parse-only] [-o <out.o>] <file.c02>" >> exitFailure
 
 

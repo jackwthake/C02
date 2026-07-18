@@ -56,6 +56,7 @@ buildGlobalEnv decls = Env
       FunctionDecl f  -> [(funcName f, funcSym f)]
       FwdFuncDecl f   -> [(funcName f, funcSym f)]
       StructDef _     -> []
+      IncludeStmt _   -> error "buildGLobalEnv: Include node made it to lowering (resolveIncludes should strip all includes first)"
     funcSym f = FuncSym (funcReturnType f, funcReturnPtrDepth f)
                         [ (bt, d) | (bt, d, _) <- params f ]
 

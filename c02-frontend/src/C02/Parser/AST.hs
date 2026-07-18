@@ -17,6 +17,7 @@ module C02.Parser.AST
   , RegDecl(..)
   , StructDecl(..)
   , FuncDecl(..)
+  , InclStmt(..)
   , Loc(..)
   , locOffset
   , unLoc
@@ -55,6 +56,7 @@ data TopLevelDecl = GlobalVarDecl VarDecl
                   | FwdFuncDecl   FuncDecl
                   | FwdVarDecl    VarDecl
                   | StructDef     StructDecl
+                  | IncludeStmt   InclStmt
                   deriving (Show, Eq)
 
 data Program = TopLevels [ Loc TopLevelDecl ] deriving Show
@@ -110,6 +112,8 @@ data Stmt = LocVarDecl  VarDecl                                                -
           | Continue                                                           -- continue ;
           deriving (Show, Eq)
 
+data InclStmt = InclStmt
+  { includePath :: String } deriving (Show, Eq)
 
 data VarDecl = VarDecl
   { varType  :: BaseType

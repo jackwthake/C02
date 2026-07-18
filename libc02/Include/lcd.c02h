@@ -1,0 +1,15 @@
+/*
+ * LCD driver for 1602A 16x2 Character Display
+ *
+ * PORTB = LCD data lines
+ * PORTA = top 3 bits for control lines, PA7 = enable, PA6 = read/write, PA6 = register select
+*/
+
+// Init the LCD in a blank state, no cursor
+decl fn lcd_init() -> void;
+
+// Send a command to the LCD
+decl fn lcd_send_command(u8 cmd) -> void;
+
+// Put a character on the LCD
+decl fn lcd_putc(u8 ch) -> void;

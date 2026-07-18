@@ -388,11 +388,18 @@ fwdDeclParser = do
            }
     ]
 
+includeParser :: Parser InclStmt
+includeParser = do
+  _    <- keyword "include"
+  path <- stringLiteralParser
+  _    <- symbol ";"
+  return (InclStmt path)
 
 -- Parse a single top level item
 topLevelParser :: Parser TopLevelDecl
 topLevelParser = choice
-  [ StructDef     <$> structDeclParser
+  [ IncludeStmt   <$> includeParser 
+  , StructDef     <$> structDeclParser
   , RegisterDecl  <$> regDeclParser
   , GlobalVarDecl <$> varDeclParser <* symbol ";"
   , FunctionDecl  <$> funcDeclParser
