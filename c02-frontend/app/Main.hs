@@ -15,7 +15,7 @@
 -- chained in here.
 module Main (main) where
 
-import Data.List (isPrefixOf, partition, sortOn)
+import Data.List (isPrefixOf, partition, sortOn, stripPrefix)
 import qualified Data.List.NonEmpty as NE
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -48,10 +48,11 @@ writeOutput p fp =
 main :: IO ()
 main = do
   args <- getArgs
-  let (flags, rest)    = partition ("--" `isPrefixOf`) args
-      parseOnly        = "--parse-only" `elem` flags
-      dumpAST          = "--dump-ast" `elem` flags
-      (outPath, files) = extractOutput rest
+  let (flags, rest0)      = partition ("--" `isPrefixOf`) args
+      parseOnly           = "--parse-only" `elem` flags
+      dumpAST             = "--dump-ast" `elem` flags
+      (includeDirs, rest) = extractIncludeDirs rest0
+      (outPath, files)    = extractOutput rest
   case files of
     [path] -> do
       src <- readFile path
@@ -65,7 +66,7 @@ main = do
           -- otherwise analysis runs and a clean pass emits the IR object.
           | parseOnly -> if dumpAST then print prog else pure ()
           | otherwise -> do
-              resolved <- resolveIncludes path prog
+              resolved <- resolveIncludes path includeDirs prog
               case resolved of
                 Left err                    -> hPutStr stderr (errorBundlePretty err) >> exitFailure
                 Right (resolvedProg, srcs)  -> case analyze resolvedProg of
@@ -74,7 +75,7 @@ main = do
                   -- records files it read); add it so the renderer can show root
                   -- diagnostics too.
                   diags -> hPutStr stderr (renderDiags path (Map.insert path src srcs) diags) >> exitFailure
-    _ -> hPutStrLn stderr "usage: c02-frontend [--parse-only] [-o <out.o>] <file.c02>" >> exitFailure
+    _ -> hPutStrLn stderr "usage: c02-frontend [--parse-only] [-I <dir>]... [-o <out.o>] <file.c02>" >> exitFailure
 
 
 -- | Pull an optional @-o <path>@ out of the arguments, defaulting to @a.o@.
@@ -82,6 +83,23 @@ extractOutput :: [String] -> (FilePath, [String])
 extractOutput args = case break (== "-o") args of
   (before, "-o" : path : after) -> (path, before ++ after)
   _                             -> ("a.o", args)
+
+
+-- | Pull every @-I@ header search directory out of the arguments, preserving
+-- order (search precedence). Both the joined form @-Idir@ and the separated form
+-- @-I dir@ are accepted, matching the C compiler convention; a dangling @-I@ with
+-- no following directory is ignored. Returns the directories and the remaining
+-- arguments.
+extractIncludeDirs :: [String] -> ([FilePath], [String])
+extractIncludeDirs = go [] []
+  where
+    go dirs rest [] = (reverse dirs, reverse rest)
+    go dirs rest (a : as)
+      | a == "-I" = case as of
+          (d : as') -> go (d : dirs) rest as'   -- "-I" "dir"
+          []        -> go dirs rest as          -- dangling "-I": ignore
+      | Just d <- stripPrefix "-I" a, not (null d) = go (d : dirs) rest as  -- "-Idir"
+      | otherwise = go dirs (a : rest) as
 
 
 -- | Render analyzer diagnostics in the frontend's parser-error style. A

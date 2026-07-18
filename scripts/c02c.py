@@ -14,6 +14,9 @@ import string
 # `make` installs c02c into bin/ next to c02-frontend and c02-as, so they
 # always sit alongside this script once installed.
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+STANDARD_LIBRARY = os.path.join(SCRIPT_DIR, "lib/libc02.o")
+INCLUDE_DIR = os.path.join(SCRIPT_DIR, "include/")
+
 TEMP_PATH = os.path.abspath("/tmp")
 
 def check_stages(stages):
@@ -33,10 +36,13 @@ def parse_args():
 
   parser.add_argument('-c', action='store_true', help='Incremental compilation. produces object file')
   parser.add_argument('-o', '--output', help='Path for output file')
+  parser.add_argument('-I', dest='include_dirs', action='append', default=[], metavar='dir',
+                      help='Add a directory to the header include search path (repeatable)')
 
   parser.add_argument('--parse-only', action='store_true', help='Check syntax only, produce no output')
   parser.add_argument('--dump-ast', action='store_true', help='Print AST output after parsing, produce no output file')
 
+  parser.add_argument('--no-stdlib', action='store_true', help="Don't link with the standard library")
   parser.add_argument('--dump-ir', action='store_true', help='Print IR output, produce no output file')
   parser.add_argument('--strip-debug', action='store_true', help='Strip debug symbols from final binary')
 
@@ -70,9 +76,15 @@ def main():
 
   check_stages([frontend, linker, codegen])
 
+  args.include_dirs += [INCLUDE_DIR]
+
+  if not args.no_stdlib:
+    o_files += [STANDARD_LIBRARY]
+
   frontend_args = []
   if args.parse_only: frontend_args += ['--parse-only']
   if args.dump_ast: frontend_args += ['--dump-ast']
+  for d in args.include_dirs: frontend_args += ['-I', d]  # header search dirs, in order
 
   output = "a.out" if args.output == None else args.output
   temps = []

@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/) - while
 the project is in `0.x`, breaking changes may land in MINOR releases; PATCH
 releases are reserved for bug fixes only.
 
-## [Unreleased]
+## [1.7.0] 2026-07-17
 
 - Added char literal to parser, 'a' now gets translated to its ascii value in that case, 97. 
 - **`include "path"` file inclusion.** A pre-analysis resolution pass
@@ -36,6 +36,13 @@ releases are reserved for bug fixes only.
   mis-rendered against the root source. AST-dump goldens are unaffected: `Loc`
   stays transparent in `Show`/`Eq`, so the embedded `Pos` neither prints nor
   participates in equality.
+- **`-I <dir>` header search directories.** The frontend accepts any number of
+  `-I` flags (both the joined `-Idir` and separated `-I dir` forms), adding
+  directories to the `include` search path. An `include "name"` is resolved
+  against the including file's own directory first, then each `-I` directory in
+  the order given — the first readable match wins. With no `-I` flags this is
+  exactly the previous behavior (including-file-relative only). When a header is
+  found in none of them, the error lists every path that was tried.
 
 ## [1.6.2] 2026-07-16
 

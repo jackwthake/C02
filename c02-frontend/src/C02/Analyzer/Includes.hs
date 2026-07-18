@@ -16,7 +16,9 @@ module C02.Analyzer.Includes
 
 import           Control.Exception    (IOException, try)
 import           Control.Monad.Except (ExceptT, runExceptT, throwError)
+import           Control.Monad.Reader (ReaderT, ask, runReaderT)
 import           Control.Monad.State  (StateT, get, liftIO, modify, runStateT)
+import           Data.List            (intercalate)
 import           Data.List.NonEmpty   (NonEmpty ((:|)))
 import           Data.Map             (Map)
 import qualified Data.Map             as Map
@@ -32,27 +34,31 @@ import           C02.Parser.AST       (InclStmt (..), Loc, Program (..),
                                        TopLevelDecl, unLoc)
 import           C02.Parser.Parser    (parseProgram)
 
--- | The resolver's working monad: 'IO' to read files, an accumulating map from
--- each included file's path to its source text, and an error channel carrying the
--- SAME parse-error type the driver already knows how to print with
--- 'Text.Megaparsec.errorBundlePretty'. The map's key set doubles as the
--- pragma-once dedup and the cycle guard; its values are retained so the renderer
--- can show source lines for diagnostics that arise inside an included file.
-type Resolve = StateT (Map FilePath String) (ExceptT (ParseErrorBundle String Void) IO)
+-- | The resolver's working monad. From the outside in: a 'ReaderT' holding the
+-- @-I@ search directories (constant for the whole resolution); a 'StateT' whose
+-- map goes from each included file's path to its source text (the key set doubles
+-- as the pragma-once dedup and the cycle guard, the values are retained so the
+-- renderer can show source lines for diagnostics inside an included file); and an
+-- error channel carrying the SAME parse-error type the driver already prints with
+-- 'Text.Megaparsec.errorBundlePretty'.
+type Resolve =
+  ReaderT [FilePath] (StateT (Map FilePath String) (ExceptT (ParseErrorBundle String Void) IO))
 
 -- | Resolve every include in @prog@. @path@ is the file @prog@ was parsed from;
--- relative include paths are resolved against its directory. Returns 'Left' if
--- any (transitively) included file fails to parse or cannot be opened. On success
--- the returned 'Program' has an empty include list, paired with the source text of
--- every file that was read (NOT including @prog@'s own file, which the driver
--- already holds) so the diagnostic renderer can attribute errors to the right
--- file.
+-- an @include "name"@ is looked up first in the including file's own directory,
+-- then in each of @searchDirs@ (the @-I@ directories) in order — first readable
+-- match wins. Returns 'Left' if any (transitively) included file fails to parse or
+-- can't be found in any search directory. On success the returned 'Program' has an
+-- empty include list, paired with the source text of every file that was read (NOT
+-- including @prog@'s own file, which the driver already holds) so the diagnostic
+-- renderer can attribute errors to the right file.
 resolveIncludes
   :: FilePath                                         -- ^ path of the file @prog@ came from
+  -> [FilePath]                                       -- ^ @-I@ search directories, in order
   -> Program
   -> IO (Either (ParseErrorBundle String Void) (Program, Map FilePath String))
-resolveIncludes path prog = runExceptT $ do
-  (tops, srcs) <- runStateT (flatten (takeDirectory path) prog) Map.empty
+resolveIncludes path searchDirs prog = runExceptT $ do
+  (tops, srcs) <- runStateT (runReaderT (flatten (takeDirectory path) prog) searchDirs) Map.empty
   pure (Program [] tops, srcs)
 
 -- | Fully resolve a parsed program to a flat list of top-levels: expand its
@@ -64,45 +70,57 @@ flatten dir (Program incls tops) = do
   included <- concat <$> mapM (resolveInclude dir) incls
   pure (included ++ tops)
 
+-- | Resolve one @include "name"@. The candidate paths are @name@ joined onto the
+-- including file's directory first, then each @-I@ search directory in order; the
+-- first that reads successfully is the file.
 resolveInclude :: FilePath -> Loc InclStmt -> Resolve [Loc TopLevelDecl]
-resolveInclude dir incl = resolveFile (dir </> includePath (unLoc incl))
+resolveInclude dir incl = do
+  searchDirs <- ask
+  let name       = includePath (unLoc incl)
+      candidates = [ d </> name | d <- dir : searchDirs ]
+  resolveCandidates name candidates
 
--- | Read, parse, and recursively resolve one included file. The path is marked
--- visited (its source recorded in the state map) BEFORE recursing, so a cycle
--- (@a@ includes @b@ includes @a@) terminates: the second visit finds the path
--- already present and expands to nothing. The same check gives pragma-once dedup
--- on diamond includes for free.
-resolveFile :: FilePath -> Resolve [Loc TopLevelDecl]
-resolveFile path = do
-  seen <- get
-  if path `Map.member` seen
-    then pure []
-    else do
-      -- A missing (or unreadable) header must not crash the compiler: catch the
-      -- IOException and report it in the same bundle format as a parse error,
-      -- attributed to the header we failed to open.
-      result <- liftIO (try (readFile path) :: IO (Either IOException String))
-      case result of
-        Left ioErr -> throwError (missingFileBundle path ioErr)
-        Right src  -> do
-          modify (Map.insert path src)   -- mark visited + retain source before recursing
-          case parseProgram path src of
-            Left err   -> throwError err
-            Right prog -> flatten (takeDirectory path) prog
+-- | Try each candidate path in order. A path already visited short-circuits to
+-- '[]' (this gives pragma-once dedup on diamond includes and terminates cycles —
+-- @a@ includes @b@ includes @a@ finds @a@'s path already present on the second
+-- visit). Otherwise the first path that reads successfully is THE file: its source
+-- is recorded (marking it visited) BEFORE recursing, then it is parsed and its own
+-- includes resolved. A candidate that fails to read is skipped so the next search
+-- directory gets a turn; if every candidate is exhausted the include is reported
+-- as not found, listing everywhere we looked.
+resolveCandidates :: String -> [FilePath] -> Resolve [Loc TopLevelDecl]
+resolveCandidates name candidates = go candidates
+  where
+    go [] = throwError (notFoundBundle name candidates)
+    go (path : rest) = do
+      seen <- get
+      if path `Map.member` seen
+        then pure []
+        else do
+          result <- liftIO (try (readFile path) :: IO (Either IOException String))
+          case result of
+            Left _    -> go rest             -- not here (or unreadable): try next search dir
+            Right src -> do
+              modify (Map.insert path src)   -- mark visited + retain source before recursing
+              case parseProgram path src of
+                Left err   -> throwError err
+                Right prog -> flatten (takeDirectory path) prog
 
--- | A one-error bundle reporting that @path@ could not be opened. There is no
--- source text to show, so the input is empty and the error sits at offset 0:
--- 'errorBundlePretty' renders it as @path:1:1:@ followed by the message,
--- matching the frontend's parse-error style.
-missingFileBundle :: FilePath -> IOException -> ParseErrorBundle String Void
-missingFileBundle path ioErr = ParseErrorBundle
+-- | A one-error bundle reporting that an @include@ couldn't be found in any search
+-- directory, listing the paths that were tried. There is no source text to show,
+-- so the input is empty and the error sits at offset 0: 'errorBundlePretty'
+-- renders it as @name:1:1:@ followed by the message, matching the frontend's
+-- parse-error style.
+notFoundBundle :: String -> [FilePath] -> ParseErrorBundle String Void
+notFoundBundle name candidates = ParseErrorBundle
   { bundleErrors   = FancyError 0 (Set.singleton (ErrorFail msg)) :| []
   , bundlePosState = PosState
       { pstateInput      = ""
       , pstateOffset     = 0
-      , pstateSourcePos  = initialPos path
+      , pstateSourcePos  = initialPos name
       , pstateTabWidth   = defaultTabWidth
       , pstateLinePrefix = ""
       }
   }
-  where msg = "cannot open included file: " ++ show ioErr
+  where msg = "cannot find included file '" ++ name ++ "'; searched: "
+              ++ intercalate ", " candidates
