@@ -27,7 +27,7 @@ import C02.Parser.Lexer
 -- statement/decl's position lands on its first token. Used only at statement and
 -- top-level granularity (see 'Loc').
 located :: Parser a -> Parser (Loc a)
-located p = Loc <$> getOffset <*> p
+located p = Loc <$> (Pos <$> asks envFile <*> getOffset) <*> p
 
 
 -- Left-factored: parse the identifier once, then decide on what follows.
@@ -280,7 +280,7 @@ baseTypeParser = choice   -- try each variant in order
 structTypeParser :: Parser BaseType
 structTypeParser = try $ do
   name  <- lexeme identifier
-  known <- asks (Set.member name)
+  known <- asks (Set.member name . envStructNames)
   if known then return (StructName name)
            else fail ("`" ++ name ++ "` is not a struct type")
 
@@ -388,25 +388,34 @@ fwdDeclParser = do
            }
     ]
 
+includeParser :: Parser InclStmt
+includeParser = do
+  _    <- keyword "include"
+  path <- stringLiteralParser
+  _    <- symbol ";"
+  return (InclStmt path)
 
 -- Parse a single top level item
-topLevelParser :: Parser TopLevelDecl
+topLevelParser :: Parser (Either InclStmt TopLevelDecl)
 topLevelParser = choice
-  [ StructDef     <$> structDeclParser
-  , RegisterDecl  <$> regDeclParser
-  , GlobalVarDecl <$> varDeclParser <* symbol ";"
-  , FunctionDecl  <$> funcDeclParser
-  , fwdDeclParser
-  ]
+   [ Left                   <$> includeParser
+   , Right . StructDef      <$> structDeclParser
+   , Right . RegisterDecl   <$> regDeclParser
+   , Right . GlobalVarDecl  <$> varDeclParser <* symbol ";"
+   , Right . FunctionDecl   <$> funcDeclParser
+   , Right                  <$> fwdDeclParser
+   ]
 
 
 -- Parse a program
 programParser :: Parser Program
 programParser = do
-  sc                            -- eat any leading whitespace/comments before the first token
-  decls <- many (located topLevelParser)  -- each top-level decl tagged with its offset
-  eof                           -- fail if anything is left unconsumed
-  return (TopLevels decls)
+   sc                            -- eat any leading whitespace/comments before the first token
+   decls <- many (located topLevelParser)  -- each top-level decl tagged with its offset
+   eof                           -- fail if anything is left unconsumed
+   let incls = [Loc off incl | Loc off (Left incl) <- decls]
+       tops  = [Loc off top  | Loc off (Right top)  <- decls]
+   return (Program incls tops)
 
 
 -- Whole-file, scope-blind prescan for struct type names (SPEC 6.6). Walks the
@@ -417,7 +426,7 @@ programParser = do
 prescanStructNames :: String -> Set String
 prescanStructNames src =
   -- run with an empty env: the prescan never consults the set it helps build
-  Set.fromList (either (const []) id (parse (runReaderT (sc *> go) Set.empty) "" src))
+  Set.fromList (either (const []) id (parse (runReaderT (sc *> go) (ParserEnv Set.empty "")) "" src))
   where
     go :: Parser [String]
     go = choice
@@ -439,4 +448,4 @@ prescanStructNames src =
 -- (SPEC 6.6) and threads the resulting set through the parser as its environment.
 parseProgram :: FilePath -> String -> Either (ParseErrorBundle String Void) Program
 parseProgram path src =
-  parse (runReaderT programParser (prescanStructNames src)) path src
+  parse (runReaderT programParser (ParserEnv (prescanStructNames src) path)) path src

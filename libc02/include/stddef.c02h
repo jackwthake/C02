@@ -1,0 +1,4 @@
+decl u16 *__heap_start; /* starts as first available address after global variables in memory */
+
+// TODO: This really deserves some sort of const keyword, implement that.
+decl u16 *__memory_top; /* holds the top address of system memory */

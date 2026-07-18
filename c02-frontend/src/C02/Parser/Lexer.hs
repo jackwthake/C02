@@ -4,6 +4,7 @@
 -- primitives the parser is built from.
 module C02.Parser.Lexer
   ( Parser
+  , ParserEnv(..)
   , sc
   , lexeme
   , symbol
@@ -24,10 +25,18 @@ import qualified Data.Set as Set
 import Control.Monad.Reader (ReaderT)
 import Data.Char (ord)
 
--- The parser carries a read-only environment: the set of struct type names from
--- the whole-file prescan (SPEC 6.6). Reader (not State) because it's fixed before
--- parsing begins and never changes — nothing to lose on backtrack.
-type Parser = ReaderT (Set String) (Parsec Void String)
+-- The parser carries a read-only environment, fixed before parsing begins and
+-- never changed — Reader (not State) because there's nothing to lose on
+-- backtrack. It holds the set of struct type names from the whole-file prescan
+-- (SPEC 6.6) and the path of the file being parsed, which 'located' stamps into
+-- every 'Pos' so diagnostics can be attributed to the right file after includes
+-- splice several files together.
+data ParserEnv = ParserEnv
+  { envStructNames :: Set String
+  , envFile        :: FilePath
+  }
+
+type Parser = ReaderT ParserEnv (Parsec Void String)
 
 -- skip whitespace/comments between tokens
 sc :: Parser ()

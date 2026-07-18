@@ -27,7 +27,7 @@
 
 C02 compiles through a small pipeline of standalone tools, wired together by the `c02c` driver:
 
-1. **`c02-frontend`** (Haskell) — tokenizer, recursive-descent parser, lexically-scoped semantic analyzer, and IR generator. Lowers `.c02` source into a self-contained three-address-code (TAC) intermediate representation — struct layouts with computed field offsets, globals/registers with hardware addresses baked in, and one flat instruction stream per function — then serializes it to a `.o` object, one per translation unit.
+1. **`c02-frontend`** (Haskell) — tokenizer, recursive-descent parser, `include` resolver, lexically-scoped semantic analyzer, and IR generator. Lowers `.c02` source into a self-contained three-address-code (TAC) intermediate representation — struct layouts with computed field offsets, globals/registers with hardware addresses baked in, and one flat instruction stream per function — then serializes it to a `.o` object, one per translation unit.
 2. **`c02-ld`** (OCaml) — the linker. Merges one or more `.o` objects into a single relocatable object and resolves the symbol namespace: it binds cross-module references (a `decl` forward declaration in one file to its definition in another), de-duplicates identical `reg` and `struct` declarations, applies the tentative-definition rule to globals, and rejects genuine conflicts (duplicate definitions, signature/type mismatches, namespace collisions). It never requires a `main`, so a merged object may be a library. Incremental compilation (`-c`) stops here, emitting the merged object.
 3. **`c02-as`** (C) — the code generator. Consumes the linked `.o` IR object and emits a 32 KB 65C02 ROM: bootstrap runtime, interrupt vectors, and flat zero-page allocation of locals, temporaries, and parameters (no slow stack-machine execution). Globals live in RAM (`$0200+`) and are initialized before `JSR main`; string literals go in a ROM data section with backpatch fixups. Every emit path is bounds-checked against the 32 KB limit, so overflow is a clear diagnostic rather than silent corruption.
 4. **`c02c`** — the driver that runs the frontend on each source, then `c02-ld`, then `c02-as`, managing intermediate `.o` files. This is the command you normally invoke.
@@ -37,7 +37,7 @@ The function-call ABI passes up to 8 parameters through a fixed 2-byte-per-param
 
 ## Current Status & Limitations
 
-The language is broadly in place: data movement and hardware-register I/O; `if`/`else`, `while`, `for`, `break`/`continue`; arithmetic, bitwise, shift, and comparison operators across `u8`/`i8`/`u16`/`i16` (multiply/divide via `__mul8`/`__div8`/`__mul16`/`__div16` software routines); pointers (`&`, `*`, `ptr ± int`), type casts, structs and field access, globals, string literals, and function calls with recursion. [`docs/SPEC.md`](docs/SPEC.md) is the **normative** definition of the language and its exact semantics; [`docs/DEVIATIONS_hs_impl.md`](docs/DEVIATIONS_hs_impl.md) records where this implementation currently diverges from it (it is generally *stricter* than the original).
+The language is broadly in place: data movement and hardware-register I/O; `if`/`else`, `while`, `for`, `break`/`continue`; arithmetic, bitwise, shift, and comparison operators across `u8`/`i8`/`u16`/`i16` (multiply/divide via `__mul8`/`__div8`/`__mul16`/`__div16` software routines); pointers (`&`, `*`, `ptr ± int`), type casts, structs and field access, globals, string literals, and function calls with recursion. Multi-file programs are supported through `include "..."` headers and a bundled standard library (see [Separate compilation](#separate-compilation-and-linking) below). [`docs/SPEC.md`](docs/SPEC.md) is the **normative** definition of the language and its exact semantics; [`docs/DEVIATIONS_hs_impl.md`](docs/DEVIATIONS_hs_impl.md) records where this implementation currently diverges from it (it is generally *stricter* than the original).
 
 Not yet implemented: **arrays** (use pointer arithmetic, `*(ptr + i)`, in the meantime) and **compound bitwise/shift assignment** (`&=`, `|=`, `^=`, `<<=`, `>>=` — the arithmetic forms `+= -= *= /= %=` work).
 
@@ -85,13 +85,15 @@ c02c [OPTIONS] <FILE>...
 - `<FILE>`:            Input file(s) — `.c02` source and/or `.o` IR objects
 - `-h, --help`:        Show help message
 - `-o, --output`:      Output path (default `a.out`)
+- `-I <dir>`:          Add a directory to the header (`include "..."`) search path; repeatable
 - `-c`:                Compile and link to a relocatable `.o` object (a partial link — no `main` required) instead of a full ROM
 - `--parse-only`:      Check syntax only, produce no output
 - `--dump-ast`:        Print the AST after parsing (no output file)
+- `--no-stdlib`:       Don't link the bundled standard library (or add its headers to the include path)
 - `--dump-ir`:         Print the IR (TAC) the code generator consumes (no output file)
 - `--strip-debug`:     Omit the `C02S` symbol table from the final ROM
 
-**Separate compilation and linking:**
+#### Separate compilation and linking
 
 Pass several sources and/or `.o` objects and `c02c` compiles each source, then links everything into one output. A `.c02` references a symbol defined in another file with a `decl` forward declaration (`decl fn f(u8 x) -> void;`, `decl u8 counter;`).
 
@@ -101,6 +103,23 @@ c02c main.c02 util.o -o program.bin    # link that object into a full ROM
 c02c main.c02 util.c02 -o program.bin  # or compile and link several sources at once
 c02c --dump-ir main.c02 util.c02       # inspect the linked IR before codegen
 ```
+
+Rather than repeat those `decl`s by hand in every file, collect them in a **header** (`.c02h` by convention) and pull them in with `include "name";` at the top of each source that needs them:
+
+```c
+// util.c02h
+decl fn f(u8 x) -> void;
+decl u8 counter;
+```
+```c
+// main.c02
+include "util.c02h";
+fn main() -> void { f(counter); }
+```
+
+Includes are resolved before analysis: each `include` is replaced by the named file's declarations, resolved recursively, with identical redeclarations de-duplicated (so diamond includes are harmless) and cycles terminated. Header lookup searches the including file's own directory first, then each `-I <dir>` in the given order — the first match wins. Headers carry only declarations; the matching definitions are still supplied by a linked object at link time, exactly as with hand-written `decl`s. Diagnostics originating inside an included header are reported against that header's own `file:line:col`.
+
+`c02c` links a small bundled **standard library** by default and adds its headers to the include path, so an `include "stddef.c02h";` resolves out of the box with no `-I` needed. Pass `--no-stdlib` to opt out (the library's own build uses this to avoid linking against itself).
 
 ---
 

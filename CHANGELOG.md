@@ -7,9 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/) - while
 the project is in `0.x`, breaking changes may land in MINOR releases; PATCH
 releases are reserved for bug fixes only.
 
-## [Unreleased]
+## [1.7.0] 2026-07-17
 
 - Added char literal to parser, 'a' now gets translated to its ascii value in that case, 97. 
+- **`include "path"` file inclusion.** A pre-analysis resolution pass
+  (`C02.Analyzer.Includes.resolveIncludes`) runs in the frontend driver between
+  parsing and semantic analysis, expanding each `include` into the top-level
+  declarations of the named file (resolved recursively) and splicing them ahead
+  of the including file's own declarations, so a header's forward declarations
+  and struct definitions precede the code that uses them. Includes are parsed
+  into a separate list on the `Program` AST node rather than a `TopLevelDecl`
+  variant, so a resolved program's declarations cannot represent an include and
+  the analyzer never sees one. Paths resolve relative to the including file's
+  directory. A visited-set gives automatic `#pragma once` de-duplication on
+  diamond includes and makes cyclic includes terminate rather than loop. Parse
+  errors in an included file, and missing or unreadable headers, are reported in
+  the standard diagnostic bundle format (`file:line:col` with a caret). Intended
+  for `.c02h` headers carrying forward declarations, with definitions supplied by
+  other objects at link time.
+- **Per-file source spans for diagnostics across includes.** `Loc` now carries a
+  `Pos` (file path + byte offset) instead of a bare offset, stamped once per file
+  by the parser and shared by every node in that file. The include resolver
+  retains each file's source text alongside the flattened program, and the
+  diagnostic renderer groups located diagnostics by file — one `errorBundlePretty`
+  bundle per file, rendered against that file's own source. A semantic error that
+  originates *inside* an included header is now reported against the header's
+  `file:line:col` with the header's source line and caret, rather than being
+  mis-rendered against the root source. AST-dump goldens are unaffected: `Loc`
+  stays transparent in `Show`/`Eq`, so the embedded `Pos` neither prints nor
+  participates in equality.
+- **`-I <dir>` header search directories.** The frontend accepts any number of
+  `-I` flags (both the joined `-Idir` and separated `-I dir` forms), adding
+  directories to the `include` search path. An `include "name"` is resolved
+  against the including file's own directory first, then each `-I` directory in
+  the order given — the first readable match wins. With no `-I` flags this is
+  exactly the previous behavior (including-file-relative only). When a header is
+  found in none of them, the error lists every path that was tried.
 
 ## [1.6.2] 2026-07-16
 

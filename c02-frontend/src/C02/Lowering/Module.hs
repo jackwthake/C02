@@ -27,7 +27,7 @@ import qualified C02.Lowering.TAC as T
 -- | Lower a whole program to an IR module: one CFG per defined function, plus
 -- the struct layouts, globals, register definitions, and externs codegen needs.
 lowerModule :: Program -> T.Module
-lowerModule prog@(TopLevels decls) = T.Module
+lowerModule prog@(Program _ decls) = T.Module
   { T.structs = map toStruct (Map.toList layouts)
   , T.globals = [ toGlobal v | Loc _ (GlobalVarDecl v) <- decls ]
   , T.regs    = [ toReg r    | Loc _ (RegisterDecl r)  <- decls ]

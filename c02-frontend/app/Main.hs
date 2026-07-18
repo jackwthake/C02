@@ -15,8 +15,10 @@
 -- chained in here.
 module Main (main) where
 
-import Data.List (isPrefixOf, partition, sortOn)
+import Data.List (isPrefixOf, partition, sortOn, stripPrefix)
 import qualified Data.List.NonEmpty as NE
+import Data.Map (Map)
+import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Data.Void (Void)
 import System.Environment (getArgs)
@@ -27,10 +29,11 @@ import Text.Megaparsec
   , ParseErrorBundle(..), ParseError(FancyError), ErrorFancy(ErrorFail)
   , PosState(..), initialPos, defaultTabWidth )
 import C02.Parser.Parser (parseProgram)
+import C02.Analyzer.Includes (resolveIncludes)
 import C02.Analyzer.Analyze (analyze)
 import C02.Analyzer.Diagnostic (Diag(..), Diagnostic, render)
 import C02.Lowering.Module (lowerModule)
-import C02.Parser.AST (Program)
+import C02.Parser.AST (Program, Pos(..))
 import C02.Lowering.Serialize (serializeModule)
 
 import qualified Data.ByteString.Lazy as B
@@ -45,10 +48,11 @@ writeOutput p fp =
 main :: IO ()
 main = do
   args <- getArgs
-  let (flags, rest)    = partition ("--" `isPrefixOf`) args
-      parseOnly        = "--parse-only" `elem` flags
-      dumpAST          = "--dump-ast" `elem` flags
-      (outPath, files) = extractOutput rest
+  let (flags, rest0)      = partition ("--" `isPrefixOf`) args
+      parseOnly           = "--parse-only" `elem` flags
+      dumpAST             = "--dump-ast" `elem` flags
+      (includeDirs, rest) = extractIncludeDirs rest0
+      (outPath, files)    = extractOutput rest
   case files of
     [path] -> do
       src <- readFile path
@@ -61,10 +65,17 @@ main = do
           -- (parser stage: no analysis, since its fixtures aren't whole programs);
           -- otherwise analysis runs and a clean pass emits the IR object.
           | parseOnly -> if dumpAST then print prog else pure ()
-          | otherwise -> case analyze prog of
-              []    -> if dumpAST then print prog else writeOutput prog outPath
-              diags -> hPutStr stderr (renderDiags path src diags) >> exitFailure
-    _ -> hPutStrLn stderr "usage: c02-frontend [--parse-only] [-o <out.o>] <file.c02>" >> exitFailure
+          | otherwise -> do
+              resolved <- resolveIncludes path includeDirs prog
+              case resolved of
+                Left err                    -> hPutStr stderr (errorBundlePretty err) >> exitFailure
+                Right (resolvedProg, srcs)  -> case analyze resolvedProg of
+                  []    -> if dumpAST then print resolvedProg else writeOutput resolvedProg outPath
+                  -- The root file's source isn't in @srcs@ (the resolver only
+                  -- records files it read); add it so the renderer can show root
+                  -- diagnostics too.
+                  diags -> hPutStr stderr (renderDiags path (Map.insert path src srcs) diags) >> exitFailure
+    _ -> hPutStrLn stderr "usage: c02-frontend [--parse-only] [-I <dir>]... [-o <out.o>] <file.c02>" >> exitFailure
 
 
 -- | Pull an optional @-o <path>@ out of the arguments, defaulting to @a.o@.
@@ -74,32 +85,60 @@ extractOutput args = case break (== "-o") args of
   _                             -> ("a.o", args)
 
 
--- | Render analyzer diagnostics in the frontend's parser-error style. Located
--- diagnostics ('At') are collected into one megaparsec 'ParseErrorBundle', so
--- 'errorBundlePretty' prints each with a @file:line:col@ header, the source line,
--- and a caret — identical to a parse error. That renderer walks the input forward
--- and can't rewind, so the located diagnostics MUST be sorted by ascending offset
--- first. Free diagnostics (whole-unit, no span) print as plain lines, then a
--- summary count closes the report.
-renderDiags :: FilePath -> String -> [Diag] -> String
-renderDiags path src diags =
-  bundleStr ++ freeStr ++ "\nSemantic analysis failed with " ++ show n ++ " errors.\n"
+-- | Pull every @-I@ header search directory out of the arguments, preserving
+-- order (search precedence). Both the joined form @-Idir@ and the separated form
+-- @-I dir@ are accepted, matching the C compiler convention; a dangling @-I@ with
+-- no following directory is ignored. Returns the directories and the remaining
+-- arguments.
+extractIncludeDirs :: [String] -> ([FilePath], [String])
+extractIncludeDirs = go [] []
   where
-    n         = length diags
-    located   = sortOn fst [ (off, d) | At off d <- diags ]
-    frees     = [ d | Free d <- diags ]
-    bundleStr = case NE.nonEmpty located of
-      Nothing -> ""
-      Just ne -> errorBundlePretty (mkBundle ne)
-    freeStr   = concat [ path ++ ": " ++ render d ++ "\n" | d <- frees ]
+    go dirs rest [] = (reverse dirs, reverse rest)
+    go dirs rest (a : as)
+      | a == "-I" = case as of
+          (d : as') -> go (d : dirs) rest as'   -- "-I" "dir"
+          []        -> go dirs rest as          -- dangling "-I": ignore
+      | Just d <- stripPrefix "-I" a, not (null d) = go (d : dirs) rest as  -- "-Idir"
+      | otherwise = go dirs (a : rest) as
 
-    mkBundle :: NE.NonEmpty (Int, Diagnostic) -> ParseErrorBundle String Void
-    mkBundle ne = ParseErrorBundle
-      { bundleErrors   = NE.map toErr ne
+
+-- | Render analyzer diagnostics in the frontend's parser-error style. A
+-- megaparsec 'ParseErrorBundle' renders offsets against a SINGLE source string,
+-- walking it forward and unable to rewind — so a bundle is inherently one file's
+-- worth of diagnostics. After include resolution splices several files together,
+-- located diagnostics ('At') are therefore grouped BY FILE, and each file's group
+-- becomes its own bundle (sorted by ascending offset) rendered against that file's
+-- source from @srcs@. 'errorBundlePretty' prints each with a @file:line:col@
+-- header, the source line, and a caret — identical to a parse error. Free
+-- diagnostics (whole-unit, no span) print as plain lines attributed to the root
+-- file, then a summary count closes the report.
+renderDiags :: FilePath -> Map FilePath String -> [Diag] -> String
+renderDiags rootPath srcs diags =
+  concatMap fileBundle (Map.toList byFile) ++ freeStr
+    ++ "\nSemantic analysis failed with " ++ show n ++ " errors.\n"
+  where
+    n      = length diags
+    frees  = [ d | Free d <- diags ]
+    -- group located diags by file; Map.toList then yields files in a stable
+    -- (path-sorted) order, and each group is non-empty by construction.
+    byFile = Map.fromListWith (++) [ (f, [(off, d)]) | At (Pos f off) d <- diags ]
+
+    fileBundle (file, offs) = case Map.lookup file srcs of
+      -- Source retained: render a proper caret bundle against it.
+      Just src -> errorBundlePretty (mkBundle file src (sortOn fst offs))
+      -- No source on hand (shouldn't happen): fall back to plain message lines
+      -- rather than crash on a partial 'PosState'.
+      Nothing  -> concat [ file ++ ": " ++ render d ++ "\n" | (_, d) <- sortOn fst offs ]
+
+    freeStr = concat [ rootPath ++ ": " ++ render d ++ "\n" | d <- frees ]
+
+    mkBundle :: FilePath -> String -> [(Int, Diagnostic)] -> ParseErrorBundle String Void
+    mkBundle file src offs = ParseErrorBundle
+      { bundleErrors   = NE.map toErr (NE.fromList offs)  -- offs is non-empty (see byFile)
       , bundlePosState = PosState
           { pstateInput      = src
           , pstateOffset     = 0
-          , pstateSourcePos  = initialPos path
+          , pstateSourcePos  = initialPos file
           , pstateTabWidth   = defaultTabWidth
           , pstateLinePrefix = ""
           }
