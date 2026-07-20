@@ -1,0 +1,7 @@
+test/analyzer/bad_interrupt_call.c02:6:3:
+  |
+6 |   irq();
+  |   ^
+'irq' attempting to call an interrupt function explicitly
+
+Semantic analysis failed with 1 errors.

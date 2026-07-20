@@ -5,7 +5,10 @@
 module C02.Analyzer.Diagnostic
   ( Diagnostic(..)
   , Diag(..)
+  , Severity(..)
   , render
+  , severityOf
+  , diagWhat
   ) where
 
 import C02.Parser.AST (BaseType(..), Pos(..))
@@ -21,6 +24,8 @@ data Diagnostic
   | UnknownStruct String       -- ^ ERR_UNKNOWN_STRUCT: struct-typed name not registered
   | UndeclaredIdentifier String-- ^ ERR_UNDECLARED_IDENTIFIER: name not in any visible scope
   | NotAFunction String        -- ^ ERR_NOT_A_FUNCTION: call target is a non-function symbol
+  | InterruptCall String       -- ^ ERR_INTERRUPT_CALL: attempting to call an interrupt function explicitly 
+  | InvalidInterrupt String    -- ^ WRN_INVALID_INTERRUPT: function tagged interrupt but does not have valid signature. dropping interrupt qualifier.
   | NotAssignable String       -- ^ ERR_NOT_ASSIGNABLE: function/struct name used as a value
   | WrongArgCount String Int Int -- ^ ERR_WRONG_ARG_COUNT: name, expected count, actual count
   | TypeMismatch TyPair TyPair String -- ^ ERR_TYPE_MISMATCH: expected, actual, context tag
@@ -48,6 +53,25 @@ data Diag
   | Free Diagnostic
   deriving (Show, Eq)
 
+-- | Pull the underlying 'Diagnostic' out of a 'Diag', discarding its position.
+diagWhat :: Diag -> Diagnostic
+diagWhat (At _ d) = d
+diagWhat (Free d) = d
+
+-- | Whether a diagnostic blocks the build. 'Warning's still print (§4.2 wants
+-- 'WARN_INVALID_INTERRUPT' on stderr on an otherwise-successful build);
+-- 'Error's are what actually gate emitting the IR object.
+data Severity = Warning | Error
+  deriving (Show, Eq)
+
+-- | One severity per diagnostic *kind*, not per call site — 'emit' stays
+-- untouched, and every existing call site keeps working exactly as it did
+-- (defaulting to 'Error') without having to be revisited.
+severityOf :: Diagnostic -> Severity
+severityOf d = case d of
+  InvalidInterrupt _ -> Warning
+  _                  -> Error
+
 
 -- | The message body for a diagnostic, matching SPEC §8 wording. Location and
 -- the leading @error:@ tag are added later by the renderer that owns spans.
@@ -58,6 +82,8 @@ render d = case d of
   UnknownStruct n         -> "unknown struct '" ++ n ++ "'"
   UndeclaredIdentifier n  -> "undeclared identifier '" ++ n ++ "'"
   NotAFunction n          -> "'" ++ n ++ "' is not a function"
+  InterruptCall n         -> "'" ++ n ++ "' attempting to call an interrupt function explicitly"
+  InvalidInterrupt n      -> "'" ++ n ++ "' function tagged interrupt but does not have valid signature. dropping interrupt qualifier."
   NotAssignable n         -> "'" ++ n ++ "' is not assignable"
   WrongArgCount n e a     -> "function '" ++ n ++ "' expects " ++ show e
                              ++ " argument(s), but " ++ show a ++ " were provided"

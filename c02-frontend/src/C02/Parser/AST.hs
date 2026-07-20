@@ -23,6 +23,7 @@ module C02.Parser.AST
   , locPos
   , locOffset
   , unLoc
+  , validInterrupt
   ) where
 
 -- | A source position: the file a node came from plus the byte offset of its
@@ -155,3 +156,10 @@ data FuncDecl = FuncDecl
   , params             :: [NamedType] -- Type, ptr depth, name
   , body               :: Maybe Stmt -- Nested variant
   } deriving (Show, Eq)
+
+
+validInterrupt :: FuncDecl -> Bool
+validInterrupt (FuncDecl name rt rtDepth i p _) = (name == "irq" || name == "nmi") -- Must be named irq or nmi
+                                               && (rt == Void && rtDepth == 0)     -- Must return bare void
+                                               && i == True && p == []             -- Must be marked interrupt and have no parameters
+

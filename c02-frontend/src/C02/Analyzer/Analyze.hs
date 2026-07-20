@@ -239,7 +239,7 @@ buildGlobals = go Map.empty Map.empty Set.empty []
     classify (StructDef s)     = (structName s, Nothing, Just (structFields s))
 
     funcSym f = FuncSym (funcReturnType f, funcReturnPtrDepth f)
-                        [ (bt, depth) | (bt, depth, _) <- params f ]
+                        [ (bt, depth) | (bt, depth, _) <- params f ] (validInterrupt f)
 
 
 -- | After pass 1, validate the types written in top-level declarations (now that
@@ -305,13 +305,15 @@ analyzeFuncs = mapM_ go
 -- After the body, a non-void function whose last statement can't be seen to
 -- return is flagged (§7.5, shallow) at the function's offset.
 analyzeFunc :: FuncDecl -> Analyze ()
-analyzeFunc f =
+analyzeFunc f = do
+  when (isInterrupt f && not (validInterrupt f)) (emit (InvalidInterrupt (funcName f)))
   local (\c -> (pushScope c) { ctxReturn = (funcReturnType f, funcReturnPtrDepth f) }) $
     bindParams (params f) $ do
       analyzeBlock stmts
       checkMissingReturn f stmts
   where
     stmts = funcBodyStmts f
+
 
 -- | Declare each parameter in turn, threading them into the body walk.
 bindParams :: [NamedType] -> Analyze a -> Analyze a
