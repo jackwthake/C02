@@ -27,30 +27,30 @@ Severity legend (same as `DEVIATIONS_hs_impl.md`):
 
 ## Quick Reference
 
-| ID | Sev | Verified | Summary | Spec section |
-|---|---|---|---|---|
-| [FE-1](#fe-1) | T | Executed | Struct types defined in an included header are unusable in the includer (per-file prescan) | none — undocumented architecture |
-| [FE-2](#fe-2) | P1 | Executed | Root file is never in the include visited-set: self-include / root↔header cycles duplicate the root's declarations | none — undocumented architecture |
-| [FE-3](#fe-3) | P2 | Executed | No path canonicalization: the same header via two spellings is included twice | none — undocumented architecture |
-| [FE-4](#fe-4) | G | Executed | include-not-found diagnostic loses the include site's position | none — undocumented architecture |
-| [FE-5](#fe-5) | P2 | Source | Lazy `readFile` lets late I/O errors escape the resolver's `try` and crash the driver | none — undocumented architecture |
-| [FE-6](#fe-6) | G | Source | Included declarations are hoisted above the includer's own, erasing include position | none — undocumented architecture |
-| [FE-7](#fe-7) | T | Executed | No `asm { }` statement exists in the grammar | [§5.7](../SPEC.md#57-inline-assembly-asm) |
-| [FE-8](#fe-8) | G | Executed | Char literals: an undocumented extension, not a lexeme (`'a' + 1` fails), Haskell escape rules | [§1.3](../SPEC.md#13-integer-literals) |
-| [FE-9](#fe-9) | G | Executed | Adjacent operators fail to lex: `a*-b`, `a<-1`, `a&&&b` are parse errors | [§1.6](../SPEC.md#16-operators--punctuation) |
-| [FE-10](#fe-10) | G | Executed | Integer literals overflowing the host word silently wrap (`2^64+1` lexes as `1`) | [§1.3](../SPEC.md#13-integer-literals) |
-| [FE-11](#fe-11) | T | Executed | Compound assignment doesn't type-check as its desugaring: `p += 1` rejected on a pointer | [§5.3](../SPEC.md#53-assignment) |
-| [FE-12](#fe-12) | P2 | Executed | S-1/S-17 laxity reproduced: any `(void*)`-shaped actual is compatible with *everything* | [§3.2](../SPEC.md#32-type-compatibility) |
-| [FE-13](#fe-13) | P2 | Executed | `&&`/`||` operands are entirely unchecked (struct `&&` struct accepted) | [§6.3](../SPEC.md#63-binary-operators) |
-| [FE-14](#fe-14) | P0 | Executed | `interrupt` validation missing: no warning, flag not cleared → calling the function crashes at runtime | [§4.2](../SPEC.md#42-interrupt-functions) |
-| [FE-15](#fe-15) | G | Executed | `for`-increment clause accepts a variable declaration | [§5.5](../SPEC.md#55-for-loop-clauses) |
-| [FE-16](#fe-16) | P2 | Source | Statement-position structs get no redeclaration check at all | [§7.2](../SPEC.md#72-scope-stack--shadowing) |
-| [FE-17](#fe-17) | P1 | Executed | One name-keyed layout table across all scopes: a local `struct S` clobbers the top-level `S`'s layout for the whole module | none — undocumented architecture |
-| [FE-18](#fe-18) | P0 | Executed | Non-literal global initializers silently lower to "uninitialized" | [§4.5](../SPEC.md#45-global-variables) |
-| [FE-19](#fe-19) | P0 | Executed | `++`/`--` on a deref, field, or register mutates a loaded temp and never stores back | [§6.2](../SPEC.md#62-unary-prefix-operators) |
-| [FE-20](#fe-20) | P0 | Executed | Nested field assignment (`a.b.c = v`) stores into a temporary copy of `a.b` | [§6.4](../SPEC.md#64-postfix--field-access) |
-| [FE-21](#fe-21) | P2 | Source | The IR emission contract: what is promised to `c02-ld`/`c02-as` implicitly, with nothing checking it | none — undocumented architecture |
-| [FE-22](#fe-22) | T | Executed | `__heap_start`/`__memory_top` are not injected — and `libc02`'s header declares the wrong type | [§4.6](../SPEC.md#46-forward-declarations-decl) |
+| ID | Sev | Verified | Status | Summary | Spec section |
+|---|---|---|---|---|---|
+| [FE-1](#fe-1) | T | Executed | — | Struct types defined in an included header are unusable in the includer (per-file prescan) | none — undocumented architecture |
+| [FE-2](#fe-2) | P1 | Executed | — | Root file is never in the include visited-set: self-include / root↔header cycles duplicate the root's declarations | none — undocumented architecture |
+| [FE-3](#fe-3) | P2 | Executed | — | No path canonicalization: the same header via two spellings is included twice | none — undocumented architecture |
+| [FE-4](#fe-4) | G | Executed | — | include-not-found diagnostic loses the include site's position | none — undocumented architecture |
+| [FE-5](#fe-5) | P2 | Source | — | Lazy `readFile` lets late I/O errors escape the resolver's `try` and crash the driver | none — undocumented architecture |
+| [FE-6](#fe-6) | G | Source | — | Included declarations are hoisted above the includer's own, erasing include position | none — undocumented architecture |
+| [FE-7](#fe-7) | T | Executed | — | No `asm { }` statement exists in the grammar | [§5.7](../SPEC.md#57-inline-assembly-asm) |
+| [FE-8](#fe-8) | G | Executed | — | Char literals: an undocumented extension, not a lexeme (`'a' + 1` fails), Haskell escape rules | [§1.3](../SPEC.md#13-integer-literals) |
+| [FE-9](#fe-9) | G | Executed | — | Adjacent operators fail to lex: `a*-b`, `a<-1`, `a&&&b` are parse errors | [§1.6](../SPEC.md#16-operators--punctuation) |
+| [FE-10](#fe-10) | G | Executed | — | Integer literals overflowing the host word silently wrap (`2^64+1` lexes as `1`) | [§1.3](../SPEC.md#13-integer-literals) |
+| [FE-11](#fe-11) | T | Executed | — | Compound assignment doesn't type-check as its desugaring: `p += 1` rejected on a pointer | [§5.3](../SPEC.md#53-assignment) |
+| [FE-12](#fe-12) | P2 | Executed | — | S-1/S-17 laxity reproduced: any `(void*)`-shaped actual is compatible with *everything* | [§3.2](../SPEC.md#32-type-compatibility) |
+| [FE-13](#fe-13) | P2 | Executed | — | `&&`/`||` operands are entirely unchecked (struct `&&` struct accepted) | [§6.3](../SPEC.md#63-binary-operators) |
+| [FE-14](#fe-14) | P0 | Executed | ✅ Fixed | `interrupt` validation missing: no warning, flag not cleared → calling the function crashes at runtime | [§4.2](../SPEC.md#42-interrupt-functions) |
+| [FE-15](#fe-15) | G | Executed | — | `for`-increment clause accepts a variable declaration | [§5.5](../SPEC.md#55-for-loop-clauses) |
+| [FE-16](#fe-16) | P2 | Source | — | Statement-position structs get no redeclaration check at all | [§7.2](../SPEC.md#72-scope-stack--shadowing) |
+| [FE-17](#fe-17) | P1 | Executed | — | One name-keyed layout table across all scopes: a local `struct S` clobbers the top-level `S`'s layout for the whole module | none — undocumented architecture |
+| [FE-18](#fe-18) | P0 | Executed | — | Non-literal global initializers silently lower to "uninitialized" | [§4.5](../SPEC.md#45-global-variables) |
+| [FE-19](#fe-19) | P0 | Executed | — | `++`/`--` on a deref, field, or register mutates a loaded temp and never stores back | [§6.2](../SPEC.md#62-unary-prefix-operators) |
+| [FE-20](#fe-20) | P0 | Executed | — | Nested field assignment (`a.b.c = v`) stores into a temporary copy of `a.b` | [§6.4](../SPEC.md#64-postfix--field-access) |
+| [FE-21](#fe-21) | P2 | Source | — | The IR emission contract: what is promised to `c02-ld`/`c02-as` implicitly, with nothing checking it | none — undocumented architecture |
+| [FE-22](#fe-22) | T | Executed | — | `__heap_start`/`__memory_top` are not injected — and `libc02`'s header declares the wrong type | [§4.6](../SPEC.md#46-forward-declarations-decl) |
 
 ## Entries
 
@@ -355,6 +355,23 @@ runtime crash instead of the spec's warning.
 **Spec:** §4.2.
 
 **Verified:** Executed — compile is silent, run never reaches the halt loop.
+
+**Resolved:** `Analyze.hs`'s `analyzeFunc` now checks `isInterrupt f && not
+(validInterrupt f)` and emits `WARN_INVALID_INTERRUPT`; `validInterrupt`
+(`AST.hs`) is the single source of truth for the three §4.2 conditions
+(name, `void` return, zero params), consumed identically by the call-site
+check, this warning, and both of lowering's `isInterrupt` reads — so an
+invalid tag is now guaranteed cleared before `c02-as` ever sees it, closing
+the FE-14/[CG-6](FINDINGS_codegen.md#cg-6) path from this side. The warning
+is genuinely non-fatal: `Diagnostic.hs` gained a `Severity` (`Warning`/
+`Error`) and `Main.hs` now only fails the build on `Error`-severity
+diagnostics, printing everything regardless — the first diagnostic in this
+frontend that isn't fatal. This also went one step further than the
+original finding: direct calls to a *valid* `nmi`/`irq` (§4.2/P2-3, "currently
+accepted") are now rejected outright (`ERR_INTERRUPT_CALL`), a deliberate
+spec amendment — `SPEC.md` §4.2 no longer says "currently accepted." Pinned
+by `test/analyzer/warn_invalid_interrupt.golden` (the warning, exit 0) and
+`test/analyzer/bad_interrupt_call.golden` (the new error).
 
 ### FE-15: `for`-increment clause accepts a declaration
 
