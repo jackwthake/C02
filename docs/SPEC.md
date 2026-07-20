@@ -406,10 +406,14 @@ fn irq() interrupt -> void { ... }
 - `irq()` is maskable (`__enable_interrupts()`, a compiler builtin
   implemented as `asm { CLI }`, must be called before it fires); `nmi()` is
   non-maskable.
-- Calling `nmi()`/`irq()` directly like an ordinary function
-  (`irq();`) is **currently accepted** by the analyzer with no check that
-  the callee is an interrupt handler — see
-  [P2-3](DEVIATIONS_c_impl.md#p2-3-interrupt-handlers-can-be-called-directly).
+- Calling `nmi()`/`irq()` directly like an ordinary function (`irq();`) is
+  an **error** (`ERR_INTERRUPT_CALL`). An interrupt handler's epilogue
+  assumes the hardware stack frame a real IRQ/NMI entry leaves behind; a
+  direct `JSR` into one doesn't leave that frame, so the call is rejected
+  outright rather than allowed to corrupt control flow at runtime. `cc02`
+  accepts this construct with no check — see
+  [P2-3](DEVIATIONS_c_impl.md#p2-3-interrupt-handlers-can-be-called-directly)
+  — this rewrite deliberately does not reproduce that gap.
 
 ### 4.3 Registers (`reg`)
 
@@ -969,6 +973,7 @@ unlike the parser — §8.3).
 |---|---|
 | `ERR_UNDECLARED_IDENTIFIER` | Identifier (value use or call target) not found in any visible scope. |
 | `ERR_NOT_A_FUNCTION` | Call target resolves to a non-function symbol. |
+| `ERR_INTERRUPT_CALL` | Call target is a valid `interrupt` function (§4.2) — direct calls are rejected. |
 | `ERR_UNKNOWN_STRUCT` | A struct-typed name doesn't resolve to a registered struct (declared type, cast target, struct-init target). |
 | `ERR_REDECLARATION` | Same name inserted twice into one scope frame (§7.2). |
 | `ERR_SHADOWED_DECLARATION` | A local var/param reuses a name visible in an enclosing scope (§7.2). |
