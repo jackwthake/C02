@@ -27,21 +27,21 @@ Severity: **T** over-strict rejection · **P0** silent miscompile ·
 
 ## Quick Reference
 
-| ID | Sev | Verified | Summary | Spec section |
-|---|---|---|---|---|
-| [CG-1](#cg-1) | P0 | Executed | Struct-by-value returns truncated to 1 byte | none — undocumented architecture |
-| [CG-2](#cg-2) | P0 | Executed | Struct-by-value parameters copy 1 byte through a 2-byte ABI slot | none — undocumented architecture |
-| [CG-3](#cg-3) | P0 | Executed | Pointer comparisons: 1 result byte written, 2 read back — control flow flips on ZP residue | [§6.3](../SPEC.md#63-binary-operators) |
-| [CG-4](#cg-4) | P1 | Executed | `TAC_ADDR_OF` of a non-variable lvalue reads the operand union as a pointer → SIGSEGV | [§6.2](../SPEC.md#62-unary-prefix-operators) |
-| [CG-5](#cg-5) | P0 | Executed | Zero-extension where sign-extension is needed: `ptr + (i8)-1`, i8 args into i16 params, i8 returns | [Appendix B](../SPEC.md#appendix-b-confirmed-runtime-semantics) |
-| [CG-6](#cg-6) | P0 | Executed | Any `is_interrupt` function reached by `JSR` executes RTI against a call frame | [§4.2](../SPEC.md#42-interrupt-functions) |
-| [CG-7](#cg-7) | P0 | Executed | String data emitted with `strlen`: embedded `\0` truncates; dedup coalesces by prefix | [§1.4](../SPEC.md#14-string-literals) |
-| [CG-8](#cg-8) | P2 | Source | 32KB bounds check misses the footer: last 10 bytes ($FFF6–$FFFF) silently overwritten | none — undocumented architecture |
-| [CG-9](#cg-9) | P2 | Source | `allocate_globals` never checks RAM_TOP — globals silently run past $3FFF | none — undocumented architecture |
-| [CG-10](#cg-10) | P2 | Source | Interrupt handlers don't save the ABI zone, helper slots, or RET | none — undocumented architecture |
-| [CG-11](#cg-11) | P2 | Source | Struct field offsets >255 wrap in `LDY #imm` on the pointer path | none — undocumented architecture |
-| [CG-12](#cg-12) | P2 | Source | Every referenced global gets a dead ZP slot per function — wasted ZP, earlier exhaustion | none — undocumented architecture |
-| [CG-13](#cg-13) | P2 | Source | Variable shift counts read only the low byte | none — undocumented architecture |
+| ID | Sev | Verified | Status | Summary | Spec section |
+|---|---|---|---|---|---|
+| [CG-1](#cg-1) | P0 | Executed | — | Struct-by-value returns truncated to 1 byte | none — undocumented architecture |
+| [CG-2](#cg-2) | P0 | Executed | — | Struct-by-value parameters copy 1 byte through a 2-byte ABI slot | none — undocumented architecture |
+| [CG-3](#cg-3) | P0 | Executed | — | Pointer comparisons: 1 result byte written, 2 read back — control flow flips on ZP residue | [§6.3](../SPEC.md#63-binary-operators) |
+| [CG-4](#cg-4) | P1 | Executed | — | `TAC_ADDR_OF` of a non-variable lvalue reads the operand union as a pointer → SIGSEGV | [§6.2](../SPEC.md#62-unary-prefix-operators) |
+| [CG-5](#cg-5) | P0 | Executed | — | Zero-extension where sign-extension is needed: `ptr + (i8)-1`, i8 args into i16 params, i8 returns | [Appendix B](../SPEC.md#appendix-b-confirmed-runtime-semantics) |
+| [CG-6](#cg-6) | P0 | Executed | ✅ Fixed upstream | Any `is_interrupt` function reached by `JSR` executes RTI against a call frame | [§4.2](../SPEC.md#42-interrupt-functions) |
+| [CG-7](#cg-7) | P0 | Executed | — | String data emitted with `strlen`: embedded `\0` truncates; dedup coalesces by prefix | [§1.4](../SPEC.md#14-string-literals) |
+| [CG-8](#cg-8) | P2 | Source | — | 32KB bounds check misses the footer: last 10 bytes ($FFF6–$FFFF) silently overwritten | none — undocumented architecture |
+| [CG-9](#cg-9) | P2 | Source | — | `allocate_globals` never checks RAM_TOP — globals silently run past $3FFF | none — undocumented architecture |
+| [CG-10](#cg-10) | P2 | Source | — | Interrupt handlers don't save the ABI zone, helper slots, or RET | none — undocumented architecture |
+| [CG-11](#cg-11) | P2 | Source | — | Struct field offsets >255 wrap in `LDY #imm` on the pointer path | none — undocumented architecture |
+| [CG-12](#cg-12) | P2 | Source | — | Every referenced global gets a dead ZP slot per function — wasted ZP, earlier exhaustion | none — undocumented architecture |
+| [CG-13](#cg-13) | P2 | Source | — | Variable shift counts read only the low byte | none — undocumented architecture |
 
 ## Entries
 
@@ -227,6 +227,21 @@ the call path.
 **Spec:** §4.2.
 
 **Verified:** Executed — program never reaches the halt loop.
+
+**Resolved (upstream, not here):** `emit_function_from_cfg`'s RTI epilogue is
+unchanged — this entry's C code is still exactly as described, and codegen
+still has no way to tell "reached by `JSR`" from "reached by a real
+interrupt." Both of the two reachability paths this entry named are instead
+closed off in the frontend, so no accepted program can trigger it anymore:
+the invalid-name case is fixed at
+[FE-14](FINDINGS_frontend.md#fe-14) (the flag is now guaranteed cleared
+before `c02-as` ever sees it), and the direct-call case is now a compile-time
+`ERR_INTERRUPT_CALL` rather than the "currently accepted" behavior this entry
+and cc02's P2-3 both describe — `SPEC.md` §4.2 was amended to match. Treat
+this as latent-but-unreachable, not gone: any future path that can hand
+`c02-as` a `.o` with a stray `is_interrupt=true` on a non-vectored function
+(a hand-built object, a different frontend, a bug in `validInterrupt` itself)
+still hits this exact crash, since codegen enforces none of it independently.
 
 ### CG-7: String data emitted with `strlen` — embedded NUL truncates
 
