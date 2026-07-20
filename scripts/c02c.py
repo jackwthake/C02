@@ -48,7 +48,7 @@ def parse_args():
 
   args = parser.parse_args()
   src_files = [f for f in args.files if f.endswith(".c02")]
-  o_files   = [f for f in args.files if f.endswith(".o")]
+  o_files   = [f for f in args.files if f.endswith(".o") or f.endswith(".out")]
   return (args, src_files, o_files)
 
 
@@ -78,7 +78,7 @@ def main():
 
   args.include_dirs += [INCLUDE_DIR]
 
-  if not args.no_stdlib:
+  if not args.no_stdlib and len(o_files) != 1: # don't link with stdlib if we're just passing one o_file
     o_files += [STANDARD_LIBRARY]
 
   frontend_args = []
