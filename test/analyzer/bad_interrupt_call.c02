@@ -1,0 +1,7 @@
+fn irq() interrupt -> void {
+
+}
+
+fn main() -> void {
+  irq();
+}

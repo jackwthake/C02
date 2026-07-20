@@ -31,7 +31,7 @@ import Text.Megaparsec
 import C02.Parser.Parser (parseProgram)
 import C02.Analyzer.Includes (resolveIncludes)
 import C02.Analyzer.Analyze (analyze)
-import C02.Analyzer.Diagnostic (Diag(..), Diagnostic, render)
+import C02.Analyzer.Diagnostic (Diag(..), Diagnostic, Severity(..), render, severityOf, diagWhat)
 import C02.Lowering.Module (lowerModule)
 import C02.Parser.AST (Program, Pos(..))
 import C02.Lowering.Serialize (serializeModule)
@@ -69,12 +69,19 @@ main = do
               resolved <- resolveIncludes path includeDirs prog
               case resolved of
                 Left err                    -> hPutStr stderr (errorBundlePretty err) >> exitFailure
-                Right (resolvedProg, srcs)  -> case analyze resolvedProg of
-                  []    -> if dumpAST then print resolvedProg else writeOutput resolvedProg outPath
+                Right (resolvedProg, srcs)  ->
                   -- The root file's source isn't in @srcs@ (the resolver only
                   -- records files it read); add it so the renderer can show root
                   -- diagnostics too.
-                  diags -> hPutStr stderr (renderDiags path (Map.insert path src srcs) diags) >> exitFailure
+                  let diags  = analyze resolvedProg
+                      hasErr = any ((== Error) . severityOf . diagWhat) diags
+                  in do
+                    if null diags
+                      then pure ()
+                      else hPutStr stderr (renderDiags path (Map.insert path src srcs) diags)
+                    if hasErr
+                      then exitFailure
+                      else if dumpAST then print resolvedProg else writeOutput resolvedProg outPath
     _ -> hPutStrLn stderr "usage: c02-frontend [--parse-only] [-I <dir>]... [-o <out.o>] <file.c02>" >> exitFailure
 
 
@@ -114,10 +121,17 @@ extractIncludeDirs = go [] []
 -- file, then a summary count closes the report.
 renderDiags :: FilePath -> Map FilePath String -> [Diag] -> String
 renderDiags rootPath srcs diags =
-  concatMap fileBundle (Map.toList byFile) ++ freeStr
-    ++ "\nSemantic analysis failed with " ++ show n ++ " errors.\n"
+  concatMap fileBundle (Map.toList byFile) ++ freeStr ++ summary
   where
-    n      = length diags
+    nErrors   = length [ () | d <- diags, severityOf (diagWhat d) == Error ]
+    nWarnings = length diags - nErrors
+    summary
+      -- Preserve the original wording exactly when there are no warnings
+      -- (every existing golden pins this string, always-plural "errors").
+      | nErrors > 0 && nWarnings == 0 = "\nSemantic analysis failed with " ++ show nErrors ++ " errors.\n"
+      | nErrors > 0                   = "\nSemantic analysis failed with " ++ show nErrors
+                                         ++ " errors and " ++ show nWarnings ++ " warnings.\n"
+      | otherwise                     = "\n" ++ show nWarnings ++ " warnings.\n"
     frees  = [ d | Free d <- diags ]
     -- group located diags by file; Map.toList then yields files in a stable
     -- (path-sorted) order, and each group is non-empty by construction.

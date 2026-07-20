@@ -1,0 +1,7 @@
+test/analyzer/warn_invalid_interrupt.c02:1:1:
+  |
+1 | fn tick() interrupt -> void {
+  | ^
+'tick' function tagged interrupt but does not have valid signature. dropping interrupt qualifier.
+
+1 warnings.

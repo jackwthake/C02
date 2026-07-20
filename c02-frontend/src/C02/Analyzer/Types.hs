@@ -169,8 +169,8 @@ isTypeCompatible (expKind, expDepth) (actKind, actDepth)
 -- function needs a return type /and/ its parameter types, which a variable
 -- doesn't have — so the stored value is a sum, one constructor per symbol kind.
 data Symbol
-  = VarSym  Ty          -- ^ a variable of this type
-  | FuncSym Ty [Ty]     -- ^ a function: return type, then parameter types
+  = VarSym  Ty           -- ^ a variable of this type
+  | FuncSym Ty [Ty] Bool -- ^ a function: return type, then parameter types, isInterrupt
   deriving (Show, Eq)
 
 data Env = Env
@@ -194,12 +194,14 @@ inferType env (Cast bt d e)      = checkCast env bt d e
 inferType env (Var name)         = case symbolLookup env name of
   Left err            -> Left err
   Right (VarSym ty)   -> Right ty
-  Right (FuncSym _ _) -> Left (NotAssignable name)         -- ERR_NOT_ASSIGNABLE
+  Right (FuncSym _ _ _) -> Left (NotAssignable name)         -- ERR_NOT_ASSIGNABLE
 -- A call's type is the callee's RETURN type; a variable here can't be called.
 inferType env (Call name args)   = case symbolLookup env name of
-  Left err                   -> Left err
-  Right (VarSym _)           -> Left (NotAFunction name)   -- ERR_NOT_A_FUNCTION
-  Right (FuncSym ret params) -> checkArgs env name args params ret
+  Left err                         -> Left err
+  Right (VarSym _)                 -> Left (NotAFunction name)   -- ERR_NOT_A_FUNCTION
+  Right (FuncSym ret params i) -> case i of
+    True  -> Left (InterruptCall name)
+    False -> checkArgs env name args params ret
 -- Resolve left, then right (first error wins), then apply §6.3's rules.
 inferType env (Binary op l r)    = case inferType env l of
   Left err -> Left err

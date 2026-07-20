@@ -7,15 +7,21 @@
 #   test/<stage>/golden/*.golden expected stdout, one <name>.golden per input
 #
 # Each case is compiled through the c02c driver and matched against a committed
-# golden. Cases come in two flavours, distinguished by filename:
+# golden. Cases come in three flavours, distinguished by filename:
 #
-#   * positive (any name)  - must parse: exit 0, AST printed to stdout.
+#   * positive (any name)   - must parse: exit 0, AST printed to stdout.
 #                            The golden holds that stdout. A nonzero exit is a
 #                            *crash* (an uncaught exception), reported as its own
 #                            category - never a plain mismatch, never blessable.
 #   * negative (bad_*.c02)  - must fail to parse: nonzero exit, diagnostic on
 #                            stderr. The golden holds that stderr. If a bad_ case
 #                            parses cleanly (exit 0) that is an XPASS failure.
+#   * warning (warn_*.c02)  - must still succeed: exit 0 (like positive), but
+#                            expected to print a non-fatal diagnostic (a
+#                            WARN_*) to stderr. The golden holds that stderr,
+#                            not stdout - this is the only way to pin a
+#                            warning's text down, since a plain positive case
+#                            never looks at stderr at all.
 #
 # Usage:
 #   scripts/test.py                 run every stage
@@ -97,13 +103,22 @@ def run_case(src_path, argv_for):
 
 def check_case(name, src_path, golden_path, argv_for, bless):
     stdout, stderr, code = run_case(src_path, argv_for)
-    negative = os.path.basename(name).startswith("bad_")
+    basename = os.path.basename(name)
+    negative = basename.startswith("bad_")
+    warning = basename.startswith("warn_")
 
     if negative:
         # A negative must fail to parse. Parsing cleanly is an XPASS - the case
         # no longer tests what it claims, and there is nothing to bless.
         if code == 0:
             return Result(name, XPASS, "expected a parse error, but the input parsed cleanly")
+        observed = stderr
+    elif warning:
+        # A warning case must still succeed - same crash handling as positive -
+        # but the thing being pinned down is the diagnostic text on stderr.
+        if code != 0:
+            why = f"exit {code}" + (f"\n{stderr.rstrip()}" if stderr else "")
+            return Result(name, CRASH, why)
         observed = stderr
     else:
         # A positive must parse. A nonzero exit is an uncaught exception: its own

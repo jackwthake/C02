@@ -1,0 +1,7 @@
+fn tick() interrupt -> void {
+
+}
+
+fn main() -> void {
+  return;
+}

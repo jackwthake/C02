@@ -57,7 +57,7 @@ buildGlobalEnv decls = Env
       FwdFuncDecl f   -> [(funcName f, funcSym f)]
       StructDef _     -> []
     funcSym f = FuncSym (funcReturnType f, funcReturnPtrDepth f)
-                        [ (bt, d) | (bt, d, _) <- params f ]
+                        [ (bt, d) | (bt, d, _) <- params f ] (validInterrupt f)
 
 
 -- | Lower one function to a single-block CFG. Parameters are added to the
@@ -71,7 +71,7 @@ lowerFunction genv f = T.Cfg
   , T.blocks      = [ T.Block { T.blockId = 0, T.instructions = allInstrs } ]
   , T.nextTemp    = nextTemp finalSt
   , T.nextLabel   = nextLabel finalSt
-  , T.isInterrupt = isInterrupt f
+  , T.isInterrupt = validInterrupt f
   }
   where
     fenv      = genv { symbols = foldr addParam (symbols genv) (params f) }
