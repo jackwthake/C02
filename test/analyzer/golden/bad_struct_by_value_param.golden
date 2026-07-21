@@ -1,0 +1,19 @@
+test/analyzer/bad_struct_by_value_param.c02:4:1:
+  |
+4 | decl fn fwd(u8 dummy, Pair p) -> void;            // Should error at Pair p in parameter list
+  | ^
+'Pair': Passing struct by value is prohibited
+
+test/analyzer/bad_struct_by_value_param.c02:5:1:
+  |
+5 | fn second(u8 dummy, Pair p) -> u8 { return p.b; } // Should error at Pair p in parameter list
+  | ^
+'Pair': Passing struct by value is prohibited
+
+test/analyzer/bad_struct_by_value_param.c02:15:3:
+   |
+15 |   third(0, q);                                    // SHould error at call, type mismatch
+   |   ^
+type mismatch in function call: expected Pair*, found Pair
+
+Semantic analysis failed with 3 errors.

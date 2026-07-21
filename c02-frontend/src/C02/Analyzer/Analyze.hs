@@ -258,18 +258,26 @@ validateTopLevel = mapM_ (\(Loc off d) -> withOffset off (one d))
     one (RegisterDecl r) = void $ checkDeclType (regName r) (regType r, regPtrDepth r)
     one (StructDef s)    = forM_ (structFields s) $ \(bt, d, nm) ->
                              void $ checkDeclType nm (bt, d)
-    one (FunctionDecl f) = validateReturn f
+    one (FunctionDecl f) = validateReturn f *> validateParams f
     one (FwdFuncDecl f)  = do
       validateReturn f
+      validateParams f
       forM_ (params f) $ \(bt, d, nm) -> void $ checkDeclType nm (bt, d)
 
     -- A function return type may legitimately be void; only an unknown struct is
     -- an error here (parameters are validated when the body is walked).
-    validateReturn f = case funcReturnType f of
+    validateReturn f@(FuncDecl _ _ d _ _ _) = case funcReturnType f of
       StructName sn -> do
-        known <- asks (Map.member sn . ctxStructs)
-        unless known (emit (UnknownStruct sn))
+        case d >= 1 of   -- returning structs by value is prohibited
+          True -> do
+            known <- asks (Map.member sn . ctxStructs)
+            unless known (emit (UnknownStruct sn))
+          False -> emit (ReturnStructByValue sn)
       _ -> pure ()
+    
+    validateParams f = forM_ (params f) $ \(bt, d, _) -> void $ case bt of
+      StructName n -> if d < 1 then emit (StructPassByValue n) else pure ()
+      _            -> pure ()
 
 
 checkMain :: [Loc TopLevelDecl] -> Analyze ()
@@ -331,8 +339,8 @@ funcBodyStmts f = case body f of
 -- declaration into the tail via the "scope is 'local'" idiom.
 analyzeBlock :: [Loc Stmt] -> Analyze ()
 analyzeBlock []                                   = pure ()
-analyzeBlock (Loc off (LocVarDecl vd) : rest)      = declLocal off vd (analyzeBlock rest)
-analyzeBlock (Loc off (StructDeclStmt sd) : rest)  = declLocalStruct off sd (analyzeBlock rest)
+analyzeBlock (Loc off (LocVarDecl vd) : rest)     = declLocal off vd (analyzeBlock rest)
+analyzeBlock (Loc off (StructDeclStmt sd) : rest) = declLocalStruct off sd (analyzeBlock rest)
 analyzeBlock (Loc off s : rest)                   = withOffset off (analyzeStmt s) >> analyzeBlock rest
 
 -- | Declare a statement-position struct (§4.4/§5): validate its field types

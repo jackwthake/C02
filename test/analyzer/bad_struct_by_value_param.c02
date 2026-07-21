@@ -1,0 +1,16 @@
+reg u8 PORTB @ 0x6000;
+struct Pair { u8 a; u8 b; }
+
+decl fn fwd(u8 dummy, Pair p) -> void;            // Should error at Pair p in parameter list
+fn second(u8 dummy, Pair p) -> u8 { return p.b; } // Should error at Pair p in parameter list
+
+fn third(u8 dummy, Pair *p) -> void {             // Ok: not a pass by value
+  p.a = 10;
+}
+
+fn main() -> void {
+  Pair q = Pair{ .a = 7, .b = 42 };
+  PORTB = second(0, q);                           // Should error at second(0, q)
+                                                  //                           ^
+  third(0, q);                                    // SHould error at call, type mismatch
+}

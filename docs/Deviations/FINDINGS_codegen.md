@@ -29,8 +29,8 @@ Severity: **T** over-strict rejection · **P0** silent miscompile ·
 
 | ID | Sev | Verified | Status | Summary | Spec section |
 |---|---|---|---|---|---|
-| [CG-1](#cg-1) | P0 | Executed | — | Struct-by-value returns truncated to 1 byte | none — undocumented architecture |
-| [CG-2](#cg-2) | P0 | Executed | — | Struct-by-value parameters copy 1 byte through a 2-byte ABI slot | none — undocumented architecture |
+| [CG-1](#cg-1) | P0 | Executed | ✅ Fixed upstream | Struct-by-value returns truncated to 1 byte | none — undocumented architecture |
+| [CG-2](#cg-2) | P0 | Executed | ✅ Fixed upstream | Struct-by-value parameters copy 1 byte through a 2-byte ABI slot | none — undocumented architecture |
 | [CG-3](#cg-3) | P0 | Executed | — | Pointer comparisons: 1 result byte written, 2 read back — control flow flips on ZP residue | [§6.3](../SPEC.md#63-binary-operators) |
 | [CG-4](#cg-4) | P1 | Executed | — | `TAC_ADDR_OF` of a non-variable lvalue reads the operand union as a pointer → SIGSEGV | [§6.2](../SPEC.md#62-unary-prefix-operators) |
 | [CG-5](#cg-5) | P0 | Executed | — | Zero-extension where sign-extension is needed: `ptr + (i8)-1`, i8 args into i16 params, i8 returns | [Appendix B](../SPEC.md#appendix-b-confirmed-runtime-semantics) |
@@ -73,6 +73,10 @@ struct return types (§3.1/§4.1 place no restriction).
 
 **Verified:** Executed.
 
+**Resolved:** Made return by value for struct types prohibited. This is more efficient
+in memory anyways compared to copying structs around. Added two tests: `bad_struct_by_value_return`
+and `struct_by_pointer_return` demonstrating the error case and success cases.
+
 ### CG-2: Struct-by-value parameters copy 1 byte through a 2-byte slot
 
 ```c
@@ -98,6 +102,10 @@ values via RAM or reject struct params.
 **Spec:** none — undocumented architecture (ABI).
 
 **Verified:** Executed (both the failing layout and the accidental-pass one).
+
+**Resolved:** Made pass by value for struct types prohibited. This is more efficient
+in memory anyways compared to copying structs around. Added two tests: `bad_struct_by_value_param`
+and `struct_by_pointer_param` demonstrating the error case and success cases.
 
 ### CG-3: Pointer comparisons — one result byte written, two read back
 
