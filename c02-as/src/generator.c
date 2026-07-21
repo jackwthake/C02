@@ -298,6 +298,11 @@ static void allocate_globals(emitter_t *e, ir_gen_t *gen) {
     entry->size = (uint8_t)size;
     entry->type = g->type;
     e->ram_pos += (uint16_t)size;
+
+    if (e->ram_pos > RAM_TOP) {
+      e->overflow = 1;
+      return;
+    }
   }
 }
 
@@ -1871,14 +1876,18 @@ static int emit_compiler_extern_inits(emitter_t *e, ir_gen_t *gen) {
     ir_extern_t *ext = &gen->module.externs[i];
     if (ext->is_function) continue;
 
-    if (strcmp(ext->name, "__heap_start") == 0)
-      ALLOC_COMPILER_SLOT(ext);
-    else if (strcmp(ext->name, "__memory_top") == 0)
+    if (strcmp(ext->name, "__heap_start") == 0 || strcmp(ext->name, "__memory_top") == 0)
       ALLOC_COMPILER_SLOT(ext);
     else {
       fprintf(stderr, "codegen: unresolved extern '%s'\n", ext->name);
       return 0;
     }
+
+    if (e->ram_pos > RAM_TOP) {
+      e->overflow = 1;
+    }
+
+    return 1;
   }
 
   // Pass 2: emit initialisers (e->ram_pos is now fully settled).
@@ -1902,6 +1911,16 @@ static void emitter_free(emitter_t *e) {
 }
 
 
+#define OVERFLOW_ERROR_CHECK(msg) \
+  if (e.overflow) {               \
+    fprintf(stderr, msg);         \
+    free(e.rom);                  \
+    emitter_free(&e);             \
+    *final_rom_size = 0;          \
+    return NULL;                  \
+  }
+
+
 uint8_t *generate_rom(ir_gen_t *gen, size_t *final_rom_size, int emit_symbols) {
   emitter_t e = { 0 };
 
@@ -1918,6 +1937,8 @@ uint8_t *generate_rom(ir_gen_t *gen, size_t *final_rom_size, int emit_symbols) {
   e.zp_next = REG_START;
 
   allocate_globals(&e, gen);
+  OVERFLOW_ERROR_CHECK("Global variables overflowed RAM.\n")
+
   emit_bootstrap(&e);
   emit_global_init(&e, gen);
 
@@ -1927,6 +1948,9 @@ uint8_t *generate_rom(ir_gen_t *gen, size_t *final_rom_size, int emit_symbols) {
     *final_rom_size = 0;
     return NULL;
   }
+
+  // compiler externs are just globals and can also overflow ram
+  OVERFLOW_ERROR_CHECK("Global variables overflowed RAM.\n")
   
   if (!emit_call_main(&e)) {
     free(e.rom);
@@ -1959,15 +1983,6 @@ uint8_t *generate_rom(ir_gen_t *gen, size_t *final_rom_size, int emit_symbols) {
     *final_rom_size = 0;
     return NULL;
   }
-
-  #define OVERFLOW_ERROR_CHECK(msg) \
-    if (e.overflow) {               \
-      fprintf(stderr, msg);         \
-      free(e.rom);                  \
-      emitter_free(&e);             \
-      *final_rom_size = 0;          \
-      return NULL;                  \
-    }
 
   OVERFLOW_ERROR_CHECK("Code section generation failed: output exceeds 32 KB ROM.\n");
 
