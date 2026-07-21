@@ -36,7 +36,7 @@ Severity: **T** over-strict rejection · **P0** silent miscompile ·
 | [CG-5](#cg-5) | P0 | Executed | — | Zero-extension where sign-extension is needed: `ptr + (i8)-1`, i8 args into i16 params, i8 returns | [Appendix B](../SPEC.md#appendix-b-confirmed-runtime-semantics) |
 | [CG-6](#cg-6) | P0 | Executed | ✅ Fixed upstream | Any `is_interrupt` function reached by `JSR` executes RTI against a call frame | [§4.2](../SPEC.md#42-interrupt-functions) |
 | [CG-7](#cg-7) | P0 | Executed | — | String data emitted with `strlen`: embedded `\0` truncates; dedup coalesces by prefix | [§1.4](../SPEC.md#14-string-literals) |
-| [CG-8](#cg-8) | P2 | Source | — | 32KB bounds check misses the footer: last 10 bytes ($FFF6–$FFFF) silently overwritten | none — undocumented architecture |
+| [CG-8](#cg-8) | P2 | Source | ✅ Fixed | 32KB bounds check misses the footer: last 10 bytes ($FFF6–$FFFF) silently overwritten | none — undocumented architecture |
 | [CG-9](#cg-9) | P2 | Source | ✅ Fixed | `allocate_globals` never checks RAM_TOP — globals silently run past $3FFF | none — undocumented architecture |
 | [CG-10](#cg-10) | P2 | Source | — | Interrupt handlers don't save the ABI zone, helper slots, or RET | none — undocumented architecture |
 | [CG-11](#cg-11) | P2 | Source | — | Struct field offsets >255 wrap in `LDY #imm` on the pointer path | none — undocumented architecture |
@@ -286,6 +286,12 @@ effective ceiling for `code_pos`/data.
 
 **Verified:** Source (requires a ≈32,758-byte image to demonstrate; the
 arithmetic and write sites are all in `generate_rom`/`emit_vectors`).
+
+**Resolved:** Changed `EMIT` and `PATCH_BYTE` to guard writes against `SYMTABLE_START_PTR`
+instead of `ROM_SIZE` to stop footer from being overwritten. Added `codegen/bad_rom_overflow`
+test to exercise the guards, all other tests still pass. Emitting the symbol table pointer
+itself no longer uses the `PATCH_BYTE` macro since the editted guard will cause that to always
+fail.
 
 ### CG-9: No RAM-exhaustion check for globals
 

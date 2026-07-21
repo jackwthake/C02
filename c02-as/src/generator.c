@@ -8,15 +8,29 @@
 // Memory map
 // ----------------------------------------------------------------
 
-#define RAM_START   0x0200 // 6502 hardware stack occupies 0x0100 - 0x01FF
-#define RAM_TOP     0x3FFF // see docs/memmap.md
-#define ROM_START   0x8000
-#define ROM_SIZE    0x8000
+#define RAM_START              0x0200 // 6502 hardware stack occupies 0x0100 - 0x01FF
+#define RAM_TOP                0x3FFF // see docs/memmap.md
+#define ROM_START              0x8000
+#define ROM_SIZE               0x8000
 
-#define FP          0x00
-#define RET         0x02
-#define REG_START   0x04
-#define PARAM_START 0xEF
+// ROM footer layout (offsets from ROM_START):
+//   $FFF6-$FFF7  SYMTABLE_START_PTR:   little-endian absolute address of the "C02S" symbol
+//                table header, or $EAEA (NOP fill) if no table was written. The disassembler
+//                reads this first; old binaries that lack a table have $EAEA here, which is
+//                in range but fails the magic-byte check, so they degrade gracefully.
+//   $FFF8-$FFF9  SYMTABLE_BOUNDARY_PTR: little-endian absolute address of the first byte
+//                past the code+data region (= start of NOP fill). Used by the disassembler
+//                to know where executable/data bytes end and padding begins.
+//   $FFFA-$FFFF  NMI / Reset / IRQ vectors (written by emit_vectors).
+#define SYMTABLE_START_PTR     (0xFFF6 - ROM_START)
+#define SYMTABLE_BOUNDARY_PTR  (0xFFF8 - ROM_START)
+#define ROM_VECTOR_TABLE_START (0xFFFA - ROM_START)
+
+
+#define FP                     0x00
+#define RET                    0x02
+#define REG_START              0x04
+#define PARAM_START            0xEF
 
 // ABI zone: fixed 2-byte slots per parameter ($EF/$F0, $F1/$F2, ..., $FD/$FE).
 // Using fixed 2-byte slots simplifies caller/callee agreement at the cost of 1 byte
@@ -311,16 +325,16 @@ static void allocate_globals(emitter_t *e, ir_gen_t *gen) {
 // Op code emitters
 // ----------------------------------------------------------------
 
-#define EMIT(OP_CODE) do {                              \
-  if (e->code_pos >= ROM_SIZE) { e->overflow = 1; }     \
-  else { e->rom[e->code_pos++] = (uint8_t)(OP_CODE); }  \
+#define EMIT(OP_CODE) do {                                      \
+  if (e->code_pos >= SYMTABLE_START_PTR) { e->overflow = 1; }   \
+  else { e->rom[e->code_pos++] = (uint8_t)(OP_CODE); }          \
 } while (0)
 
 // Write one byte to an already-emitted position (branch offset backpatch).
-// Guards against positions recorded after an overflow (which would be >= ROM_SIZE).
-#define PATCH_BYTE(POS, VAL) do {                       \
-  if ((POS) < ROM_SIZE) e->rom[(POS)] = (uint8_t)(VAL); \
-  else e->overflow = 1;                                 \
+// Guards against positions recorded after an overflow (which would be >= SYMTABLE_START_PTR).
+#define PATCH_BYTE(POS, VAL) do {                                 \
+  if ((POS) < SYMTABLE_START_PTR) e->rom[(POS)] = (uint8_t)(VAL); \
+  else e->overflow = 1;                                           \
 } while (0)
 
 #define OP_EMITTER_SINGLE_ARG(NAME, OP_CODE)            \
@@ -534,7 +548,7 @@ static void emit_data_section(emitter_t *e, ir_gen_t *gen) {
 
 // Write NMI, Reset, and IRQ vectors at $FFFA-$FFFF.
 static void emit_vectors(emitter_t *e) {
-  unsigned pos = 0xFFFA - ROM_START;
+  unsigned pos = ROM_VECTOR_TABLE_START;
 
   // Only functions actually declared `interrupt` get wired into the vector table —
   // a plain function that happens to be named "nmi"/"irq" was emitted with a normal
@@ -558,11 +572,11 @@ static void emit_vectors(emitter_t *e) {
   }
 
   e->rom[pos++] = (uint8_t)(nmi_addr & 0xFF);     // NMI low
-  e->rom[pos++] = (uint8_t)(nmi_addr >> 8);        // NMI high
-  e->rom[pos++] = ROM_START & 0xFF;   // Reset low
-  e->rom[pos++] = ROM_START >> 8;     // Reset high
+  e->rom[pos++] = (uint8_t)(nmi_addr >> 8);       // NMI high
+  e->rom[pos++] = ROM_START & 0xFF;               // Reset low
+  e->rom[pos++] = ROM_START >> 8;                 // Reset high
   e->rom[pos++] = (uint8_t)(irq_addr & 0xFF);     // IRQ low
-  e->rom[pos++] = (uint8_t)(irq_addr >> 8);        // IRQ high
+  e->rom[pos++] = (uint8_t)(irq_addr >> 8);       // IRQ high
 }
 
 
@@ -1764,18 +1778,6 @@ static void emit_sdiv16_helper(emitter_t *e) {
 }
 
 
-// ROM footer layout (offsets from ROM_START):
-//   $FFF6-$FFF7  SYMTABLE_START_PTR:   little-endian absolute address of the "C02S" symbol
-//                table header, or $EAEA (NOP fill) if no table was written. The disassembler
-//                reads this first; old binaries that lack a table have $EAEA here, which is
-//                in range but fails the magic-byte check, so they degrade gracefully.
-//   $FFF8-$FFF9  SYMTABLE_BOUNDARY_PTR: little-endian absolute address of the first byte
-//                past the code+data region (= start of NOP fill). Used by the disassembler
-//                to know where executable/data bytes end and padding begins.
-//   $FFFA-$FFFF  NMI / Reset / IRQ vectors (written by emit_vectors).
-#define SYMTABLE_START_PTR    (0xFFF6 - ROM_START)
-#define SYMTABLE_BOUNDARY_PTR (0xFFF8 - ROM_START)
-
 // Write the "C02S" symbol table into the NOP fill area immediately after the data section,
 // then store its absolute address at SYMTABLE_START_PTR so the disassembler can find it.
 // Each entry is: u16 address (LE) + null-terminated name. Covers three symbol kinds —
@@ -1797,8 +1799,10 @@ static void emit_symbol_table(emitter_t *e) {
   for (unsigned i = 0; i < reg_count; i++)
     sym_size += 2 + strlen(e->gen->module.regs[i].name) + 1;
 
-  if (e->code_pos + sym_size > SYMTABLE_START_PTR)
+  if (e->code_pos + sym_size > SYMTABLE_START_PTR) {
+    e->overflow = 1;
     return;
+  }
 
   uint16_t symtab_addr = (uint16_t)(ROM_START + e->code_pos);
 
@@ -1831,8 +1835,9 @@ static void emit_symbol_table(emitter_t *e) {
     EMIT(0);
   }
 
-  PATCH_BYTE(SYMTABLE_START_PTR,     symtab_addr & 0xFF);
-  PATCH_BYTE(SYMTABLE_START_PTR + 1, symtab_addr >> 8);
+  // patch in symbol table ptr, can't use PATCH_BYTE because it checks if the pos < SYMTABLE_START_PTR wich will always fail in this case
+  e->rom[SYMTABLE_START_PTR]       = (uint8_t)(symtab_addr & 0xFF);
+  e->rom[(SYMTABLE_START_PTR + 1)] = (uint8_t)(symtab_addr >> 8);
 }
 
 
