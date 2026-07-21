@@ -1,0 +1,4 @@
+struct Pair { u8 a; u8 b; }
+fn first(Pair *p) -> Pair { return *p; } // should error on return type in signature
+
+fn main() -> void {}

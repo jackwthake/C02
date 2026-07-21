@@ -1,0 +1,13 @@
+reg u8 PORTB @ 0x6000;
+
+struct Pair { u8 a; u8 b; }
+
+decl fn first(u8 dummy, Pair *p) -> void;
+fn second(u8 dummy, Pair *p) -> u8 {             // Ok: not a pass by value
+  return p.a + p.b;
+}
+
+fn main() -> void {
+  Pair q = Pair{ .a = 7, .b = 42 };
+  PORTB = second(0, &q);
+}

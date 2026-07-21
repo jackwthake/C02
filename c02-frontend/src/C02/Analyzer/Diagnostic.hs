@@ -21,6 +21,8 @@ type TyPair = (BaseType, Int)
 data Diagnostic
   = LiteralOutOfRange Int      -- ^ ERR_LITERAL_OUT_OF_RANGE (§3.4): literal outside -32768..65535
   | StructCastByValue String   -- ^ ERR_STRUCT_CAST_BY_VALUE: @(Struct)expr@ with no pointer level
+  | StructPassByValue String   -- ^ ERR_STRUCT_PASS_BY_VALUE: Passing struct by value is prohibited
+  | ReturnStructByValue String -- ^ ERR_STRUCT_RETURN_BY_VALUE: Returning struct by value is prohibited
   | UnknownStruct String       -- ^ ERR_UNKNOWN_STRUCT: struct-typed name not registered
   | UndeclaredIdentifier String-- ^ ERR_UNDECLARED_IDENTIFIER: name not in any visible scope
   | NotAFunction String        -- ^ ERR_NOT_A_FUNCTION: call target is a non-function symbol
@@ -79,6 +81,8 @@ render :: Diagnostic -> String
 render d = case d of
   LiteralOutOfRange _     -> "integer literal is out of range (must fit in -32768..65535)"
   StructCastByValue n     -> "cannot cast to struct '" ++ n ++ "' by value; cast to '" ++ n ++ "*' instead"
+  StructPassByValue n     -> "'" ++ n ++ "': Passing struct by value is prohibited"
+  ReturnStructByValue n   -> "'" ++ n ++ "': Returning struct by value is prohibited"
   UnknownStruct n         -> "unknown struct '" ++ n ++ "'"
   UndeclaredIdentifier n  -> "undeclared identifier '" ++ n ++ "'"
   NotAFunction n          -> "'" ++ n ++ "' is not a function"

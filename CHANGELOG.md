@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/) - while
 the project is in `0.x`, breaking changes may land in MINOR releases; PATCH
 releases are reserved for bug fixes only.
 
+## [Unreleased]
+
+### Fixed:
+
+- **Fixed CG-1, CG-2:** *Struct by value errors:* Added code to the analyzer to forbid passing or
+  returning struct types by value. This both keeps memory cleaner without copying structs around
+  and eliminates these two silent miscompiles.
+- **Fixed CG-8:** *binary footer overwritten error:* Added guards for `code`, `data`, and `symbol table`
+  sections overwriting the binary footer which contains the vector table and would produce a broken
+  binary if overwritten.
+- **Fixed CG-9:** *Added guards for exhausted ram on global emit:* Added guards for exhausting ram
+  space with global variables and compiler extern variables.
+- **Fixed FE-14, CG-6:** *interrupt handling:* Added warning for wrongly defining an interrupt that
+  does not match the golden format, the warning drops the interrupt qualifier and continues. Also
+  added error for explicitly calling interrupt functions, because interrupt functions us `RTI` and
+  not `RTS` instructions so directly calling them would corrupt the stack.
+
+
 ## [1.7.0] 2026-07-17
 
 - Added char literal to parser, 'a' now gets translated to its ascii value in that case, 97. 

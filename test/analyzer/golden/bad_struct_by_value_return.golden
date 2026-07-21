@@ -1,0 +1,7 @@
+test/analyzer/bad_struct_by_value_return.c02:2:1:
+  |
+2 | fn first(Pair *p) -> Pair { return *p; } // should error on return type in signature
+  | ^
+'Pair': Returning struct by value is prohibited
+
+Semantic analysis failed with 1 errors.
