@@ -37,7 +37,7 @@ Severity: **T** over-strict rejection · **P0** silent miscompile ·
 | [CG-6](#cg-6) | P0 | Executed | ✅ Fixed upstream | Any `is_interrupt` function reached by `JSR` executes RTI against a call frame | [§4.2](../SPEC.md#42-interrupt-functions) |
 | [CG-7](#cg-7) | P0 | Executed | — | String data emitted with `strlen`: embedded `\0` truncates; dedup coalesces by prefix | [§1.4](../SPEC.md#14-string-literals) |
 | [CG-8](#cg-8) | P2 | Source | — | 32KB bounds check misses the footer: last 10 bytes ($FFF6–$FFFF) silently overwritten | none — undocumented architecture |
-| [CG-9](#cg-9) | P2 | Source | — | `allocate_globals` never checks RAM_TOP — globals silently run past $3FFF | none — undocumented architecture |
+| [CG-9](#cg-9) | P2 | Source | ✅ Fixed | `allocate_globals` never checks RAM_TOP — globals silently run past $3FFF | none — undocumented architecture |
 | [CG-10](#cg-10) | P2 | Source | — | Interrupt handlers don't save the ABI zone, helper slots, or RET | none — undocumented architecture |
 | [CG-11](#cg-11) | P2 | Source | — | Struct field offsets >255 wrap in `LDY #imm` on the pointer path | none — undocumented architecture |
 | [CG-12](#cg-12) | P2 | Source | — | Every referenced global gets a dead ZP slot per function — wasted ZP, earlier exhaustion | none — undocumented architecture |
@@ -300,6 +300,16 @@ globals is unusual but reachable (a few large structs); the check is one line.
 map but no stage enforces it).
 
 **Verified:** Source.
+
+**Resolved:** `allocate_globals` and `emit_compiler_extern_inits`
+now checks `e->ram_pos > RAM_TOP` after sizing each global and sets `e->overflow`;
+`generate_rom` bails out via the existing `OVERFLOW_ERROR_CHECK` machinery immediately
+after the call, before any code or data is emitted. This closes the finding's main case —
+user-declared globals walking past `$3FFF` — cleanly: pinned by
+`test/codegen/bad_ram_overflow.golden` (13 nested structs, doubling in size,
+the top one alone 16,384 bytes against a 15,871-byte budget → rejected) and
+`test/codegen/struct_under_ram_budget.golden` (one level shallower, 8,192
+bytes → builds clean, proving the check isn't just always-on).
 
 ### CG-10: Interrupt handlers preserve their own ZP map — and nothing else
 

@@ -1,0 +1,15 @@
+struct S0 { u16 a; u16 b; }
+struct S1 { S0 a; S0 b; }
+struct S2 { S1 a; S1 b; }
+struct S3 { S2 a; S2 b; }
+struct S4 { S3 a; S3 b; }
+struct S5 { S4 a; S4 b; }
+struct S6 { S5 a; S5 b; }
+struct S7 { S6 a; S6 b; }
+struct S8 { S7 a; S7 b; }
+struct S9 { S8 a; S8 b; }
+struct S10 { S9 a; S9 b; }
+struct S11 { S10 a; S10 b; }
+struct S12 { S11 a; S11 b; }
+S12 g;
+fn main() -> void { }

@@ -6,6 +6,10 @@
 #   test/<stage>/*.c02           inputs, one program per file
 #   test/<stage>/golden/*.golden expected stdout, one <name>.golden per input
 #
+# Most stages compile a single source file directly; "codegen" runs the full
+# c02c pipeline (frontend -> linker -> c02-as) instead, since codegen has no
+# standalone entry point of its own.
+#
 # Each case is compiled through the c02c driver and matched against a committed
 # golden. Cases come in three flavours, distinguished by filename:
 #
@@ -32,6 +36,7 @@
 import argparse
 import difflib
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -52,13 +57,23 @@ FRONTEND = os.path.join(REPO_ROOT, "bin", "c02-frontend")
 #                print the AST to stdout (instead of emitting a binary .o) so the
 #                golden stays text-diffable, while negatives (bad_*) still run
 #                analysis and print diagnostics to stderr.
+#   * codegen  - the *full* pipeline (frontend -> linker -> c02-as) via the
+#                `c02c` driver, since codegen never runs standalone on source.
+#                `--no-stdlib` keeps goldens independent of libc02's own
+#                global/RAM footprint. There's no AST/IR dump to diff on
+#                success (codegen's only output is a binary ROM, written to a
+#                throwaway path), so positive goldens here just pin "nothing
+#                printed"; negatives still pin the diagnostic on stderr.
+_CODEGEN_OUT = os.path.join(tempfile.gettempdir(), "c02_codegen_test.rom")
 STAGES = {
     "parser":   lambda src: [FRONTEND, "--parse-only", "--dump-ast", src],
     "analyzer": lambda src: [FRONTEND, "--dump-ast", src],
+    "codegen":  lambda src: [DRIVER, "--no-stdlib", "-o", _CODEGEN_OUT, src],
 }
 
 # --- terminal styling -------------------------------------------------------
 _USE_COLOR = sys.stdout.isatty() and os.environ.get("NO_COLOR") is None
+_ANSI_RE = re.compile(r"\033\[[0-9;]*m")
 
 
 def _c(code, text):
@@ -98,7 +113,13 @@ def run_case(src_path, argv_for):
         capture_output=True,
         text=True,
     )
-    return proc.stdout, proc.stderr, proc.returncode
+    # c02-as colors its failure messages unconditionally (no TTY check), so a
+    # captured pipe still carries the escape codes. Strip them here, once, so
+    # every stage's goldens stay plain, diffable text - never baked into a
+    # committed golden file.
+    stdout = _ANSI_RE.sub("", proc.stdout)
+    stderr = _ANSI_RE.sub("", proc.stderr)
+    return stdout, stderr, proc.returncode
 
 
 def check_case(name, src_path, golden_path, argv_for, bless):
