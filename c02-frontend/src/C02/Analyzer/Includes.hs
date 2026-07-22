@@ -25,6 +25,7 @@ import qualified Data.Map             as Map
 import qualified Data.Set             as Set
 import           Data.Void            (Void)
 import           System.FilePath      (takeDirectory, (</>))
+import System.Directory (canonicalizePath)
 import           Text.Megaparsec      (ErrorFancy (ErrorFail),
                                        ParseError (FancyError),
                                        ParseErrorBundle (..), PosState (..),
@@ -58,27 +59,38 @@ resolveIncludes
   -> Program
   -> IO (Either (ParseErrorBundle String Void) (Program, Map FilePath String))
 resolveIncludes path searchDirs prog = runExceptT $ do
-  (tops, srcs) <- runStateT (runReaderT (flatten (takeDirectory path) prog) searchDirs) Map.empty
+  (tops, srcs) <- runStateT (runReaderT (flatten path (takeDirectory path) prog) searchDirs) Map.empty
   pure (Program [] tops, srcs)
 
 -- | Fully resolve a parsed program to a flat list of top-levels: expand its
 -- include list (recursively) and prepend the results to the program's own
 -- declarations. @dir@ is the base directory for this program's relative include
 -- paths.
-flatten :: FilePath -> Program -> Resolve [Loc TopLevelDecl]
-flatten dir (Program incls tops) = do
-  included <- concat <$> mapM (resolveInclude dir) incls
+flatten :: FilePath -> FilePath -> Program -> Resolve [Loc TopLevelDecl]
+flatten self dir (Program incls tops) = do
+  included <- concat <$> mapM (resolveInclude self dir) incls
   pure (included ++ tops)
 
 -- | Resolve one @include "name"@. The candidate paths are @name@ joined onto the
 -- including file's directory first, then each @-I@ search directory in order; the
 -- first that reads successfully is the file.
-resolveInclude :: FilePath -> Loc InclStmt -> Resolve [Loc TopLevelDecl]
-resolveInclude dir incl = do
+resolveInclude :: FilePath -> FilePath -> Loc InclStmt -> Resolve [Loc TopLevelDecl]
+resolveInclude self dir incl = do
   searchDirs <- ask
   let name       = includePath (unLoc incl)
       candidates = [ d </> name | d <- dir : searchDirs ]
-  resolveCandidates name candidates
+  
+  -- Check if any resolved candidate would refer to the same file as self
+  selfCanonicalized <- liftIO (canonicalizePath self)
+  isSelfInclude <- or <$> mapM (\path -> do
+    pathCanonicalized <- liftIO (try (canonicalizePath path) :: IO (Either IOException FilePath))
+    case pathCanonicalized of
+      Left _  -> pure False
+      Right p -> pure (p == selfCanonicalized)
+    ) candidates
+  case isSelfInclude of
+    True  -> throwError (selfIncludeBundle name)
+    False -> resolveCandidates self name candidates
 
 -- | Try each candidate path in order. A path already visited short-circuits to
 -- '[]' (this gives pragma-once dedup on diamond includes and terminates cycles —
@@ -88,8 +100,8 @@ resolveInclude dir incl = do
 -- includes resolved. A candidate that fails to read is skipped so the next search
 -- directory gets a turn; if every candidate is exhausted the include is reported
 -- as not found, listing everywhere we looked.
-resolveCandidates :: String -> [FilePath] -> Resolve [Loc TopLevelDecl]
-resolveCandidates name candidates = go candidates
+resolveCandidates :: FilePath -> String -> [FilePath] -> Resolve [Loc TopLevelDecl]
+resolveCandidates self name candidates = go candidates
   where
     go [] = throwError (notFoundBundle name candidates)
     go (path : rest) = do
@@ -104,7 +116,7 @@ resolveCandidates name candidates = go candidates
               modify (Map.insert path src)   -- mark visited + retain source before recursing
               case parseProgram path src of
                 Left err   -> throwError err
-                Right prog -> flatten (takeDirectory path) prog
+                Right prog -> flatten self (takeDirectory path) prog
 
 -- | A one-error bundle reporting that an @include@ couldn't be found in any search
 -- directory, listing the paths that were tried. There is no source text to show,
@@ -124,3 +136,20 @@ notFoundBundle name candidates = ParseErrorBundle
   }
   where msg = "cannot find included file '" ++ name ++ "'; searched: "
               ++ intercalate ", " candidates
+
+-- | A one-error bundle reporting that we tried to include ourselves.
+-- There is no source text to show, so the input is empty and the error sits
+-- at offset 0: 'errorBundlePretty' renders it as @name:1:1:@ followed by
+-- the message, matching the frontend's parse-error style.
+selfIncludeBundle :: String -> ParseErrorBundle String Void
+selfIncludeBundle name = ParseErrorBundle
+  { bundleErrors   = FancyError 0 (Set.singleton (ErrorFail msg)) :| []
+  , bundlePosState = PosState
+      { pstateInput      = ""
+      , pstateOffset     = 0
+      , pstateSourcePos  = initialPos name
+      , pstateTabWidth   = defaultTabWidth
+      , pstateLinePrefix = ""
+      }
+  }
+  where msg = "cannot include yourself '" ++ name ++ "'."

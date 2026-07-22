@@ -72,6 +72,7 @@ library
                       C02.Lowering.Module
                       C02.Lowering.Serialize
     build-depends:    base ^>=4.20.2.0,
+                      directory,
                       megaparsec,
                       parser-combinators,
                       containers,
@@ -89,6 +90,7 @@ executable c02-frontend
 
     -- Other library packages from which modules are imported.
     build-depends:    base ^>=4.20.2.0,
+                      directory,
                       megaparsec,
                       containers,
                       bytestring,
