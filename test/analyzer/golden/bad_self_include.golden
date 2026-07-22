@@ -1,0 +1,5 @@
+bad_self_include.c02:1:1:
+  |
+1 | <empty line>
+  | ^
+cannot include yourself 'bad_self_include.c02'.

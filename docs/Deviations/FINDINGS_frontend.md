@@ -30,7 +30,7 @@ Severity legend (same as `DEVIATIONS_hs_impl.md`):
 | ID | Sev | Verified | Status | Summary | Spec section |
 |---|---|---|---|---|---|
 | [FE-1](#fe-1) | T | Executed | — | Struct types defined in an included header are unusable in the includer (per-file prescan) | none — undocumented architecture |
-| [FE-2](#fe-2) | P1 | Executed | — | Root file is never in the include visited-set: self-include / root↔header cycles duplicate the root's declarations | none — undocumented architecture |
+| [FE-2](#fe-2) | P1 | Executed | ✅ Fixed | Root file is never in the include visited-set: self-include / root↔header cycles duplicate the root's declarations | none — undocumented architecture |
 | [FE-3](#fe-3) | P2 | Executed | — | No path canonicalization: the same header via two spellings is included twice | none — undocumented architecture |
 | [FE-4](#fe-4) | G | Executed | — | include-not-found diagnostic loses the include site's position | none — undocumented architecture |
 | [FE-5](#fe-5) | P2 | Source | — | Lazy `readFile` lets late I/O errors escape the resolver's `try` and crash the driver | none — undocumented architecture |
@@ -116,6 +116,12 @@ mutual-cycle case (`cyc_a.c02 ↔ cyc_b.h`) reproduces identically.
 **Spec:** none — undocumented architecture.
 
 **Verified:** Executed — both the direct self-include and the two-file cycle.
+
+**Resolved:** threaded includee's file path through to `resolveInclude`, each
+include path and self is canonicalized and then compared for a match. Upon a match
+the newly added `selfIncludeBundle` is emitted and compilation is stopped. Added
+one new test exercising this failure case: `bad_self_include.c02` which attempts
+to include itself and faithfully generates the new error bundle.
 
 ### FE-3: No path canonicalization — one file, two spellings, two inclusions
 
