@@ -11,6 +11,10 @@ releases are reserved for bug fixes only.
 
 ### Fixed:
 
+- **Addresed FE-22:** *compiler externs not injected* You must include the standard libarary header,
+  `stddef.c02h` to access these forward decls.
+- **Fixed FE-2:** *Root file self include:* Can no longer include yourself causing redefinition errors
+  instead it produces a better error message `cannot include yourself '<FILE>'.`
 - **Fixed CG-1, CG-2:** *Struct by value errors:* Added code to the analyzer to forbid passing or
   returning struct types by value. This both keeps memory cleaner without copying structs around
   and eliminates these two silent miscompiles.
