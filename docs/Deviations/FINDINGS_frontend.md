@@ -50,7 +50,7 @@ Severity legend (same as `DEVIATIONS_hs_impl.md`):
 | [FE-19](#fe-19) | P0 | Executed | — | `++`/`--` on a deref, field, or register mutates a loaded temp and never stores back | [§6.2](../SPEC.md#62-unary-prefix-operators) |
 | [FE-20](#fe-20) | P0 | Executed | — | Nested field assignment (`a.b.c = v`) stores into a temporary copy of `a.b` | [§6.4](../SPEC.md#64-postfix--field-access) |
 | [FE-21](#fe-21) | P2 | Source | — | The IR emission contract: what is promised to `c02-ld`/`c02-as` implicitly, with nothing checking it | none — undocumented architecture |
-| [FE-22](#fe-22) | T | Executed | — | `__heap_start`/`__memory_top` are not injected — and `libc02`'s header declares the wrong type | [§4.6](../SPEC.md#46-forward-declarations-decl) |
+| [FE-22](#fe-22) | T | Executed | ✅ Fixed | `__heap_start`/`__memory_top` are not injected — and `libc02`'s header declares the wrong type | [§4.6](../SPEC.md#46-forward-declarations-decl) |
 
 ## Entries
 
@@ -549,3 +549,15 @@ mismatch the spec says should compile.
 
 **Verified:** Executed (missing injection; the working `decl u16` control) /
 Source (header type read from `libc02/include/stddef.c02h`).
+
+**Resolved (Clarification):** The compiler externs can be included through the
+standard library using header `stddef.c02h` to access those values. Codegen
+alread injects the values but only when they are forward decl-ed. See below snippet:
+
+```c
+include "stddef.c02h"
+
+fn main() -> void {
+  PORT16 = __heap_start;
+}
+```
