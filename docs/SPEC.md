@@ -497,12 +497,11 @@ decl u8 counter;
 > `decl fn irq() interrupt -> void;` parses, but the `interrupt` qualifier
 > is silently discarded — the AST has no field to store it.
 
-#### Compiler Implicit Globals
+#### Compiler Globals
 
-`__heap_start` and `__memory_top` (both `u16`) are injected automatically —
-no `decl` needed, available in every translation unit. See the main repo's
-`README.md` for their exact values (a codegen/runtime detail, out of scope
-here).
+`__heap_start` and `__memory_top` (both `u16 *`) are defined in `stddef.c02h`.
+See the main repo's `README.md` for their exact values (a codegen/runtime detail,
+out of scope here).
 
 ---
 
