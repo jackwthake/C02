@@ -550,7 +550,7 @@ mismatch the spec says should compile.
 **Verified:** Executed (missing injection; the working `decl u16` control) /
 Source (header type read from `libc02/include/stddef.c02h`).
 
-**Resolved (Clarification):** The compiler externs can be included through the
+**Resolved:** The compiler externs can be included through the
 standard library using header `stddef.c02h` to access those values. Codegen
 alread injects the values but only when they are forward decl-ed. See below snippet:
 
@@ -561,3 +561,7 @@ fn main() -> void {
   PORT16 = __heap_start;
 }
 ```
+
+**Resolved (Clarification):** The spec should change to have these values represented as
+u16 pointers as that is their useful form. The original wording was provisional
+and defined before headers were apart of the language.
