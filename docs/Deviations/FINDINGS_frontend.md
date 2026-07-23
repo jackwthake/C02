@@ -47,7 +47,7 @@ Severity legend (same as `DEVIATIONS_hs_impl.md`):
 | [FE-16](#fe-16) | P2 | Source | — | Statement-position structs get no redeclaration check at all | [§7.2](../SPEC.md#72-scope-stack--shadowing) |
 | [FE-17](#fe-17) | P1 | Executed | — | One name-keyed layout table across all scopes: a local `struct S` clobbers the top-level `S`'s layout for the whole module | none — undocumented architecture |
 | [FE-18](#fe-18) | P0 | Executed | — | Non-literal global initializers silently lower to "uninitialized" | [§4.5](../SPEC.md#45-global-variables) |
-| [FE-19](#fe-19) | P0 | Executed | — | `++`/`--` on a deref, field, or register mutates a loaded temp and never stores back | [§6.2](../SPEC.md#62-unary-prefix-operators) |
+| [FE-19](#fe-19) | P0 | Executed | ✅ Fixed | `++`/`--` on a deref, field, or register mutates a loaded temp and never stores back | [§6.2](../SPEC.md#62-unary-prefix-operators) |
 | [FE-20](#fe-20) | P0 | Executed | — | Nested field assignment (`a.b.c = v`) stores into a temporary copy of `a.b` | [§6.4](../SPEC.md#64-postfix--field-access) |
 | [FE-21](#fe-21) | P2 | Source | — | The IR emission contract: what is promised to `c02-ld`/`c02-as` implicitly, with nothing checking it | none — undocumented architecture |
 | [FE-22](#fe-22) | T | Executed | ✅ Fixed | `__heap_start`/`__memory_top` are not injected — and `libc02`'s header declares the wrong type | [§4.6](../SPEC.md#46-forward-declarations-decl) |
@@ -474,6 +474,9 @@ support are silent no-ops on memory.
 **Spec:** §6.2/§7.3 (`++`/`--` on any lvalue).
 
 **Verified:** Executed — all three broken shapes and the working one.
+
+**Resolved:** changed `lowerExpr` to match on operand type for mutating in place.
+Added 4 emulator tests that test `inc` / `dec` for the various cases.
 
 ### FE-20: Nested field assignment stores into a temporary copy
 

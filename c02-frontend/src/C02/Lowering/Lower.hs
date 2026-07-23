@@ -219,10 +219,41 @@ lowerExpr env st e@(Unary op operand) = case op of
           dst                    = OperandTemp (typeOf env e) t  -- burn fresh temp
           instr = (emptyInstr tac) { instrDst = dst, instrSrc1 = opExp }
       in (dst, instrExp ++ [instr], st2)
-    mutateUnary tac =
-      let (opOperand, instrOperand, st1) = lowerExpr env st operand
-          instr = (emptyInstr tac) { instrDst = opOperand }
-      in (opOperand, instrOperand ++ [instr], st1)
+    mutateUnary tac = case operand of
+      -- Plain variable (non-register): increment in-place
+      Var name -> case Map.lookup name (registers env) of
+        Nothing ->
+          let dst = OperandVar (typeOf env operand) name
+              instr = (emptyInstr tac) { instrDst = dst }
+          in (dst, [instr], st)
+        -- Register: load, increment, store back
+        Just addr ->
+          let (loadTemp, st1) = freshTemp st
+              loadDst = OperandTemp (typeOf env operand) loadTemp
+              loadInstr = (emptyInstr TacLoad) { instrDst = loadDst, instrSrc1 = OperandConstInt (U16, 0) addr }
+              incInstr = (emptyInstr tac) { instrDst = loadDst }
+              storeInstr = (emptyInstr TacStore) { instrDst = OperandConstInt (U16, 0) addr, instrSrc1 = loadDst }
+          in (loadDst, [loadInstr, incInstr, storeInstr], st1)
+      -- Pointer dereference: load, increment, store back
+      Deref ptr ->
+        let (ptrOp, ptrInstrs, st1) = lowerExpr env st ptr
+            (valTemp, st2) = freshTemp st1
+            valOp = OperandTemp (typeOf env operand) valTemp
+            loadInstr = (emptyInstr TacLoad) { instrDst = valOp, instrSrc1 = ptrOp }
+            incInstr = (emptyInstr tac) { instrDst = valOp }
+            storeInstr = (emptyInstr TacStore) { instrDst = ptrOp, instrSrc1 = valOp }
+        in (valOp, ptrInstrs ++ [loadInstr, incInstr, storeInstr], st2)
+      -- Field access: load, increment, store back
+      Field base fname ->
+        let (baseOp, baseInstrs, st1) = lowerExpr env st base
+            (valTemp, st2) = freshTemp st1
+            valOp = OperandTemp (typeOf env operand) valTemp
+            loadInstr = (emptyInstr TacFieldLoad) { instrDst = valOp, instrSrc1 = baseOp, instrFieldName = Just fname }
+            incInstr = (emptyInstr tac) { instrDst = valOp }
+            storeInstr = (emptyInstr TacFieldStore) { instrDst = baseOp, instrSrc1 = valOp, instrFieldName = Just fname }
+        in (valOp, baseInstrs ++ [loadInstr, incInstr, storeInstr], st2)
+      -- Other expressions are not valid lvalues (analyzer should reject)
+      _ -> error "mutateUnary: non-lvalue operand (analyzer should have rejected)"
 
 lowerExpr env st e@(Call name params) =
   let (argOps, argInstrs, st1) = lowerArgs env st params

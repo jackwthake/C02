@@ -11,6 +11,7 @@ releases are reserved for bug fixes only.
 
 ### Fixed:
 
+- **Fixed FE-19:** *increment / decrement of pointers, registers and struct values not modifying* Fixed issue by matching on operand type in `lowerExpr`.
 - **Addresed FE-22:** *compiler externs not injected* You must include the standard libarary header,
   `stddef.c02h` to access these forward decls.
 - **Fixed FE-2:** *Root file self include:* Can no longer include yourself causing redefinition errors
