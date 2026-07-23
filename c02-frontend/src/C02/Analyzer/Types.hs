@@ -183,7 +183,7 @@ data Env = Env
                                           -- becomes a LOAD/STORE at the address rather
                                           -- than a var copy. Empty during analysis
                                           -- (registers type as ordinary 'VarSym').
-  }
+  } deriving (Show)
 
 
 -- | Resolve an expression's type (SPEC §3/§6.3/§6.4/§5.2).

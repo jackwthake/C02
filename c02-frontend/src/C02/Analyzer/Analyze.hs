@@ -27,6 +27,7 @@
 --     offset-blind 'inferType' ever having to know about it.
 module C02.Analyzer.Analyze
   ( analyze
+  , checkDeclType
   , bindLocal
   ) where
 
@@ -64,7 +65,6 @@ data Ctx = Ctx
   }
 
 type Analyze = ReaderT Ctx (Writer [Diag])
-
 
 -- | Run both passes over a program and return every diagnostic. Ordering within
 -- the list is by pass (pass-1 redeclarations, then top-level validation, then

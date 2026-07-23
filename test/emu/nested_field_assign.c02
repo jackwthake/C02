@@ -1,0 +1,13 @@
+// DESC: Assign value to nested struct
+// EXPECT: mem8[0x6000] == 42
+
+reg u8 PORTB @ 0x6000;
+
+struct Inner { u8 v; }
+struct Outer { Inner in; }
+
+fn main() -> void {
+  Outer o = Outer{ .in = Inner{ .v = 1 } };
+  o.in.v = 42;
+  PORTB = o.in.v;
+}
