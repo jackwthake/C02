@@ -1,0 +1,8 @@
+// DESC: decrementing a register should store to the register address
+// EXPECT: mem8[0x6000] == 0
+reg u8 PORTB @ 0x6000;
+
+fn main() -> void {
+  PORTB = 1;
+  --PORTB;
+}

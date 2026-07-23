@@ -1,0 +1,11 @@
+// DESC: incrementing a value through a pointer should store to the original address
+// EXPECT: mem8[0x6000] == 49
+reg u8 PORTB @ 0x6000;
+
+fn main() -> void {
+  u8 x = 48;
+  u8 *y = &x;
+
+  ++*y;
+  PORTB = *y;
+}

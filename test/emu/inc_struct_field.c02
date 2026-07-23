@@ -1,0 +1,13 @@
+// DESC: incrementing a struct value should store to the original address
+// EXPECT: mem8[0x6000] == 49
+reg u8 PORTB @ 0x6000;
+
+struct Point {
+  u8 x;
+  u8 y;
+}
+
+fn main() -> void {
+  Point p1 = Point { .x = 48, .y = 40 };
+  PORTB = ++p1.x;
+}
