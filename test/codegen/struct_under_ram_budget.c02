@@ -3,12 +3,10 @@ struct S1 { S0 a; S0 b; }
 struct S2 { S1 a; S1 b; }
 struct S3 { S2 a; S2 b; }
 struct S4 { S3 a; S3 b; }
-struct S5 { S4 a; S4 b; }
-struct S6 { S5 a; S5 b; }
-struct S7 { S6 a; S6 b; }
-struct S8 { S7 a; S7 b; }
-struct S9 { S8 a; S8 b; }
-struct S10 { S9 a; S9 b; }
-struct S11 { S10 a; S10 b; }
-S11 g;
+struct P16 { u8 a0; u8 a1; u8 a2; u8 a3; u8 a4; u8 a5; u8 a6; u8 a7; u8 a8; u8 a9; u8 a10; u8 a11; u8 a12; u8 a13; u8 a14; u8 a15; }
+struct P15 { u8 a0; u8 a1; u8 a2; u8 a3; u8 a4; u8 a5; u8 a6; u8 a7; u8 a8; u8 a9; u8 a10; u8 a11; u8 a12; u8 a13; u8 a14; }
+struct P127 { P16 a; P16 b; P16 c; P16 d; P16 e; P16 f; P15 g; }
+struct S5 { S4 a; S4 b; u16 x; u16 y; u16 z; P127 padding; S0 q; S0 r; u16 s; }
+// S5 size = 255 bytes (64 + 64 + 2 + 2 + 2 + 111 + 4 + 4 + 2) which is the limit
+
 fn main() -> void { }

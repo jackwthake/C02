@@ -108,10 +108,12 @@ computeStructLayouts prog = go Map.empty [] (collectStructSites prog)
   where
     go layouts diags [] = (layouts, reverse diags)
     go layouts diags (site : rest) =
-      let decl        = siteDecl site
-          name         = structName decl
+      let decl          = siteDecl site
+          name          = structName decl
           (layout, bad) = layOutStruct layouts name (structFields decl)
+          totalSize     = layoutSize layout
           diags'
+            | totalSize > 255   = [ At (siteOffset site) (OversizedStruct name totalSize) ] ++ diags            -- structs over 255 bytes overflow 6502 indirect addressing ops
             | siteTopLevel site = [ At (siteOffset site) (IncompleteStructField name r) | r <- bad ] ++ diags
             | otherwise         = diags
       in go (Map.insert name layout layouts) diags' rest
