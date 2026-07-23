@@ -25,12 +25,19 @@ jobs:
           ghc-version: '9.10.3'
           cabal-version: 'latest'
 
-      - name: Initialize clean Cabal configuration
+      - name: Configure Cabal repository
         run: |
           mkdir -p ~/.cabal
-          echo "repository hackage.haskell.org" > ~/.cabal/config
-          echo "  url: http://haskell.org" >> ~/.cabal/config
-          echo "  secure: True" >> ~/.cabal/config
+          cat > ~/.cabal/repositories.cfg << 'EOF'
+          repository hackage.haskell.org
+            url: https://hackage.haskell.org/
+            secure: True
+            root-keys: 07c59cb65787031cbb810701bd8ff5515f9ebe3e758d3b589d4a3a337f91dc08
+                       2e8555dde16ebd8df076f1a396506f99fcfa541ee7a37b104d33177db735604c
+                       8b9f40ae9b992d206ceabf2f4786226ae94036defc92874bd34ce6f1565d37b9
+            key-threshold: 3
+          EOF
+          cabal update
 
       - name: Update Cabal cache
         run: cabal update
