@@ -25,6 +25,13 @@ jobs:
           ghc-version: '9.10.3'
           cabal-version: 'latest'
 
+      - name: Initialize clean Cabal configuration
+        run: |
+          mkdir -p ~/.cabal
+          echo "repository hackage.haskell.org" > ~/.cabal/config
+          echo "  url: http://haskell.org" >> ~/.cabal/config
+          echo "  secure: True" >> ~/.cabal/config
+
       - name: Update Cabal cache
         run: cabal update
 
