@@ -24,6 +24,7 @@ data Diagnostic
   | StructPassByValue String   -- ^ ERR_STRUCT_PASS_BY_VALUE: Passing struct by value is prohibited
   | ReturnStructByValue String -- ^ ERR_STRUCT_RETURN_BY_VALUE: Returning struct by value is prohibited
   | UnknownStruct String       -- ^ ERR_UNKNOWN_STRUCT: struct-typed name not registered
+  | OversizedStruct String Int -- ^ ERR_OVERSIZED_STRUCT: struct size is over 255 bytes
   | UndeclaredIdentifier String-- ^ ERR_UNDECLARED_IDENTIFIER: name not in any visible scope
   | NotAFunction String        -- ^ ERR_NOT_A_FUNCTION: call target is a non-function symbol
   | InterruptCall String       -- ^ ERR_INTERRUPT_CALL: attempting to call an interrupt function explicitly 
@@ -84,6 +85,7 @@ render d = case d of
   StructPassByValue n     -> "'" ++ n ++ "': Passing struct by value is prohibited"
   ReturnStructByValue n   -> "'" ++ n ++ "': Returning struct by value is prohibited"
   UnknownStruct n         -> "unknown struct '" ++ n ++ "'"
+  OversizedStruct n s     -> "'" ++ n ++ "': struct size is over 255 bytes: " ++ show s ++ " bytes"
   UndeclaredIdentifier n  -> "undeclared identifier '" ++ n ++ "'"
   NotAFunction n          -> "'" ++ n ++ "' is not a function"
   InterruptCall n         -> "'" ++ n ++ "' attempting to call an interrupt function explicitly"

@@ -11,6 +11,7 @@ releases are reserved for bug fixes only.
 
 ### Fixed:
 
+- **Fixed CG-11:** *Oversized structs permitted causing wrapping on 8-bit indexing* Structs are now hard capped at max size of 255 bytes
 - **Fixed FE-20:** *Nested field assignments not sticking* Added recursive load and store instructions for each nested field
 - **Fixed FE-19:** *increment / decrement of pointers, registers and struct values not modifying* Fixed issue by matching on operand type in `lowerExpr`.
 - **Addresed FE-22:** *compiler externs not injected* You must include the standard libarary header,

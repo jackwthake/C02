@@ -1,0 +1,7 @@
+test/analyzer/bad_oversized_struct.c02:7:1:
+  |
+7 | struct S6 { S5 a; S5 b; }
+  | ^
+'S6': struct size is over 255 bytes: 256 bytes
+
+Semantic analysis failed with 1 errors.

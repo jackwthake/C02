@@ -1,0 +1,10 @@
+struct S0 { u16 a; u16 b; }
+struct S1 { S0 a; S0 b; }
+struct S2 { S1 a; S1 b; }
+struct S3 { S2 a; S2 b; }
+struct S4 { S3 a; S3 b; }
+struct S5 { S4 a; S4 b; }
+struct S6 { S5 a; S5 b; }
+S6 g;
+// sizeof S6: 256 bytes, 1 over limit
+fn main() -> void { }

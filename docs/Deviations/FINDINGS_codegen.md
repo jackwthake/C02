@@ -39,7 +39,7 @@ Severity: **T** over-strict rejection · **P0** silent miscompile ·
 | [CG-8](#cg-8) | P2 | Source | ✅ Fixed | 32KB bounds check misses the footer: last 10 bytes ($FFF6–$FFFF) silently overwritten | none — undocumented architecture |
 | [CG-9](#cg-9) | P2 | Source | ✅ Fixed | `allocate_globals` never checks RAM_TOP — globals silently run past $3FFF | none — undocumented architecture |
 | [CG-10](#cg-10) | P2 | Source | — | Interrupt handlers don't save the ABI zone, helper slots, or RET | none — undocumented architecture |
-| [CG-11](#cg-11) | P2 | Source | — | Struct field offsets >255 wrap in `LDY #imm` on the pointer path | none — undocumented architecture |
+| [CG-11](#cg-11) | P2 | Source | ✅ Fixed upstream | Struct field offsets >255 wrap in `LDY #imm` on the pointer path | none — undocumented architecture |
 | [CG-12](#cg-12) | P2 | Source | — | Every referenced global gets a dead ZP slot per function — wasted ZP, earlier exhaustion | none — undocumented architecture |
 | [CG-13](#cg-13) | P2 | Source | — | Variable shift counts read only the low byte | none — undocumented architecture |
 
@@ -358,6 +358,12 @@ detection at layout-read time (`total_size > 256` → error) would cover it.
 **Spec:** none — undocumented architecture.
 
 **Verified:** Source.
+
+**Resolved:** Fixed upstream in the analyzer stage. Added check for total
+struct size to `computeStructLayouts`, added new diagnostic for oversized
+structs. Added new test `bad_oversized_struct` and editted codegen tests,
+`bad_ram_overflow` to use bare globals instead of massive structs and
+`struct_under_ram_budget` to be at the new limit (255 bytes).
 
 ### CG-12: Globals get dead ZP slots in every function that touches them
 
