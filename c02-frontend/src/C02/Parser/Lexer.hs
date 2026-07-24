@@ -119,10 +119,25 @@ charLiteralParser :: Parser Int
 charLiteralParser = ord <$> between (char '\'') (char '\'') L.charLiteral
 
 -- Match an operator token, enforcing maximal munch: the same trick 'keyword'
--- uses, but guarding against operator chars instead of identifier chars. This is
--- what stops operator "<" from matching the '<' in "<<" or "<=". The inner 'try'
--- keeps a partial match (e.g. "<" of an expected "<=") non-consuming so
--- makeExprParser can fall through to another operator.
+-- uses, but guarding only against multi-character operators that start with the
+-- current operator. This prevents "<" from matching the '<' in "<<" or "<=",
+-- but allows "a*-b" (multiply then negate) since *- is not a recognized token.
+-- The inner 'try' keeps a partial match non-consuming so makeExprParser can
+-- fall through to another operator.
 operator :: String -> Parser String
-operator name = lexeme (try (string name <* notFollowedBy (oneOf opChars)))
-  where opChars = "+-*/%<>=!&|^~" :: [Char]
+operator name = lexeme (try (string name <* notFollowedBy (validContinuation name)))
+  where
+    validContinuation :: String -> Parser String
+    validContinuation op = case op of
+      "+" -> choice [string "+", string "="]
+      "-" -> choice [string "-", string "="]
+      "*" -> string "="
+      "/" -> string "="
+      "%" -> string "="
+      "<" -> choice [string "<", string "="]
+      ">" -> choice [string ">", string "="]
+      "=" -> string "="
+      "!" -> string "="
+      "&" -> string "&"
+      "|" -> string "|"
+      _ -> empty

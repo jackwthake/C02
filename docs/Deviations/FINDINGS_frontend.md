@@ -33,15 +33,15 @@ Severity legend (same as `DEVIATIONS_hs_impl.md`):
 | [FE-2](#fe-2) | P1 | Executed | ✅ Fixed | Root file is never in the include visited-set: self-include / root↔header cycles duplicate the root's declarations | none — undocumented architecture |
 | [FE-3](#fe-3) | P2 | Executed | — | No path canonicalization: the same header via two spellings is included twice | none — undocumented architecture |
 | [FE-4](#fe-4) | G | Executed | — | include-not-found diagnostic loses the include site's position | none — undocumented architecture |
-| [FE-5](#fe-5) | P2 | Source | — | Lazy `readFile` lets late I/O errors escape the resolver's `try` and crash the driver | none — undocumented architecture |
+| [FE-5](#fe-5) | P2 | Source | ✅ Fixed | Lazy `readFile` lets late I/O errors escape the resolver's `try` and crash the driver | none — undocumented architecture |
 | [FE-6](#fe-6) | G | Source | — | Included declarations are hoisted above the includer's own, erasing include position | none — undocumented architecture |
 | [FE-7](#fe-7) | T | Executed | — | No `asm { }` statement exists in the grammar | [§5.7](../SPEC.md#57-inline-assembly-asm) |
 | [FE-8](#fe-8) | G | Executed | — | Char literals: an undocumented extension, not a lexeme (`'a' + 1` fails), Haskell escape rules | [§1.3](../SPEC.md#13-integer-literals) |
-| [FE-9](#fe-9) | G | Executed | — | Adjacent operators fail to lex: `a*-b`, `a<-1`, `a&&&b` are parse errors | [§1.6](../SPEC.md#16-operators--punctuation) |
+| [FE-9](#fe-9) | G | Executed | ✅ Fixed | Adjacent operators fail to lex: `a*-b`, `a<-1`, `a&&&b` are parse errors | [§1.6](../SPEC.md#16-operators--punctuation) |
 | [FE-10](#fe-10) | G | Executed | — | Integer literals overflowing the host word silently wrap (`2^64+1` lexes as `1`) | [§1.3](../SPEC.md#13-integer-literals) |
 | [FE-11](#fe-11) | T | Executed | — | Compound assignment doesn't type-check as its desugaring: `p += 1` rejected on a pointer | [§5.3](../SPEC.md#53-assignment) |
 | [FE-12](#fe-12) | P2 | Executed | — | S-1/S-17 laxity reproduced: any `(void*)`-shaped actual is compatible with *everything* | [§3.2](../SPEC.md#32-type-compatibility) |
-| [FE-13](#fe-13) | P2 | Executed | — | `&&`/`||` operands are entirely unchecked (struct `&&` struct accepted) | [§6.3](../SPEC.md#63-binary-operators) |
+| [FE-13](#fe-13) | P2 | Executed | — | `&&`/`\|\|` operands are entirely unchecked (struct `&&` struct accepted) | [§6.3](../SPEC.md#63-binary-operators) |
 | [FE-14](#fe-14) | P0 | Executed | ✅ Fixed | `interrupt` validation missing: no warning, flag not cleared → calling the function crashes at runtime | [§4.2](../SPEC.md#42-interrupt-functions) |
 | [FE-15](#fe-15) | G | Executed | — | `for`-increment clause accepts a variable declaration | [§5.5](../SPEC.md#55-for-loop-clauses) |
 | [FE-16](#fe-16) | P2 | Source | — | Statement-position structs get no redeclaration check at all | [§7.2](../SPEC.md#72-scope-stack--shadowing) |
@@ -174,6 +174,10 @@ outside the `ExceptT` channel and crashes `c02-frontend` with an uncaught
 **Verified:** Source — from the `try (readFile path)` shape in
 `Includes.hs:100`; not executed.
 
+**Resolved:** Added `readUtf8Safe` that forces UTF-8 encoding and early errors
+otherwise. Editted driver to not register temp output file unless frontend succeeeds.
+Added `bad_encoding` test case.
+
 ### FE-6: Include position within the file is erased
 
 `Program` separates the include list from the declaration list at parse time,
@@ -256,6 +260,9 @@ guard.)
 **Spec:** §1.6 (token set; nothing there makes whitespace significant).
 
 **Verified:** Executed (`a*-b`).
+
+**Resolved:** Refactored `operator` parser to build out characters char by char and not
+be hardcoded to expect whitespace after the operator.
 
 ### FE-10: Host-word overflow in integer literals wraps silently
 

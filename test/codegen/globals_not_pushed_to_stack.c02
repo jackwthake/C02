@@ -1,0 +1,25 @@
+struct S0 { u16 a; u16 b; }
+struct S1 { S0 a; S0 b; }
+struct S2 { S1 a; S1 b; }
+struct S3 { S2 a; S2 b; }
+struct S4 { S3 a; S3 b; }
+struct P16 { u8 a0; u8 a1; u8 a2; u8 a3; u8 a4; u8 a5; u8 a6; u8 a7; u8 a8; u8 a9; u8 a10; u8 a11; u8 a12; u8 a13; u8 a14; u8 a15; }
+struct P15 { u8 a0; u8 a1; u8 a2; u8 a3; u8 a4; u8 a5; u8 a6; u8 a7; u8 a8; u8 a9; u8 a10; u8 a11; u8 a12; u8 a13; u8 a14; }
+struct P127 { P16 a; P16 b; P16 c; P16 d; P16 e; P16 f; P15 g; }
+struct S5 { S4 a; S4 b; u16 x; u16 y; u16 z; P127 padding; S0 q; S0 r; u16 s; }
+
+S5 fatty1;
+S5 fatty2;
+
+fn main() -> void {
+  fatty1.s = 69;
+  fatty2.s = fatty1.s;
+
+  // will cause any locals to be pushed to the stack, per old bug all used globals will also be pushed.
+  second();
+}
+
+
+fn second() -> void {
+  fatty2.x = 420;
+}

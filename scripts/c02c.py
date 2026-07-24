@@ -62,7 +62,8 @@ def clean_o_file_temps(o_files):
     # A temp path is registered before its file is written, so a stage that
     # fails early can leave a path here that never became a file — tolerate it.
     try:
-      os.remove(f)
+      if os.path.isfile(f):
+        os.remove(f)
     except FileNotFoundError:
       pass
 
@@ -96,11 +97,12 @@ def main():
     # --- 1. frontend: c02 source -> IR object -----------------------------
     for src in src_files:
       src_out = make_temp_object()
-      temps += [src_out] # collect temps for deletion after pipeline
-      o_files += [src_out]
       result = subprocess.run([frontend] + frontend_args + ['-o', src_out] + [src])
       if result.returncode != 0:
         sys.exit(result.returncode)
+      # only register the temp after the frontend successfully created it
+      temps += [src_out] # collect temps for deletion after pipeline
+      o_files += [src_out]
 
     if args.parse_only or args.dump_ast:
       sys.exit(0)
@@ -115,10 +117,11 @@ def main():
 
     if len(o_files) > 1: # more than one object: merge them
       linked = make_temp_object()
-      temps += [linked]
       result = subprocess.run([linker] + o_files + [ "-o", linked])
       if result.returncode != 0:
         sys.exit(result.returncode)
+      # only register the linked temp after successful linking
+      temps += [linked]
     else:
       linked = o_files[0] # single object nothing to merge
 
