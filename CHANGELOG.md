@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/) - while
 the project is in `0.x`, breaking changes may land in MINOR releases; PATCH
 releases are reserved for bug fixes only.
 
+## [Unreleased]
+
+- **Fixed CG-12:** *Globals exhausting ZP slots they never occupied* Added early out in ZP building if the operand is both a variable and a global.
+
 ## [1.7.1] 2026-07-24
 
 ### Fixed:

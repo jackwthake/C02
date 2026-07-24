@@ -40,7 +40,7 @@ Severity: **T** over-strict rejection · **P0** silent miscompile ·
 | [CG-9](#cg-9) | P2 | Source | ✅ Fixed | `allocate_globals` never checks RAM_TOP — globals silently run past $3FFF | none — undocumented architecture |
 | [CG-10](#cg-10) | P2 | Source | — | Interrupt handlers don't save the ABI zone, helper slots, or RET | none — undocumented architecture |
 | [CG-11](#cg-11) | P2 | Source | ✅ Fixed upstream | Struct field offsets >255 wrap in `LDY #imm` on the pointer path | none — undocumented architecture |
-| [CG-12](#cg-12) | P2 | Source | — | Every referenced global gets a dead ZP slot per function — wasted ZP, earlier exhaustion | none — undocumented architecture |
+| [CG-12](#cg-12) | P2 | Source | ✅ Fixed | Every referenced global gets a dead ZP slot per function — wasted ZP, earlier exhaustion | none — undocumented architecture |
 | [CG-13](#cg-13) | P2 | Source | — | Variable shift counts read only the low byte | none — undocumented architecture |
 
 ## Entries
@@ -380,6 +380,12 @@ output; a real capacity/perf trap.
 **Spec:** none — undocumented architecture.
 
 **Verified:** Source.
+
+**Resolved:** Added check in `zp_map_add_operand` for variable operands to
+first lookup if the operand is a global, if it is it early returns before adding
+to ZP map. Cheap fix because evervy load/store/etc goes through functions that
+already check globals before ZP. The issue lied in the building of the ZP map
+for each function body, not specifically in the pushing a stack frame to the stack. 
 
 ### CG-13: Variable shift counts read only the low byte
 

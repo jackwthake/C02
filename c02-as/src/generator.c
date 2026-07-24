@@ -149,12 +149,16 @@ static int zp_map_add(emitter_t *e, zp_map_t *map, tac_operand_kind_t kind,
   return 1;
 }
 
+// fwd decl for early return path in zp addition
+static global_entry_t *lookup_global(emitter_t *e, char *name);
 
 // Register a TAC operand in the ZP map (dispatches var vs temp).
 static int zp_map_add_operand(emitter_t *e, zp_map_t *map, tac_operand_t *op) {
-  if (op->kind == OPERAND_VAR)
+  if (op->kind == OPERAND_VAR) {
+    if (lookup_global(e, op->name)) return 1;
+
     return zp_map_add(e, map, OPERAND_VAR, op->name, 0, op->type);
-  if (op->kind == OPERAND_TEMP)
+  } if (op->kind == OPERAND_TEMP)
     return zp_map_add(e, map, OPERAND_TEMP, NULL, op->temp_id, op->type);
   return 1;
 }
