@@ -33,7 +33,7 @@ Severity legend (same as `DEVIATIONS_hs_impl.md`):
 | [FE-2](#fe-2) | P1 | Executed | ✅ Fixed | Root file is never in the include visited-set: self-include / root↔header cycles duplicate the root's declarations | none — undocumented architecture |
 | [FE-3](#fe-3) | P2 | Executed | — | No path canonicalization: the same header via two spellings is included twice | none — undocumented architecture |
 | [FE-4](#fe-4) | G | Executed | — | include-not-found diagnostic loses the include site's position | none — undocumented architecture |
-| [FE-5](#fe-5) | P2 | Source | — | Lazy `readFile` lets late I/O errors escape the resolver's `try` and crash the driver | none — undocumented architecture |
+| [FE-5](#fe-5) | P2 | Source | ✅ Fixed | Lazy `readFile` lets late I/O errors escape the resolver's `try` and crash the driver | none — undocumented architecture |
 | [FE-6](#fe-6) | G | Source | — | Included declarations are hoisted above the includer's own, erasing include position | none — undocumented architecture |
 | [FE-7](#fe-7) | T | Executed | — | No `asm { }` statement exists in the grammar | [§5.7](../SPEC.md#57-inline-assembly-asm) |
 | [FE-8](#fe-8) | G | Executed | — | Char literals: an undocumented extension, not a lexeme (`'a' + 1` fails), Haskell escape rules | [§1.3](../SPEC.md#13-integer-literals) |
@@ -173,6 +173,10 @@ outside the `ExceptT` channel and crashes `c02-frontend` with an uncaught
 
 **Verified:** Source — from the `try (readFile path)` shape in
 `Includes.hs:100`; not executed.
+
+**Resolved:** Added `readUtf8Safe` that forces UTF-8 encoding and early errors
+otherwise. Editted driver to not register temp output file unless frontend succeeeds.
+Added `bad_encoding` test case.
 
 ### FE-6: Include position within the file is erased
 

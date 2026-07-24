@@ -94,6 +94,7 @@ executable c02-frontend
                       megaparsec,
                       containers,
                       bytestring,
+                      text,
                       c02-frontend
 
     -- Driver lives in its own dir so it doesn't re-compile the library's

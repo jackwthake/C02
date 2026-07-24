@@ -37,6 +37,26 @@ import C02.Parser.AST (Program, Pos(..))
 import C02.Lowering.Serialize (serializeModule)
 
 import qualified Data.ByteString.Lazy as B
+import qualified Data.ByteString as BS
+import qualified Data.Text as T
+import qualified Data.Text.Encoding as TE
+
+-- | Reads a file, validates UTF-8, and returns a String or an error message.
+readUtf8Safe :: FilePath -> IO (Either String String)
+readUtf8Safe path = do
+    -- 1. Read the file safely as raw bytes
+    bytes <- BS.readFile path
+    
+    -- 2. Attempt to decode the bytes into Text
+    case TE.decodeUtf8' bytes of
+        -- Left indicates a UnicodeException (decoding failed)
+        Left err -> 
+            return (Left ("Invalid UTF-8 encoding: " ++ show err))
+        
+        -- Right indicates success; convert Data.Text to a standard String
+        Right text -> 
+            return (Right (T.unpack text))
+
 
 writeOutput :: Program -> String -> IO ()
 writeOutput p fp =
@@ -55,33 +75,36 @@ main = do
       (outPath, files)    = extractOutput rest
   case files of
     [path] -> do
-      src <- readFile path
-      case parseProgram path src of
-        Left err   -> hPutStr stderr (errorBundlePretty err) >> exitFailure
-        Right prog
-          -- --dump-ast is an orthogonal reporting flag: it prints the AST to
-          -- stdout at whatever point we stop, so both test stages can diff a
-          -- text golden instead of a binary .o. --parse-only stops after parsing
-          -- (parser stage: no analysis, since its fixtures aren't whole programs);
-          -- otherwise analysis runs and a clean pass emits the IR object.
-          | parseOnly -> if dumpAST then print prog else pure ()
-          | otherwise -> do
-              resolved <- resolveIncludes path includeDirs prog
-              case resolved of
-                Left err                    -> hPutStr stderr (errorBundlePretty err) >> exitFailure
-                Right (resolvedProg, srcs)  ->
-                  -- The root file's source isn't in @srcs@ (the resolver only
-                  -- records files it read); add it so the renderer can show root
-                  -- diagnostics too.
-                  let diags  = analyze resolvedProg
-                      hasErr = any ((== Error) . severityOf . diagWhat) diags
-                  in do
-                    if null diags
-                      then pure ()
-                      else hPutStr stderr (renderDiags path (Map.insert path src srcs) diags)
-                    if hasErr
-                      then exitFailure
-                      else if dumpAST then print resolvedProg else writeOutput resolvedProg outPath
+      s <- readUtf8Safe path
+      case s of
+        Left err -> hPutStrLn stderr err >> exitFailure
+        Right src -> do
+          case parseProgram path src of
+            Left err   -> hPutStr stderr (errorBundlePretty err) >> exitFailure
+            Right prog
+              -- --dump-ast is an orthogonal reporting flag: it prints the AST to
+              -- stdout at whatever point we stop, so both test stages can diff a
+              -- text golden instead of a binary .o. --parse-only stops after parsing
+              -- (parser stage: no analysis, since its fixtures aren't whole programs);
+              -- otherwise analysis runs and a clean pass emits the IR object.
+              | parseOnly -> if dumpAST then print prog else pure ()
+              | otherwise -> do
+                  resolved <- resolveIncludes path includeDirs prog
+                  case resolved of
+                    Left err                    -> hPutStr stderr (errorBundlePretty err) >> exitFailure
+                    Right (resolvedProg, srcs)  ->
+                      -- The root file's source isn't in @srcs@ (the resolver only
+                      -- records files it read); add it so the renderer can show root
+                      -- diagnostics too.
+                      let diags  = analyze resolvedProg
+                          hasErr = any ((== Error) . severityOf . diagWhat) diags
+                      in do
+                        if null diags
+                          then pure ()
+                          else hPutStr stderr (renderDiags path (Map.insert path src srcs) diags)
+                        if hasErr
+                          then exitFailure
+                          else if dumpAST then print resolvedProg else writeOutput resolvedProg outPath
     _ -> hPutStrLn stderr "usage: c02-frontend [--parse-only] [-I <dir>]... [-o <out.o>] <file.c02>" >> exitFailure
 
 
