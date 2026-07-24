@@ -1,5 +1,3 @@
-{-# OPTIONS_GHC -Wno-unused-top-binds #-}
-
 -- | The C02 grammar: turns source text into a "C02.AST" 'Program'. Built on the
 -- token helpers in "C02.Lexer" and megaparsec's expression-combinator support.
 -- 'parseProgram' is the stage entry point the driver (and later stages) call.

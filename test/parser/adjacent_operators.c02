@@ -1,0 +1,12 @@
+fn main () -> void {
+  i8 a = (i8)7;
+  i8 b = (i8)10;
+  i8 x = 0;
+
+  i8 c = a*-b;                                        
+  i8 d = a&~b;                            
+  
+  if (x<-1) {
+    a+=c;
+  }
+}

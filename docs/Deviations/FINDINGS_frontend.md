@@ -37,11 +37,11 @@ Severity legend (same as `DEVIATIONS_hs_impl.md`):
 | [FE-6](#fe-6) | G | Source | — | Included declarations are hoisted above the includer's own, erasing include position | none — undocumented architecture |
 | [FE-7](#fe-7) | T | Executed | — | No `asm { }` statement exists in the grammar | [§5.7](../SPEC.md#57-inline-assembly-asm) |
 | [FE-8](#fe-8) | G | Executed | — | Char literals: an undocumented extension, not a lexeme (`'a' + 1` fails), Haskell escape rules | [§1.3](../SPEC.md#13-integer-literals) |
-| [FE-9](#fe-9) | G | Executed | — | Adjacent operators fail to lex: `a*-b`, `a<-1`, `a&&&b` are parse errors | [§1.6](../SPEC.md#16-operators--punctuation) |
+| [FE-9](#fe-9) | G | Executed | ✅ Fixed | Adjacent operators fail to lex: `a*-b`, `a<-1`, `a&&&b` are parse errors | [§1.6](../SPEC.md#16-operators--punctuation) |
 | [FE-10](#fe-10) | G | Executed | — | Integer literals overflowing the host word silently wrap (`2^64+1` lexes as `1`) | [§1.3](../SPEC.md#13-integer-literals) |
 | [FE-11](#fe-11) | T | Executed | — | Compound assignment doesn't type-check as its desugaring: `p += 1` rejected on a pointer | [§5.3](../SPEC.md#53-assignment) |
 | [FE-12](#fe-12) | P2 | Executed | — | S-1/S-17 laxity reproduced: any `(void*)`-shaped actual is compatible with *everything* | [§3.2](../SPEC.md#32-type-compatibility) |
-| [FE-13](#fe-13) | P2 | Executed | — | `&&`/`||` operands are entirely unchecked (struct `&&` struct accepted) | [§6.3](../SPEC.md#63-binary-operators) |
+| [FE-13](#fe-13) | P2 | Executed | — | `&&`/`\|\|` operands are entirely unchecked (struct `&&` struct accepted) | [§6.3](../SPEC.md#63-binary-operators) |
 | [FE-14](#fe-14) | P0 | Executed | ✅ Fixed | `interrupt` validation missing: no warning, flag not cleared → calling the function crashes at runtime | [§4.2](../SPEC.md#42-interrupt-functions) |
 | [FE-15](#fe-15) | G | Executed | — | `for`-increment clause accepts a variable declaration | [§5.5](../SPEC.md#55-for-loop-clauses) |
 | [FE-16](#fe-16) | P2 | Source | — | Statement-position structs get no redeclaration check at all | [§7.2](../SPEC.md#72-scope-stack--shadowing) |
@@ -256,6 +256,9 @@ guard.)
 **Spec:** §1.6 (token set; nothing there makes whitespace significant).
 
 **Verified:** Executed (`a*-b`).
+
+**Resolved:** Refactored `operator` parser to build out characters char by char and not
+be hardcoded to expect whitespace after the operator.
 
 ### FE-10: Host-word overflow in integer literals wraps silently
 
